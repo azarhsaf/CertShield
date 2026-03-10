@@ -1,0 +1,2 @@
+{% extends 'base.html' %}{% block content %}<h3>Issued Certificates / Requests</h3>
+<table class="table table-sm"><tr><th>ID</th><th>Requester</th><th>Template</th><th>Subject</th><th>Issued</th><th>Expiry</th><th>Status</th></tr>{% for c in certificates %}<tr><td>{{c.request_id}}</td><td>{{c.requester}}</td><td>{{c.template_name}}</td><td>{{c.subject}}</td><td>{{c.issued_at}}</td><td>{{c.expires_at}}</td><td>{{c.status}}</td></tr>{% endfor %}</table>{% endblock %}

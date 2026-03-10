@@ -1,0 +1,16 @@
+{% extends 'base.html' %}{% block content %}
+<h3>Dashboard {% if scan %}<small class="text-muted">Scan #{{scan.id}} {{scan.domain_name}}</small>{% endif %}</h3>
+{% if scan %}
+<div class="row g-3">
+  <div class="col"><div class="card p-3">CAs: {{scan.summary_json.cas}}</div></div>
+  <div class="col"><div class="card p-3">Templates: {{scan.summary_json.templates}}</div></div>
+  <div class="col"><div class="card p-3">Findings: {{scan.summary_json.findings}}</div></div>
+  <div class="col"><div class="card p-3">Issued Certs: {{scan.summary_json.certificates}}</div></div>
+</div>
+<h5 class="mt-4">Severity Breakdown</h5><pre>{{severity}}</pre>
+<h5>Recent Issued Certificates</h5>
+<table class="table table-sm"><tr><th>Request</th><th>Requester</th><th>Template</th><th>Status</th></tr>
+{% for c in recent_certs %}<tr><td>{{c.request_id}}</td><td>{{c.requester}}</td><td>{{c.template_name}}</td><td>{{c.status}}</td></tr>{% endfor %}
+</table>
+{% else %}<p>No scans yet.</p>{% endif %}
+{% endblock %}

@@ -1,0 +1,14 @@
+[Unit]
+Description=CertShield ADCS Defensive Visibility App
+After=network.target
+
+[Service]
+User=certshield
+Group=certshield
+WorkingDirectory=/opt/certshield
+EnvironmentFile=/opt/certshield/.env
+ExecStart=/opt/certshield/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,1 @@
+{% extends 'base.html' %}{% block content %}<h3>CA Inventory</h3><table class="table"><tr><th>Name</th><th>DNS</th><th>Status</th></tr>{% for c in cas %}<tr><td>{{c.name}}</td><td>{{c.dns_name}}</td><td>{{c.status}}</td></tr>{% endfor %}</table>{% endblock %}
