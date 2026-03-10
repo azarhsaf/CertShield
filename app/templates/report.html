@@ -1,0 +1,1 @@
+<!doctype html><html><body><h2>CertShield Report - Scan {{scan.id}}</h2><p>Domain: {{scan.domain_name}}</p><h3>Findings</h3><ul>{% for f in findings %}<li>[{{f.severity}}] {{f.title}} - {{f.affected_object}}</li>{% endfor %}</ul></body></html>

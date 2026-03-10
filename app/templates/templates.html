@@ -1,0 +1,4 @@
+{% extends 'base.html' %}{% block content %}<h3>Template Inventory</h3>
+<table class="table table-sm"><tr><th>Name</th><th>EKU</th><th>Supply Subject</th><th>Approval</th><th>Signatures</th><th>Permissions</th></tr>
+{% for t in templates_data %}<tr><td>{{t.name}}</td><td>{{t.eku}}</td><td>{{t.enrollee_supplies_subject}}</td><td>{{t.manager_approval}}</td><td>{{t.authorized_signatures}}</td><td>{% for p in t.permissions %}{{p.principal}} {% endfor %}</td></tr>{% endfor %}
+</table>{% endblock %}

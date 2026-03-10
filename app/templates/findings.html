@@ -1,0 +1,2 @@
+{% extends 'base.html' %}{% block content %}<h3>Findings</h3>
+<table class="table"><tr><th>Severity</th><th>Title</th><th>Affected</th><th>Rationale</th><th>Remediation</th></tr>{% for f in findings %}<tr><td>{{f.severity}}</td><td>{{f.title}}</td><td>{{f.affected_object}}</td><td>{{f.rationale}}</td><td>{{f.remediation}}</td></tr>{% endfor %}</table>{% endblock %}
