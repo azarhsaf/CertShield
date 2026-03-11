@@ -1,1 +1,22 @@
-{% extends 'base.html' %}{% block content %}<h3>Settings / Connector Configuration</h3><p>Collector endpoint: <code>/api/v1/collector/ingest</code></p><p>Configured collector token (masked): <code>{{collector_token}}</code></p><p>Set COLLECTOR_API_TOKEN in .env and distribute securely to Windows collector operators.</p>{% endblock %}
+{% extends 'base.html' %}
+{% block content %}
+<h1 class="h3 mb-3">Settings / Collector Configuration</h1>
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card card-panel"><div class="card-body">
+      <h2 class="h5">Collector API</h2>
+      <p class="mb-1"><strong>Endpoint:</strong> <code>{{collector_endpoint}}</code></p>
+      <p class="mb-1"><strong>Token (masked):</strong> <code>{{collector_token}}</code></p>
+      <p class="text-secondary small mb-0">Set <code>COLLECTOR_API_TOKEN</code> in <code>.env</code> and on collector hosts.</p>
+    </div></div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card card-panel"><div class="card-body">
+      <h2 class="h5">Runtime</h2>
+      <p class="mb-1"><strong>Bind:</strong> {{bind_host}}:{{bind_port}}</p>
+      <p class="mb-1"><strong>Health check:</strong> <code>/health</code></p>
+      <p class="text-secondary small mb-0">Use systemd + reverse proxy for production deployments.</p>
+    </div></div>
+  </div>
+</div>
+{% endblock %}

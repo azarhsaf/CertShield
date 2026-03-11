@@ -1,4 +1,5 @@
 from functools import lru_cache
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -10,6 +11,11 @@ class Settings(BaseSettings):
     app_env: str = "development"
     secret_key: str = Field(default="change-me-in-production")
     session_cookie_name: str = "certshield_session"
+    session_https_only: bool = False
+
+    bind_host: str = "0.0.0.0"
+    bind_port: int = 8000
+
     db_url: str = "sqlite:///./certshield.db"
     bootstrap_admin_user: str = "admin"
     bootstrap_admin_password: str = "ChangeMeNow!"
