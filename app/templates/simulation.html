@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1 class="h3 mb-3">Validate Exposure (Safe Simulation)</h1>
+<div class="alert alert-info">Read-only analysis only. No certificate requests, no auth abuse, no privilege changes.</div>
+<div class="card card-panel"><div class="card-body">
+  <h2 class="h5">{{finding.title}}</h2>
+  <p><strong>Category:</strong> {{finding.esc_category}} · <strong>Severity:</strong> {{finding.severity}} · <strong>Confidence:</strong> {{finding.confidence}}</p>
+  <p><strong>Impact Preview:</strong> {{finding.simulation_summary}}</p>
+  <h3 class="h6">Preconditions Met</h3>
+  <ul>{% for p in simulation.preconditions_met or [] %}<li>{{p}}</li>{% endfor %}</ul>
+  <h3 class="h6">Missing / Not Confirmed</h3>
+  <ul>{% for m in simulation.missing_or_unconfirmed or [] %}<li>{{m}}</li>{% else %}<li>None.</li>{% endfor %}</ul>
+  <p><strong>Likely blast radius:</strong> {{simulation.blast_radius}}</p>
+  <p><strong>How to break this path:</strong> {{finding.remediation}}</p>
+  {% if finding.remediation_steps_json %}<ol>{% for s in finding.remediation_steps_json %}<li>{{s}}</li>{% endfor %}</ol>{% endif %}
+</div></div>
+{% endblock %}

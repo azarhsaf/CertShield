@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1 class="h3 mb-3">Settings / Collector Information</h1>
+<div class="card card-panel"><div class="card-body">
+<p><strong>Collector endpoint:</strong> <code>{{collector_endpoint}}</code></p>
+<p><strong>Collector token (masked):</strong> <code>{{collector_token}}</code></p>
+<p><strong>Runtime bind:</strong> {{bind_host}}:{{bind_port}}</p>
+<p class="small text-secondary mb-0">Simulation features are read-only. No live exploitation actions are ever performed.</p>
+</div></div>
+{% endblock %}
