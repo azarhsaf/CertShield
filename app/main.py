@@ -17,6 +17,7 @@ from app.core.security import (
     validate_csrf,
     verify_password,
 )
+from app.db.migrate import run_ddl_migrations
 from app.db.session import Base, SessionLocal, engine, get_db
 from app.models.entities import (
     AuditLog,
@@ -55,6 +56,26 @@ def _severity_counts(db: Session, scan_id: int) -> dict[str, int]:
     return {sev: counts.get(sev, 0) for sev in SEVERITY_ORDER}
 
 
+def _category_counts(db: Session, scan_id: int) -> dict[str, int]:
+    rows = (
+        db.query(Finding.esc_category, func.count(Finding.id))
+        .filter(Finding.scan_id == scan_id)
+        .group_by(Finding.esc_category)
+        .all()
+    )
+    return {k: v for k, v in rows}
+
+
+def _coverage_counts(db: Session, scan_id: int) -> dict[str, int]:
+    rows = (
+        db.query(Finding.coverage_state, func.count(Finding.id))
+        .filter(Finding.scan_id == scan_id)
+        .group_by(Finding.coverage_state)
+        .all()
+    )
+    return {k: v for k, v in rows}
+
+
 def _nav_context(request: Request) -> dict:
     return {"request": request, "current_user": request.session.get("user")}
 
@@ -72,6 +93,7 @@ def db_context():
 def startup():
     Base.metadata.create_all(bind=engine)
     with db_context() as db:
+        run_ddl_migrations(db)
         user = db.query(User).filter_by(username=settings.bootstrap_admin_user).first()
         if not user:
             db.add(
@@ -134,9 +156,13 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     ensure_authenticated(request)
     latest_scan = db.query(Scan).order_by(Scan.id.desc()).first()
     severity = {sev: 0 for sev in SEVERITY_ORDER}
+    by_category = {}
+    coverage_counts = {}
     recent_certs: list[IssuedCertificate] = []
     if latest_scan:
         severity = _severity_counts(db, latest_scan.id)
+        by_category = _category_counts(db, latest_scan.id)
+        coverage_counts = _coverage_counts(db, latest_scan.id)
         recent_certs = (
             db.query(IssuedCertificate)
             .filter_by(scan_id=latest_scan.id)
@@ -150,6 +176,8 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             "scan": latest_scan,
             "severity": severity,
             "severity_order": SEVERITY_ORDER,
+            "by_category": by_category,
+            "coverage_counts": coverage_counts,
             "recent_certs": recent_certs,
         }
     )
@@ -194,10 +222,7 @@ def findings_page(request: Request, db: Session = Depends(get_db)):
     records = (
         db.query(Finding)
         .filter_by(scan_id=latest_scan.id)
-        .order_by(
-            func.instr("Critical,High,Medium,Low", Finding.severity),
-            Finding.id.desc(),
-        )
+        .order_by(func.instr("Critical,High,Medium,Low", Finding.severity), Finding.id.desc())
         .all()
         if latest_scan
         else []
@@ -205,6 +230,17 @@ def findings_page(request: Request, db: Session = Depends(get_db)):
     ctx = _nav_context(request)
     ctx.update({"findings": records, "scan": latest_scan})
     return templates.TemplateResponse("findings.html", ctx)
+
+
+@app.get("/findings/{finding_id}/simulate", response_class=HTMLResponse)
+def finding_simulation_page(finding_id: int, request: Request, db: Session = Depends(get_db)):
+    ensure_authenticated(request)
+    finding = db.query(Finding).filter_by(id=finding_id).first()
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    ctx = _nav_context(request)
+    ctx.update({"finding": finding, "simulation": finding.simulation_json or {}})
+    return templates.TemplateResponse("simulation.html", ctx)
 
 
 @app.get("/certificates", response_class=HTMLResponse)
@@ -245,9 +281,17 @@ def export_json(scan_id: int, request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Scan not found")
     payload = {
         "scan": scan.summary_json,
+        "coverage": scan.coverage_json,
         "cas": [c.name for c in db.query(CertificateAuthority).filter_by(scan_id=scan.id).all()],
         "findings": [
-            {"title": f.title, "severity": f.severity, "affected": f.affected_object}
+            {
+                "title": f.title,
+                "severity": f.severity,
+                "category": f.esc_category,
+                "confidence": f.confidence,
+                "coverage_state": f.coverage_state,
+                "affected": f.affected_object,
+            }
             for f in db.query(Finding).filter_by(scan_id=scan.id).all()
         ],
     }

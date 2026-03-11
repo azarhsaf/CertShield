@@ -42,6 +42,8 @@ class CertIn(BaseModel):
 class CollectorPayload(BaseModel):
     domain_name: str
     source_host: str
+    collector_version: str = "legacy"
     cas: list[CAIn] = Field(default_factory=list)
     templates: list[TemplateIn] = Field(default_factory=list)
     issued_certificates: list[CertIn] = Field(default_factory=list)
+    assessment_hints: dict = Field(default_factory=dict)

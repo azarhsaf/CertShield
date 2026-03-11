@@ -1,17 +1,11 @@
 <#
 .SYNOPSIS
-  Collect ADCS defensive inventory data and push to CertShield API.
-
-.NOTES
-  - PowerShell 5.1 compatible.
-  - Requires certutil and (for template enumeration) ActiveDirectory RSAT module.
-  - Preserves legacy broad enrollment fallback to keep existing finding behavior.
-
+  Collect defensive ADCS visibility data and send to CertShield.
+.DESCRIPTION
+  Safe collection only. This script does not request certificates or perform exploitation.
+  PowerShell 5.1 compatible.
 .EXAMPLE
-  .\Collect-AdcsData.ps1 -ApiUrl "http://10.0.0.25:8000" -ApiToken "collector-dev-token"
-
-.EXAMPLE
-  .\Collect-AdcsData.ps1 -ApiUrl "http://10.0.0.25:8000" -ApiToken "collector-dev-token" -SkipIssued -DebugPayload
+  .\Collect-AdcsData.ps1 -ApiUrl "http://10.0.0.25:8000" -ApiToken "collector-token"
 #>
 param(
   [Parameter(Mandatory=$true)][string]$ApiUrl,
@@ -23,11 +17,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$CollectorVersion = 'collector-ps51-1.1'
 
-function Write-Step {
-  param([string]$Message)
-  Write-Host "[CertShield Collector] $Message"
-}
+function Write-Step { param([string]$Message) Write-Host "[CertShield] $Message" }
 
 function Get-CertificateAuthorities {
   $cas = @()
@@ -39,161 +31,92 @@ function Get-CertificateAuthorities {
           name = $matches[2]
           dns_name = $matches[1]
           status = 'online'
-          config = @{}
+          config = @{ web_enrollment_assessed = $false; ca_policy_flags_assessed = $false; published_templates = @() }
         }
       }
     }
-  } catch {
-    Write-Warning "Unable to query CAs via certutil: $_"
-  }
+  } catch { Write-Warning "CA discovery failed via certutil: $_" }
   return @($cas)
 }
 
-function Test-ActiveDirectoryModule {
+function Test-ADModule {
   $module = Get-Module -ListAvailable -Name ActiveDirectory
-  if ($null -eq $module) {
-    Write-Warning "ActiveDirectory module not found. Install RSAT AD PowerShell tools on this host."
-    return $false
-  }
+  if ($null -eq $module) { Write-Warning "ActiveDirectory module missing. Install RSAT AD tools."; return $false }
   Import-Module ActiveDirectory -ErrorAction Stop
   return $true
 }
 
 function Get-Templates {
   $templates = @()
-
-  if (-not (Test-ActiveDirectoryModule)) {
-    return @($templates)
-  }
-
+  if (-not (Test-ADModule)) { return @($templates) }
   try {
     $root = Get-ADRootDSE
-    $configNc = $root.configurationNamingContext
-    $base = "CN=Certificate Templates,CN=Public Key Services,CN=Services,$configNc"
+    $base = "CN=Certificate Templates,CN=Public Key Services,CN=Services,$($root.configurationNamingContext)"
     $props = "displayName","mspki-certificate-name-flag","mspki-enrollment-flag","msPKI-RA-Signature","pKIExtendedKeyUsage"
     $objs = Get-ADObject -Filter * -SearchBase $base -Properties $props
-
     foreach ($o in $objs) {
-      $nameFlag = 0
-      if ($o.'mspki-certificate-name-flag') { $nameFlag = [int]$o.'mspki-certificate-name-flag' }
-      $enrollFlag = 0
-      if ($o.'mspki-enrollment-flag') { $enrollFlag = [int]$o.'mspki-enrollment-flag' }
-
-      $authSig = 0
-      if ($o.'msPKI-RA-Signature') { $authSig = [int]$o.'msPKI-RA-Signature' }
-
-      $ekuArray = @()
-      if ($o.'pKIExtendedKeyUsage') { $ekuArray = @($o.'pKIExtendedKeyUsage') }
-
-      # Keep this broad default to preserve existing risk finding behavior.
-      $permissions = @(
-        [pscustomobject]@{ principal = 'Authenticated Users'; can_enroll = $true; can_autoenroll = $false }
-      )
-
-      $display = $o.Name
-      if ($o.displayName) { $display = [string]$o.displayName }
-
+      $nameFlag = 0; if ($o.'mspki-certificate-name-flag') { $nameFlag = [int]$o.'mspki-certificate-name-flag' }
+      $enrollFlag = 0; if ($o.'mspki-enrollment-flag') { $enrollFlag = [int]$o.'mspki-enrollment-flag' }
+      $authSig = 0; if ($o.'msPKI-RA-Signature') { $authSig = [int]$o.'msPKI-RA-Signature' }
+      $eku = @(); if ($o.'pKIExtendedKeyUsage') { $eku = @($o.'pKIExtendedKeyUsage') }
+      $display = $o.Name; if ($o.displayName) { $display = [string]$o.displayName }
       $templates += [pscustomobject]@{
         name = [string]$o.Name
         display_name = $display
-        eku = @($ekuArray)
+        eku = @($eku)
         enrollee_supplies_subject = (($nameFlag -band 1) -ne 0)
         manager_approval = (($enrollFlag -band 2) -ne 0)
         authorized_signatures = $authSig
         validity_days = 365
         renewal_days = 30
         published_to = @()
-        permissions = @($permissions)
-        raw = @{}
+        permissions = @([pscustomobject]@{ principal = 'Authenticated Users'; can_enroll = $true; can_autoenroll = $false })
+        raw = @{ acl_assessed = $false; acl_details = @() }
       }
     }
-  } catch {
-    Write-Warning "Template enumeration failed: $_"
-  }
-
+  } catch { Write-Warning "Template enumeration failed: $_" }
   return @($templates)
 }
 
-function Parse-CertutilValue {
-  param([string]$Line)
-  $parts = $Line -split ':', 2
-  if ($parts.Count -lt 2) { return "" }
-  return $parts[1].Trim()
-}
+function Parse-CertValue { param([string]$Line) $parts = $Line -split ':',2; if ($parts.Count -lt 2) { return '' }; return $parts[1].Trim() }
 
 function Get-IssuedCertificates {
-  $results = @()
-  if ($SkipIssued) {
-    Write-Step "Skipping issued certificate query due to -SkipIssued switch"
-    return @($results)
-  }
-
+  $out = @()
+  if ($SkipIssued) { return @($out) }
   try {
     $lines = certutil -view -restrict "Disposition=20" -out "RequestID,RequesterName,CertificateTemplate,CommonName,NotBefore,NotAfter" 2>$null
-    $current = @{}
+    $cur = @{}
     foreach ($line in $lines) {
       if ($line -match '^Request ID:\s*(.+)$') {
-        if ($current.ContainsKey('request_id')) {
-          $results += [pscustomobject]$current
-          $current = @{}
-        }
-        $current['request_id'] = $matches[1].Trim()
-        $current['requester'] = ''
-        $current['template_name'] = ''
-        $current['subject'] = ''
-        $current['san'] = ''
-        $current['issued_at'] = ''
-        $current['expires_at'] = ''
-        $current['status'] = 'issued'
-        continue
-      }
-      if ($line -match '^Requester Name:') { $current['requester'] = Parse-CertutilValue -Line $line; continue }
-      if ($line -match '^Certificate Template:') { $current['template_name'] = Parse-CertutilValue -Line $line; continue }
-      if ($line -match '^Issued Common Name:') { $current['subject'] = Parse-CertutilValue -Line $line; continue }
-      if ($line -match '^Certificate Effective Date:') { $current['issued_at'] = Parse-CertutilValue -Line $line; continue }
-      if ($line -match '^Certificate Expiration Date:') { $current['expires_at'] = Parse-CertutilValue -Line $line; continue }
+        if ($cur.ContainsKey('request_id')) { $out += [pscustomobject]$cur; $cur = @{} }
+        $cur = @{ request_id=$matches[1].Trim(); requester=''; template_name=''; subject=''; san=''; issued_at=''; expires_at=''; status='issued' }
+      } elseif ($line -match '^Requester Name:') { $cur['requester'] = Parse-CertValue -Line $line }
+      elseif ($line -match '^Certificate Template:') { $cur['template_name'] = Parse-CertValue -Line $line }
+      elseif ($line -match '^Issued Common Name:') { $cur['subject'] = Parse-CertValue -Line $line }
+      elseif ($line -match '^Certificate Effective Date:') { $cur['issued_at'] = Parse-CertValue -Line $line }
+      elseif ($line -match '^Certificate Expiration Date:') { $cur['expires_at'] = Parse-CertValue -Line $line }
     }
-
-    if ($current.ContainsKey('request_id')) {
-      $results += [pscustomobject]$current
-    }
-  } catch {
-    Write-Warning "Unable to fetch issued certificates via certutil: $_"
-  }
-
-  if ($results.Count -gt $RecentRequestLimit) {
-    $results = $results | Select-Object -First $RecentRequestLimit
-  }
-
-  return @($results)
+    if ($cur.ContainsKey('request_id')) { $out += [pscustomobject]$cur }
+  } catch { Write-Warning "Issued certificate query failed: $_" }
+  if ($out.Count -gt $RecentRequestLimit) { $out = $out | Select-Object -First $RecentRequestLimit }
+  return @($out)
 }
 
-if (-not $DomainName) {
-  $DomainName = 'unknown.local'
-}
+if (-not $DomainName) { $DomainName = 'unknown.local' }
+$assessmentHints = @{ esc6_ca_policy = 'not_assessed'; esc7_ca_roles = 'not_assessed'; esc8_web_enrollment = 'insufficient_data'; esc4_template_acl = 'insufficient_data' }
 
-Write-Step "Collecting ADCS data from host $env:COMPUTERNAME"
 $payload = [ordered]@{
   domain_name = $DomainName
   source_host = $env:COMPUTERNAME
+  collector_version = $CollectorVersion
   cas = @(Get-CertificateAuthorities)
   templates = @(Get-Templates)
   issued_certificates = @(Get-IssuedCertificates)
+  assessment_hints = $assessmentHints
 }
 
-$json = $payload | ConvertTo-Json -Depth 10
-if ($DebugPayload) {
-  Write-Step "Payload preview:"
-  Write-Host $json
-}
-
+$json = $payload | ConvertTo-Json -Depth 12
+if ($DebugPayload) { Write-Host $json }
 $uri = "$($ApiUrl.TrimEnd('/'))/api/v1/collector/ingest"
 Write-Step "Posting payload to $uri"
-
-try {
-  $resp = Invoke-RestMethod -Method Post -Uri $uri -ContentType 'application/json' -Headers @{ Authorization = "Bearer $ApiToken" } -Body $json
-  Write-Step "Ingest completed. Response: $($resp | ConvertTo-Json -Depth 4)"
-} catch {
-  Write-Error "Collector ingest failed: $($_.Exception.Message)"
-  throw
-}
+Invoke-RestMethod -Method Post -Uri $uri -Headers @{ Authorization = "Bearer $ApiToken" } -ContentType 'application/json' -Body $json

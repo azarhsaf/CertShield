@@ -12,16 +12,26 @@
         <h2 class="h5 mb-1">{{f.title}}</h2>
         <div class="small">Affected: <strong>{{f.affected_object}}</strong></div>
       </div>
-      <span class="badge sev-{{f.severity|lower}}">{{f.severity}}</span>
+      <div class="text-end">
+        <span class="badge sev-{{f.severity|lower}}">{{f.severity}}</span>
+        <span class="badge text-bg-dark">{{f.esc_category}}</span>
+        <span class="badge text-bg-secondary">{{f.confidence}}</span>
+        <span class="badge text-bg-info">{{f.coverage_state}}</span>
+      </div>
     </div>
     <hr>
+    <p class="mb-2"><strong>Trigger:</strong> {{f.trigger_conditions}}</p>
     <p class="mb-2"><strong>Why flagged:</strong> {{f.rationale}}</p>
-    <p class="mb-0"><strong>Remediation:</strong> {{f.remediation}}</p>
+    <p class="mb-2"><strong>Remediation:</strong> {{f.remediation}}</p>
+    {% if f.remediation_steps_json %}
+      <ol class="small">{% for s in f.remediation_steps_json %}<li>{{s}}</li>{% endfor %}</ol>
+    {% endif %}
+    <a class="btn btn-sm btn-outline-primary" href="/findings/{{f.id}}/simulate">Validate Exposure (Safe)</a>
   </div>
 </div>
 {% endfor %}
 </div>
 {% else %}
-<div class="empty-state"><h2 class="h5">No findings in latest scan</h2><p>Collector data ingested successfully but no active rules matched current templates.</p></div>
+<div class="empty-state"><h2 class="h5">No findings in latest scan</h2></div>
 {% endif %}
 {% endblock %}

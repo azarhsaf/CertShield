@@ -5,5 +5,5 @@
 <h1>CertShield Report</h1>
 <p>Scan #{{scan.id}} · Domain {{scan.domain_name}} · Completed {{scan.completed_at}}</p>
 <h2>Findings</h2>
-<ul>{% for f in findings %}<li><span class="sev">[{{f.severity}}]</span> {{f.title}} ({{f.affected_object}})</li>{% endfor %}</ul>
+<ul>{% for f in findings %}<li><span class="sev">[{{f.severity}}]</span> {{f.title}} · {{f.esc_category}} · {{f.confidence}} · {{f.coverage_state}} ({{f.affected_object}})</li>{% endfor %}</ul>
 </body></html>

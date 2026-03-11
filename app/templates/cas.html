@@ -1,22 +1,13 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3"><h1 class="h3 m-0">Enterprise CA Inventory</h1></div>
-<div class="card card-panel"><div class="card-body">
-<div class="table-responsive">
-<table class="table modern-table align-middle">
-  <thead><tr><th>CA Name</th><th>DNS Name</th><th>Status</th></tr></thead>
-  <tbody>
-  {% for c in cas %}
-    <tr>
-      <td class="fw-semibold">{{c.name}}</td>
-      <td>{{c.dns_name or '-'}}</td>
-      <td><span class="badge {{ 'text-bg-success' if c.status == 'online' else 'text-bg-secondary' }}">{{c.status}}</span></td>
-    </tr>
-  {% else %}
-    <tr><td colspan="3" class="text-secondary">No CA records in the latest scan.</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
-</div>
-</div></div>
+<h1 class="h3 mb-3">Enterprise CA Inventory</h1>
+<div class="card card-panel"><div class="card-body"><div class="table-responsive">
+<table class="table modern-table align-middle"><thead><tr><th>CA Name</th><th>DNS</th><th>Status</th><th>Posture Hints</th></tr></thead><tbody>
+{% for c in cas %}
+<tr><td class="fw-semibold">{{c.name}}</td><td>{{c.dns_name or '-'}}</td><td><span class="badge {{ 'text-bg-success' if c.status == 'online' else 'text-bg-secondary' }}">{{c.status}}</span></td><td>{% if c.config_json %}<code>{{c.config_json}}</code>{% else %}<span class="text-secondary">No CA posture metadata</span>{% endif %}</td></tr>
+{% else %}
+<tr><td colspan="4" class="text-secondary">No CAs found.</td></tr>
+{% endfor %}
+</tbody></table>
+</div></div></div>
 {% endblock %}

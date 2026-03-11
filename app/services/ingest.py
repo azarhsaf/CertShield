@@ -23,8 +23,17 @@ class IngestService:
         db.add(scan)
         db.flush()
 
+        cas = []
         for ca in payload.cas:
-            db.add(CertificateAuthority(scan_id=scan.id, name=ca.name, dns_name=ca.dns_name, status=ca.status, config_json=ca.config))
+            row = CertificateAuthority(
+                scan_id=scan.id,
+                name=ca.name,
+                dns_name=ca.dns_name,
+                status=ca.status,
+                config_json=ca.config,
+            )
+            db.add(row)
+            cas.append(row)
 
         templates = []
         for template in payload.templates:
@@ -44,29 +53,82 @@ class IngestService:
             db.add(tpl)
             db.flush()
             for perm in template.permissions:
-                db.add(TemplatePermission(template_id=tpl.id, principal=perm.principal, can_enroll=perm.can_enroll, can_autoenroll=perm.can_autoenroll))
+                db.add(
+                    TemplatePermission(
+                        template_id=tpl.id,
+                        principal=perm.principal,
+                        can_enroll=perm.can_enroll,
+                        can_autoenroll=perm.can_autoenroll,
+                    )
+                )
             templates.append(tpl)
 
         for cert in payload.issued_certificates:
-            db.add(IssuedCertificate(scan_id=scan.id, request_id=cert.request_id, requester=cert.requester, template_name=cert.template_name, subject=cert.subject, san=cert.san, issued_at=cert.issued_at, expires_at=cert.expires_at, status=cert.status))
+            db.add(
+                IssuedCertificate(
+                    scan_id=scan.id,
+                    request_id=cert.request_id,
+                    requester=cert.requester,
+                    template_name=cert.template_name,
+                    subject=cert.subject,
+                    san=cert.san,
+                    issued_at=cert.issued_at,
+                    expires_at=cert.expires_at,
+                    status=cert.status,
+                )
+            )
 
         db.flush()
-        findings = evaluate_templates(templates)
+        findings, coverage = evaluate_templates(templates, cas)
         severity_counter = Counter()
+        esc_counter = Counter()
         for f in findings:
             severity_counter[f.severity] += 1
-            db.add(Finding(scan_id=scan.id, rule_id=f.rule_id, severity=f.severity, title=f.title, affected_object=f.affected_object, rationale=f.rationale, evidence_json=f.evidence, remediation=f.remediation, reference=f.reference))
+            esc_counter[f.esc_category] += 1
+            db.add(
+                Finding(
+                    scan_id=scan.id,
+                    rule_id=f.rule_id,
+                    esc_category=f.esc_category,
+                    severity=f.severity,
+                    confidence=f.confidence,
+                    coverage_state=f.coverage_state,
+                    title=f.title,
+                    affected_object=f.affected_object,
+                    trigger_conditions=f.trigger_conditions,
+                    rationale=f.rationale,
+                    evidence_json=f.evidence,
+                    remediation=f.remediation,
+                    remediation_steps_json=f.remediation_steps,
+                    simulation_summary=f.simulation_summary,
+                    simulation_json=f.simulation,
+                    reference=f.reference,
+                )
+            )
 
         scan.completed_at = datetime.utcnow()
+        scan.coverage_json = coverage
         scan.summary_json = {
             "cas": len(payload.cas),
             "templates": len(payload.templates),
             "certificates": len(payload.issued_certificates),
             "findings": len(findings),
             "severity": dict(severity_counter),
+            "by_category": dict(esc_counter),
+            "collector_version": payload.collector_version,
         }
 
-        db.add(AuditLog(actor=actor, action="scan_ingested", details_json={"scan_id": scan.id, "domain": payload.domain_name}))
+        db.add(
+            AuditLog(
+                actor=actor,
+                action="scan_ingested",
+                details_json={
+                    "scan_id": scan.id,
+                    "domain": payload.domain_name,
+                    "collector_version": payload.collector_version,
+                },
+            )
+        )
         db.commit()
         db.refresh(scan)
         return scan
