@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1 class="h3 mb-3">Defensive Findings</h1>
+{% if findings %}
+<div class="d-grid gap-3">
+{% for f in findings %}
+<div class="card card-panel finding-card sev-border-{{f.severity|lower}}">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+      <div>
+        <div class="small text-secondary">{{f.rule_id}}</div>
+        <h2 class="h5 mb-1">{{f.title}}</h2>
+        <div class="small">Affected: <strong>{{f.affected_object}}</strong></div>
+      </div>
+      <span class="badge sev-{{f.severity|lower}}">{{f.severity}}</span>
+    </div>
+    <hr>
+    <p class="mb-2"><strong>Why flagged:</strong> {{f.rationale}}</p>
+    <p class="mb-0"><strong>Remediation:</strong> {{f.remediation}}</p>
+  </div>
+</div>
+{% endfor %}
+</div>
+{% else %}
+<div class="empty-state"><h2 class="h5">No findings in latest scan</h2><p>Collector data ingested successfully but no active rules matched current templates.</p></div>
+{% endif %}
+{% endblock %}

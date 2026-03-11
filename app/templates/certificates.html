@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1 class="h3 mb-3">Issued Certificates / Requests</h1>
+<div class="card card-panel"><div class="card-body">
+<div class="table-responsive">
+<table class="table modern-table align-middle">
+  <thead><tr><th>Request ID</th><th>Requester</th><th>Template</th><th>Subject</th><th>SAN</th><th>Status</th><th>Issued</th><th>Expires</th></tr></thead>
+  <tbody>
+  {% for c in certificates %}
+  <tr>
+    <td>{{c.request_id}}</td><td>{{c.requester or '-'}}</td><td>{{c.template_name or '-'}}</td><td>{{c.subject or '-'}}</td><td>{{c.san or '-'}}</td>
+    <td><span class="badge text-bg-success">{{c.status}}</span></td><td>{{c.issued_at or '-'}}</td><td>{{c.expires_at or '-'}}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="8" class="text-secondary">No issued certificate records found for latest scan.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+</div></div>
+{% endblock %}

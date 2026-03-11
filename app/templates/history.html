@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1 class="h3 mb-3">Scan History</h1>
+<div class="card card-panel"><div class="card-body">
+<div class="table-responsive"><table class="table modern-table align-middle">
+  <thead><tr><th>Scan ID</th><th>Domain</th><th>Source</th><th>Completed</th><th>Findings</th><th>Exports</th></tr></thead>
+  <tbody>
+  {% for s in scans %}
+  <tr><td>{{s.id}}</td><td>{{s.domain_name}}</td><td>{{s.source}}</td><td>{{s.completed_at}}</td><td>{{s.summary_json.findings}}</td><td><a href="/reports/{{s.id}}">HTML</a> · <a href="/reports/{{s.id}}.json">JSON</a></td></tr>
+  {% else %}
+  <tr><td colspan="6" class="text-secondary">No scans yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+</div></div>
+{% endblock %}

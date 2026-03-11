@@ -1,0 +1,9 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>CertShield Report</title>
+<style>body{font-family:Arial,sans-serif;margin:2rem} .sev{font-weight:bold}</style></head>
+<body>
+<h1>CertShield Report</h1>
+<p>Scan #{{scan.id}} · Domain {{scan.domain_name}} · Completed {{scan.completed_at}}</p>
+<h2>Findings</h2>
+<ul>{% for f in findings %}<li><span class="sev">[{{f.severity}}]</span> {{f.title}} ({{f.affected_object}})</li>{% endfor %}</ul>
+</body></html>

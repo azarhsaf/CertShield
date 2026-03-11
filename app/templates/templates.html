@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1 class="h3 mb-3">Certificate Template Inventory</h1>
+<div class="card card-panel"><div class="card-body">
+<div class="table-responsive">
+<table class="table modern-table align-middle">
+  <thead><tr><th>Template</th><th>EKU</th><th>Subject/SAN</th><th>Approval</th><th>Signatures</th><th>Validity</th><th>Permissions</th></tr></thead>
+  <tbody>
+  {% for t in templates_data %}
+  <tr>
+    <td><div class="fw-semibold">{{t.display_name}}</div><div class="small text-secondary">{{t.name}}</div></td>
+    <td>{% for e in t.eku %}<span class="badge text-bg-info me-1 mb-1">{{e}}</span>{% else %}-{% endfor %}</td>
+    <td><span class="badge {{ 'text-bg-warning' if t.enrollee_supplies_subject else 'text-bg-secondary' }}">{{ 'Enrollee supplies subject' if t.enrollee_supplies_subject else 'Server-defined subject' }}</span></td>
+    <td><span class="badge {{ 'text-bg-success' if t.manager_approval else 'text-bg-danger' }}">{{ 'Manager approval required' if t.manager_approval else 'No manager approval' }}</span></td>
+    <td>{{t.authorized_signatures}}</td>
+    <td>{{t.validity_days}}d / {{t.renewal_days}}d</td>
+    <td>{% for p in t.permissions %}<div class="small"><strong>{{p.principal}}</strong> (enroll={{p.can_enroll}}, auto={{p.can_autoenroll}})</div>{% else %}-{% endfor %}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7" class="text-secondary">No templates in latest scan.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+</div></div>
+{% endblock %}
