@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-4">
+  <div>
+    <h1 class="h3 mb-1">PKI Dashboard</h1>
+    {% if scan %}<p class="text-secondary mb-0">Latest scan #{{scan.id}} · {{scan.domain_name}} · {{scan.completed_at}}</p>{% endif %}
+  </div>
+</div>
+{% if scan %}
+<div class="row g-3 mb-4">
+  <div class="col-md-3"><div class="metric-card"><div class="metric-title">Enterprise CAs</div><div class="metric-value">{{scan.summary_json.cas}}</div></div></div>
+  <div class="col-md-3"><div class="metric-card"><div class="metric-title">Templates</div><div class="metric-value">{{scan.summary_json.templates}}</div></div></div>
+  <div class="col-md-3"><div class="metric-card"><div class="metric-title">Findings</div><div class="metric-value">{{scan.summary_json.findings}}</div></div></div>
+  <div class="col-md-3"><div class="metric-card"><div class="metric-title">Collector</div><div class="metric-value small">{{scan.summary_json.collector_version}}</div></div></div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-lg-6"><div class="card card-panel"><div class="card-body">
+    <h2 class="h5">Findings by Severity</h2>
+    {% for sev in severity_order %}
+      {% set count = severity[sev] %}
+      <div class="severity-row mt-2"><div class="d-flex justify-content-between"><span>{{sev}}</span><strong>{{count}}</strong></div><div class="progress"><div class="progress-bar sev-{{sev|lower}}" style="width: {{ (count * 100 / (scan.summary_json.findings if scan.summary_json.findings else 1))|round(0) }}%"></div></div></div>
+    {% endfor %}
+  </div></div></div>
+
+  <div class="col-lg-6"><div class="card card-panel"><div class="card-body">
+    <h2 class="h5">Findings by Category</h2>
+    {% for k,v in by_category.items() %}<div class="d-flex justify-content-between border-bottom py-1"><span>{{k}}</span><strong>{{v}}</strong></div>{% else %}<p class="text-secondary">No category data.</p>{% endfor %}
+    <h2 class="h6 mt-3">Coverage Summary</h2>
+    {% for k,v in coverage_counts.items() %}<span class="badge text-bg-secondary me-1">{{k}}: {{v}}</span>{% endfor %}
+  </div></div></div>
+</div>
+
+<div class="card card-panel"><div class="card-body">
+  <h2 class="h5 mb-3">Recent Issued Certificates</h2>
+  <div class="table-responsive"><table class="table align-middle modern-table"><thead><tr><th>Request ID</th><th>Requester</th><th>Template</th><th>Subject</th><th>Status</th><th>Issued</th><th>Expires</th></tr></thead><tbody>
+    {% for c in recent_certs %}<tr><td>{{c.request_id}}</td><td>{{c.requester or '-'}}</td><td>{{c.template_name or '-'}}</td><td>{{c.subject or '-'}}</td><td><span class="badge text-bg-success">{{c.status}}</span></td><td>{{c.issued_at or '-'}}</td><td>{{c.expires_at or '-'}}</td></tr>{% else %}
+    <tr><td colspan="7" class="text-secondary">No certificate rows.</td></tr>{% endfor %}
+  </tbody></table></div>
+</div></div>
+{% else %}
+<div class="empty-state"><h2 class="h5">No scan data yet</h2><p>Run the Windows collector and refresh this page.</p></div>
+{% endif %}
+{% endblock %}
