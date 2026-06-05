@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     db_url: str = "sqlite:///./certshield.db"
     bootstrap_admin_user: str = "admin"
     bootstrap_admin_password: str = "ChangeMeNow!"
-    collector_api_token: str = "collector-dev-token"
+    collector_api_token: str = "collector-dev-token-change-me"
 
 
 @lru_cache

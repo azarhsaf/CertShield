@@ -258,8 +258,9 @@ def history_page(request: Request, db: Session = Depends(get_db)):
 
 
 @app.get("/settings", response_class=HTMLResponse)
-def settings_page(request: Request):
+def settings_page(request: Request, db: Session = Depends(get_db)):
     ensure_authenticated(request)
+    latest_scan = db.query(Scan).order_by(Scan.id.desc()).first()
     masked = settings.collector_api_token[:4] + "..." + settings.collector_api_token[-4:]
     ctx = _nav_context(request)
     ctx.update(
@@ -268,6 +269,9 @@ def settings_page(request: Request):
             "collector_endpoint": "/api/v1/collector/ingest",
             "bind_host": settings.bind_host,
             "bind_port": settings.bind_port,
+            "scan": latest_scan,
+            "coverage": latest_scan.coverage_json if latest_scan else {},
+            "collector_version": latest_scan.summary_json.get("collector_version", "none") if latest_scan else "none",
         }
     )
     return templates.TemplateResponse("settings.html", ctx)

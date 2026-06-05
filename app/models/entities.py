@@ -31,8 +31,6 @@ class Scan(Base):
     templates: Mapped[list["CertificateTemplate"]] = relationship(back_populates="scan")
     certificates: Mapped[list["IssuedCertificate"]] = relationship(back_populates="scan")
     findings: Mapped[list["Finding"]] = relationship(back_populates="scan")
-    health_items: Mapped[list["PkiHealthItem"]] = relationship(back_populates="scan")
-    best_practice_items: Mapped[list["BestPracticeItem"]] = relationship(back_populates="scan")
 
 
 class CertificateAuthority(Base):
@@ -105,63 +103,20 @@ class Finding(Base):
     rule_id: Mapped[str] = mapped_column(String(100), nullable=False)
     esc_category: Mapped[str] = mapped_column(String(50), default="General")
     severity: Mapped[str] = mapped_column(String(20), nullable=False)
-    risk_score: Mapped[int] = mapped_column(Integer, default=0)
     confidence: Mapped[str] = mapped_column(String(20), default="medium")
     coverage_state: Mapped[str] = mapped_column(String(30), default="detected")
-    exploitability: Mapped[str] = mapped_column(String(50), default="unknown")
-    exposure: Mapped[str] = mapped_column(String(50), default="unknown")
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     affected_object: Mapped[str] = mapped_column(String(255), nullable=False)
     trigger_conditions: Mapped[str] = mapped_column(Text, default="")
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
-    business_impact: Mapped[str] = mapped_column(Text, default="")
-    technical_impact: Mapped[str] = mapped_column(Text, default="")
     evidence_json: Mapped[dict] = mapped_column(JSON, default=dict)
     remediation: Mapped[str] = mapped_column(Text, nullable=False)
     remediation_steps_json: Mapped[list] = mapped_column(JSON, default=list)
-    score_breakdown_json: Mapped[list] = mapped_column(JSON, default=list)
     simulation_summary: Mapped[str] = mapped_column(Text, default="")
     simulation_json: Mapped[dict] = mapped_column(JSON, default=dict)
     reference: Mapped[str] = mapped_column(String(500), default="")
 
     scan: Mapped[Scan] = relationship(back_populates="findings")
-
-
-class PkiHealthItem(Base):
-    __tablename__ = "pki_health_items"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    scan_id: Mapped[int] = mapped_column(ForeignKey("scans.id"), nullable=False)
-    category: Mapped[str] = mapped_column(String(100), nullable=False)
-    title: Mapped[str] = mapped_column(String(255), nullable=False)
-    status: Mapped[str] = mapped_column(String(50), default="Unknown")
-    severity: Mapped[str] = mapped_column(String(20), default="Info")
-    affected_object: Mapped[str] = mapped_column(String(255), default="PKI")
-    evidence_json: Mapped[dict] = mapped_column(JSON, default=dict)
-    recommendation: Mapped[str] = mapped_column(Text, default="")
-    confidence: Mapped[str] = mapped_column(String(20), default="low")
-
-    scan: Mapped[Scan] = relationship(back_populates="health_items")
-
-
-class BestPracticeItem(Base):
-    __tablename__ = "best_practice_items"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    scan_id: Mapped[int] = mapped_column(ForeignKey("scans.id"), nullable=False)
-    category: Mapped[str] = mapped_column(String(100), nullable=False)
-    title: Mapped[str] = mapped_column(String(255), nullable=False)
-    status: Mapped[str] = mapped_column(String(50), default="Not Assessed")
-    severity: Mapped[str] = mapped_column(String(20), default="Info")
-    affected_object: Mapped[str] = mapped_column(String(255), default="PKI")
-    evidence_json: Mapped[dict] = mapped_column(JSON, default=dict)
-    recommendation: Mapped[str] = mapped_column(Text, default="")
-    business_impact: Mapped[str] = mapped_column(Text, default="")
-    technical_impact: Mapped[str] = mapped_column(Text, default="")
-    confidence: Mapped[str] = mapped_column(String(20), default="low")
-    control_refs_json: Mapped[list] = mapped_column(JSON, default=list)
-
-    scan: Mapped[Scan] = relationship(back_populates="best_practice_items")
 
 
 class AuditLog(Base):

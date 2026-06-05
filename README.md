@@ -19,19 +19,25 @@ It helps blue teams inventory ADCS, identify risky certificate template and CA p
 - No spoofed SAN/UPN certificate requests
 
 ## Safe Simulation
-CertShield includes **Validate Exposure (Safe)** views per finding.
-These are dry-run explanations only:
+CertShield includes **Validate Exposure (Safe)** views per finding. These dry-run views show preconditions met, missing evidence, possible impact, blast radius, confidence, and remediation that would break the exposure path.
+
+They are intentionally read-only:
 - No live requests
 - No credentials used
 - No privilege changes
 - No attack execution
+- No certificate enrollment or relay activity
 
 ## Supported Detection Categories (Defensive)
-- ESC1-like (client-auth + requester-controlled identity + broad enroll + weak safeguards)
-- ESC2-like (Any Purpose / broad EKU semantics)
-- ESC3-like (Enrollment Agent exposure)
-- ESC4/5/6/7/8-like posture coverage tracking when data is partial
-- Tier-0 PKI posture coverage checks
+- ESC1-like: client-auth capable templates with requester-controlled subject/SAN, broad enrollment, and low/no approval safeguards.
+- ESC2-like: Any Purpose / overly broad EKU semantics.
+- ESC3-like: Enrollment Agent EKU exposure with dangerous enrollment access.
+- ESC4-like: writable template object ACLs when collector-provided ACL metadata is available.
+- ESC5-like: PKI object control paths when extended directory ACL metadata is available.
+- ESC6-like: CA-level requester-supplied SAN policy exposure when CA policy flags are available.
+- ESC7-like: dangerous CA management / approval role assignments when CA role metadata is available.
+- ESC8-like: web enrollment / CES / CEP relay-prone posture when service metadata is available.
+- Tier-0 posture: broad or risky PKI administration delegation when privileged access metadata is available.
 
 ## Platform
 - Recommended: **Rocky Linux 9**
@@ -92,10 +98,20 @@ Optional:
 - `-SkipIssued`
 - `-DebugPayload`
 
+The collector additively attempts to map templates published by Enterprise CAs via AD Enrollment Services objects. If AD metadata or RSAT is unavailable, CertShield marks the related categories as `not_assessed` or `insufficient_data` instead of failing ingestion.
+
 ### Backward Compatibility Note
 Collector keeps the broad fallback permission for compatibility:
 `Authenticated Users` + `can_enroll=true`.
 This preserves current lab finding visibility.
+
+## Confidence and Coverage States
+- `detected`: evidence matched a defensive rule.
+- `not_detected`: enough metadata was collected for that category and no exposure was found.
+- `not_assessed`: collector did not attempt or could not collect required metadata.
+- `insufficient_data`: some related data was present, but not enough to make a confident determination.
+
+Confidence levels are conservative and reflect how direct the evidence is. For example, template EKU + permission evidence is higher confidence than posture hints that require richer CA or directory ACL data.
 
 ## Testing
 ```bash

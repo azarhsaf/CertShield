@@ -17,21 +17,24 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$CollectorVersion = 'collector-ps51-1.1'
+$CollectorVersion = 'collector-ps51-1.2'
 
 function Write-Step { param([string]$Message) Write-Host "[CertShield] $Message" }
 
 function Get-CertificateAuthorities {
+  param([hashtable]$PublishedMap)
   $cas = @()
   try {
     $lines = certutil -config - -ping 2>$null
     foreach ($line in $lines) {
       if ($line -match '^Connecting to (.+)\\(.+)$') {
+        $published = @()
+        if ($PublishedMap -and $PublishedMap.ContainsKey($matches[2])) { $published = @($PublishedMap[$matches[2]]) }
         $cas += [pscustomobject]@{
           name = $matches[2]
           dns_name = $matches[1]
           status = 'online'
-          config = @{ web_enrollment_assessed = $false; ca_policy_flags_assessed = $false; published_templates = @() }
+          config = @{ web_enrollment_assessed = $false; ca_policy_flags_assessed = $false; ca_roles_assessed = $false; published_templates = @($published) }
         }
       }
     }
@@ -46,7 +49,25 @@ function Test-ADModule {
   return $true
 }
 
+
+function Get-PublishedTemplateMap {
+  $map = @{}
+  if (-not (Test-ADModule)) { return $map }
+  try {
+    $root = Get-ADRootDSE
+    $base = "CN=Enrollment Services,CN=Public Key Services,CN=Services,$($root.configurationNamingContext)"
+    $services = Get-ADObject -Filter * -SearchBase $base -Properties certificateTemplates,dNSHostName
+    foreach ($svc in $services) {
+      $templates = @()
+      if ($svc.certificateTemplates) { $templates = @($svc.certificateTemplates) }
+      $map[[string]$svc.Name] = @($templates)
+    }
+  } catch { Write-Warning "Published template mapping unavailable: $_" }
+  return $map
+}
+
 function Get-Templates {
+  param([hashtable]$PublishedMap)
   $templates = @()
   if (-not (Test-ADModule)) { return @($templates) }
   try {
@@ -60,6 +81,12 @@ function Get-Templates {
       $authSig = 0; if ($o.'msPKI-RA-Signature') { $authSig = [int]$o.'msPKI-RA-Signature' }
       $eku = @(); if ($o.'pKIExtendedKeyUsage') { $eku = @($o.'pKIExtendedKeyUsage') }
       $display = $o.Name; if ($o.displayName) { $display = [string]$o.displayName }
+      $publishedTo = @()
+      if ($PublishedMap) {
+        foreach ($caName in $PublishedMap.Keys) {
+          if (@($PublishedMap[$caName]) -contains $o.Name) { $publishedTo += [string]$caName }
+        }
+      }
       $templates += [pscustomobject]@{
         name = [string]$o.Name
         display_name = $display
@@ -69,7 +96,7 @@ function Get-Templates {
         authorized_signatures = $authSig
         validity_days = 365
         renewal_days = 30
-        published_to = @()
+        published_to = @($publishedTo)
         permissions = @([pscustomobject]@{ principal = 'Authenticated Users'; can_enroll = $true; can_autoenroll = $false })
         raw = @{ acl_assessed = $false; acl_details = @() }
       }
@@ -104,13 +131,16 @@ function Get-IssuedCertificates {
 
 if (-not $DomainName) { $DomainName = 'unknown.local' }
 $assessmentHints = @{ esc6_ca_policy = 'not_assessed'; esc7_ca_roles = 'not_assessed'; esc8_web_enrollment = 'insufficient_data'; esc4_template_acl = 'insufficient_data' }
+$publishedMap = Get-PublishedTemplateMap
+$cas = @(Get-CertificateAuthorities -PublishedMap $publishedMap)
+$templates = @(Get-Templates -PublishedMap $publishedMap)
 
 $payload = [ordered]@{
   domain_name = $DomainName
   source_host = $env:COMPUTERNAME
   collector_version = $CollectorVersion
-  cas = @(Get-CertificateAuthorities)
-  templates = @(Get-Templates)
+  cas = @($cas)
+  templates = @($templates)
   issued_certificates = @(Get-IssuedCertificates)
   assessment_hints = $assessmentHints
 }
