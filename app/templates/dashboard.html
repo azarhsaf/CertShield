@@ -6,7 +6,7 @@
   {% if scan %}<a class="btn btn-light btn-sm" href="/pki-posture">Open Posture</a>{% endif %}
 </div>
 {% if scan %}
-{% if posture.limited_visibility or health.limited_visibility %}<div class="alert alert-warning compact-alert">Limited Visibility: some required PKI health/posture data was not assessed. Scores are capped where appropriate.</div>{% endif %}
+{% if posture.limited_visibility or health.limited_visibility %}<div class="alert alert-warning compact-alert">Limited Visibility: some required PKI health/posture data was not assessed or only partially tested. Scores are capped where appropriate.</div>{% endif %}
 <div class="metric-grid mb-3">
   <div class="metric-card score-card"><div class="metric-title">Overall PKI Posture</div><div class="metric-value">{{posture.score if posture.score is not none else 'Unknown'}}</div><div>{{status_badge(posture.status)}}</div></div>
   <div class="metric-card"><div class="metric-title">PKI Health Score</div><div class="metric-value">{{health.score if health.score is not none else 'Unknown'}}</div><div>{{status_badge(health.status)}}</div></div>

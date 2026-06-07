@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 
 from app.models.entities import CertificateAuthority, CertificateTemplate, IssuedCertificate
+from app.services.pki_hierarchy import key_protection
 from app.services.risk_engine import _has_any_purpose, _has_client_auth
 
 
@@ -189,6 +190,41 @@ def _ca_practices(ca: CertificateAuthority) -> list[dict]:
     return items
 
 
+def _key_protection_practice(ca: CertificateAuthority) -> dict:
+    config = ca.config_json or {}
+    ca_type = str(config.get("ca_type", "issuing")).lower()
+    role = "Root CA" if ca_type == "root" else "Issuing CA"
+    kp = key_protection(config)
+    if kp["status"] == "HSM Protected":
+        status = "Pass"
+        severity = "Low"
+        recommendation = "Continue validating HSM/external key custody and administrative controls."
+        reason = None
+    elif kp["status"] == "Software Key":
+        status = "Fail" if role == "Root CA" else "Warning"
+        severity = "Critical" if role == "Root CA" else "High"
+        recommendation = "Move high-value CA keys to HSM/external KMS where feasible and document compensating controls."
+        reason = None
+    else:
+        status = "Not Assessed"
+        severity = "High"
+        recommendation = "Collect CA crypto provider / key storage evidence and classify key protection."
+        reason = "Collector did not provide CA key protection evidence."
+    return _bp(
+        "Key Protection",
+        f"{role} key protection should be known and appropriate",
+        status,
+        severity,
+        ca.name,
+        kp,
+        "CA private key custody is a core PKI trust dependency.",
+        "Software or unknown CA key storage can increase compromise and recovery risk.",
+        recommendation,
+        "medium" if kp["status"] != "Unknown" else "low",
+        not_assessed_reason=reason,
+    )
+
+
 def _template_practices(template: CertificateTemplate) -> list[dict]:
     raw = template.raw_json or {}
     permission_data_available = bool(template.permissions) or raw.get("permissions_assessed") is True
@@ -297,6 +333,7 @@ def assess_best_practices(
     items: list[dict] = []
     for ca in cas:
         items.extend(_ca_practices(ca))
+        items.append(_key_protection_practice(ca))
     for template in templates:
         items.extend(_template_practices(template))
 
@@ -363,6 +400,23 @@ def assess_best_practices(
     grouped: dict[str, list[dict]] = {}
     for item in items:
         grouped.setdefault(item["category"], []).append(item)
+    summary_cards = []
+    for category, category_items in grouped.items():
+        category_counts = Counter(item["status"] for item in category_items)
+        worst = "Fail" if category_counts.get("Fail") else "Warning" if category_counts.get("Warning") else "Not Assessed" if category_counts.get("Not Assessed") else "Pass"
+        summary_cards.append(
+            {
+                "category": category,
+                "status": worst,
+                "total": len(category_items),
+                "fail": category_counts.get("Fail", 0),
+                "warning": category_counts.get("Warning", 0),
+                "not_assessed": category_counts.get("Not Assessed", 0),
+                "recommendation": next((item["recommendation"] for item in category_items if item["status"] in {"Fail", "Warning", "Not Assessed"}), "No immediate gap detected."),
+            }
+        )
+    top_gaps = [item for item in items if item["status"] in {"Fail", "Warning"}]
+    top_gaps.sort(key=lambda item: {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}.get(item["severity"], 4))
     return {
         "score": score,
         "status": status,
@@ -371,4 +425,6 @@ def assess_best_practices(
         "counts": counts,
         "items": items,
         "grouped": grouped,
+        "summary_cards": summary_cards,
+        "top_gaps": top_gaps[:8],
     }

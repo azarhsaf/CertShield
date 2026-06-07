@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% from 'macros/evidence.html' import evidence_table, status_badge %}
 {% block content %}
-<div class="page-title"><div><div class="eyebrow">Governance and Architecture</div><h1>PKI Best Practices</h1><p>Is the PKI designed and operated according to accepted security and governance standards?</p></div></div>
+<div class="page-title"><div><div class="eyebrow">Governance and Architecture</div><h1>PKI Best Practices</h1><p>High-level PKI design and operations gaps. Detailed template evidence remains in Templates and Findings.</p></div></div>
 {% if best_practices %}
 {% if best_practices.limited_visibility %}<div class="alert alert-warning compact-alert">Limited Visibility: more than half of best-practice checks are Not Assessed, so the score is capped.</div>{% endif %}
 <div class="metric-grid mb-3">
@@ -11,9 +11,12 @@
   <div class="metric-card"><div class="metric-title">Warning</div><div class="metric-value">{{best_practices.counts.Warning or 0}}</div></div>
   <div class="metric-card"><div class="metric-title">Not Assessed</div><div class="metric-value">{{best_practices.counts['Not Assessed'] or 0}}</div></div>
 </div>
-<div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">Score Explanation</h2><ul class="compact-list">{% for item in best_practices.score_explanation %}<li>{{item}}</li>{% else %}<li>No score penalties.</li>{% endfor %}</ul></div></div>
+<div class="best-card-grid mb-3">
+{% for card in best_practices.summary_cards %}<div class="card card-panel"><div class="card-body compact-card"><div class="d-flex justify-content-between"><h2 class="section-title">{{card.category}}</h2>{{status_badge(card.status)}}</div><div class="small text-secondary">{{card.total}} checks · {{card.fail}} fail · {{card.warning}} warning · {{card.not_assessed}} not assessed</div><p class="small mt-2 mb-0">{{card.recommendation}}</p></div></div>{% endfor %}
+</div>
+<div class="row g-3 mb-3"><div class="col-lg-6"><div class="card card-panel"><div class="card-body compact-card"><h2 class="section-title">Top Gaps</h2><ul class="compact-list">{% for item in best_practices.top_gaps %}<li><strong>{{item.category}}</strong>: {{item.title}} — {{item.recommendation}} <a href="/findings">Details</a></li>{% else %}<li>No high-level gaps detected.</li>{% endfor %}</ul></div></div></div><div class="col-lg-6"><div class="card card-panel"><div class="card-body compact-card"><h2 class="section-title">Score Explanation</h2><ul class="compact-list">{% for item in best_practices.score_explanation %}<li>{{item}}</li>{% else %}<li>No score penalties.</li>{% endfor %}</ul></div></div></div></div>
 {% for category, items in best_practices.grouped.items() %}
-<div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">{{category}}</h2><div class="table-responsive"><table class="table modern-table table-sm align-middle"><thead><tr><th>Status</th><th>Best Practice</th><th>Severity</th><th>Affected</th><th>Evidence</th><th>Recommendation</th><th>Confidence</th></tr></thead><tbody>{% for item in items %}<tr><td>{{status_badge(item.status)}}</td><td class="text-wrap-sm"><strong>{{item.title}}</strong><div class="small text-secondary">{{item.business_impact}}</div>{% if item.not_assessed_reason %}<div class="small text-warning">{{item.not_assessed_reason}}</div>{% endif %}</td><td>{{item.severity}}</td><td class="text-wrap-sm">{{item.affected_object}}</td><td class="evidence-cell">{{evidence_table(item.evidence)}}</td><td class="text-wrap-sm">{{item.recommendation}}</td><td>{{item.confidence}}</td></tr>{% endfor %}</tbody></table></div></div></div>
+<div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">{{category}}</h2><div class="table-responsive"><table class="table modern-table table-sm align-middle"><thead><tr><th>Status</th><th>Gap / Control</th><th>Severity</th><th>Affected</th><th>Evidence</th><th>Recommendation</th></tr></thead><tbody>{% for item in items %}<tr><td>{{status_badge(item.status)}}</td><td class="text-wrap-sm"><strong>{{item.title}}</strong><div class="small text-secondary">{{item.business_impact}}</div>{% if item.not_assessed_reason %}<div class="small text-warning">{{item.not_assessed_reason}}</div>{% endif %}</td><td>{{item.severity}}</td><td class="text-wrap-sm">{{item.affected_object}}</td><td class="evidence-cell">{{evidence_table(item.evidence)}}</td><td class="text-wrap-sm">{{item.recommendation}}</td></tr>{% endfor %}</tbody></table></div></div></div>
 {% endfor %}
 {% else %}<div class="empty-state compact-card">No best-practice assessment available yet.</div>{% endif %}
 {% endblock %}

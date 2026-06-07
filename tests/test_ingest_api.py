@@ -37,6 +37,7 @@ def test_ingest_and_dashboard_flow():
         assert 'CertShield PKI Posture Management' in login.text
 
         pages = (
+            ('/pki-hierarchy', 'PKI Hierarchy'),
             ('/pki-posture', 'Overall Posture Score'),
             ('/pki-health', 'PKI Health'),
             ('/best-practices', 'Best Practice Score'),
@@ -66,6 +67,13 @@ def test_ingest_and_dashboard_flow():
         assert 'health_issues' in report
         assert report['executive_summary']['pki_posture_score'] is not None
         assert report['executive_summary']['pki_posture_score'] <= 69
+
+        hierarchy = client.get('/pki-hierarchy')
+        assert 'CORP-ROOT-CA' in hierarchy.text
+        assert 'CORP-ISSUING-02' in hierarchy.text
+        assert 'LAB-ROOT-CA' in hierarchy.text
+        assert 'PKI #1' in hierarchy.text
+        assert 'PKI #2' in hierarchy.text
 
 
 def test_certificates_page_explains_empty_collection():

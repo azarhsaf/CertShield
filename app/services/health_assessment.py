@@ -118,6 +118,9 @@ def _score(items: list[dict]) -> tuple[int | None, str, list[str]]:
         elif category == "CRL Health" and status == "Warning":
             score -= 25
             explanations.append(f"-25: CRL publication has a warning for {item['affected_object']}.")
+        elif category == "CRL Health" and status == "Present / Not Tested":
+            score -= 8
+            explanations.append(f"-8: CRL path is present but reachability was not tested for {item['affected_object']}.")
         elif category == "CRL Health" and status == "Not Assessed":
             score -= 20
             explanations.append(f"-20: CRL/CDP freshness was not assessed for {item['affected_object']}.")
@@ -127,6 +130,9 @@ def _score(items: list[dict]) -> tuple[int | None, str, list[str]]:
         elif category == "AIA Health" and status == "Warning":
             score -= 15
             explanations.append(f"-15: AIA configuration warning for {item['affected_object']}.")
+        elif category == "AIA Health" and status == "Present / Not Tested":
+            score -= 3
+            explanations.append(f"-3: AIA URL is present but reachability was not tested for {item['affected_object']}.")
         elif category == "AIA Health" and status == "Not Assessed":
             score -= 10
             explanations.append(f"-10: AIA chain retrieval was not assessed for {item['affected_object']}.")
@@ -153,9 +159,18 @@ def _score(items: list[dict]) -> tuple[int | None, str, list[str]]:
         score -= penalty
         explanations.append(f"-{penalty}: Critical health checks were not assessed.")
     limited_visibility = not_assessed_ratio > 0.5
-    if limited_visibility:
+    if limited_visibility or not_assessed_ratio > 0.4:
         score = min(score, 69)
-        explanations.append("Score capped at 69 because more than half of health checks are Not Assessed.")
+        explanations.append("Score capped at 69 because more than 40% of health checks are Not Assessed.")
+    if any(item["category"] == "CA Certificate Health" and item["status"] == "Not Assessed" for item in items):
+        score = min(score, 79)
+        explanations.append("Score capped at 79 because CA certificate expiry is Not Assessed.")
+    if any(item["category"] == "CRL Health" and item["status"] == "Not Assessed" for item in items):
+        score = min(score, 79)
+        explanations.append("Score capped at 79 because CRL health is Not Assessed.")
+    if any(item["category"] == "CRL Health" and item["status"] == "Critical" for item in items):
+        score = min(score, 39)
+        explanations.append("Score capped at 39 because CRL health is Critical.")
 
     score = max(0, min(100, score))
     if score >= 90 and not limited_visibility:
@@ -168,17 +183,21 @@ def _score(items: list[dict]) -> tuple[int | None, str, list[str]]:
 
 
 def _ca_certificate_item(ca: CertificateAuthority, config: dict) -> tuple[dict, dict | None]:
-    expires_at = config.get("certificate_expires_at") or config.get("ca_certificate_expires_at")
+    cert = config.get("ca_certificate") if isinstance(config.get("ca_certificate"), dict) else {}
+    expires_at = cert.get("not_after") or config.get("certificate_expires_at") or config.get("ca_certificate_expires_at")
     days = _days_until(expires_at)
     status = _expiry_status(days)
     evidence = {
         "expires_at": expires_at or "Not collected",
         "days_remaining": days if days is not None else "Not collected",
-        "subject": config.get("certificate_subject") or config.get("subject") or "Not collected",
-        "issuer": config.get("certificate_issuer") or config.get("issuer") or "Not collected",
-        "signature_algorithm": config.get("signature_algorithm") or "Not collected",
-        "key_size": config.get("key_size") or "Not collected",
-        "chain_complete": _bool_text(config.get("chain_complete")),
+        "subject": cert.get("subject") or config.get("certificate_subject") or config.get("subject") or "Not collected",
+        "issuer": cert.get("issuer") or config.get("certificate_issuer") or config.get("issuer") or "Not collected",
+        "serial_number": cert.get("serial_number") or config.get("serial_number") or "Not collected",
+        "thumbprint": cert.get("thumbprint") or config.get("thumbprint") or "Not collected",
+        "not_before": cert.get("not_before") or config.get("certificate_not_before") or "Not collected",
+        "signature_algorithm": cert.get("signature_algorithm") or config.get("signature_algorithm") or "Not collected",
+        "key_size": cert.get("key_size") or config.get("key_size") or "Not collected",
+        "chain_complete": _bool_text(cert.get("chain_complete") if "chain_complete" in cert else config.get("chain_complete")),
     }
     item = _item(
         "CA Certificate Health",
@@ -197,7 +216,7 @@ def _ca_certificate_item(ca: CertificateAuthority, config: dict) -> tuple[dict, 
 
 def _crl_item(ca: CertificateAuthority, config: dict) -> tuple[dict, dict | None]:
     section = config.get("crl") if isinstance(config.get("crl"), dict) else {}
-    urls = _list_value(section.get("urls"), section.get("url"), config.get("crl_urls"), config.get("cdp_urls"))
+    urls = _list_value(section.get("urls"), section.get("http_urls"), section.get("ldap_urls"), section.get("url"), config.get("crl_urls"), config.get("cdp_urls"))
     assessed = section.get("assessed") if "assessed" in section else config.get("crl_assessed")
     configured = section.get("configured") if "configured" in section else config.get("crl_configured")
     reachable = section.get("reachable") if "reachable" in section else config.get("crl_reachable")
@@ -210,6 +229,8 @@ def _crl_item(ca: CertificateAuthority, config: dict) -> tuple[dict, dict | None
         status = "Warning"
     elif reachable is False or (days is not None and days < 0):
         status = "Critical"
+    elif reachable is not True and days is not None and days >= 0:
+        status = "Present / Not Tested"
     elif reachable is not True:
         status = "Not Assessed"
     elif days is not None and days <= 3:
@@ -221,9 +242,14 @@ def _crl_item(ca: CertificateAuthority, config: dict) -> tuple[dict, dict | None
 
     evidence = {
         "crl_urls": urls or ["Not collected"],
+        "http_urls": section.get("http_urls") or [],
+        "ldap_urls": section.get("ldap_urls") or [],
         "reachable": _bool_text(reachable),
+        "this_update": section.get("this_update") or "Not collected",
         "next_update": next_update or "Not collected",
         "days_remaining": days if days is not None else "Not collected",
+        "tested_urls": section.get("tested_urls") or [],
+        "errors": section.get("errors") or [],
         "delta_crl": _bool_text(section.get("delta_crl")),
         "source": section.get("source") or "Not collected",
     }
@@ -244,7 +270,7 @@ def _crl_item(ca: CertificateAuthority, config: dict) -> tuple[dict, dict | None
 
 def _aia_item(ca: CertificateAuthority, config: dict) -> dict:
     section = config.get("aia") if isinstance(config.get("aia"), dict) else {}
-    urls = _list_value(section.get("urls"), section.get("url"), config.get("aia_urls"))
+    urls = _list_value(section.get("urls"), section.get("ca_issuer_urls"), section.get("url"), config.get("aia_urls"))
     assessed = section.get("assessed") if "assessed" in section else config.get("aia_assessed")
     configured = section.get("configured") if "configured" in section else config.get("aia_configured")
     reachable = section.get("reachable") if "reachable" in section else config.get("aia_reachable")
@@ -257,7 +283,7 @@ def _aia_item(ca: CertificateAuthority, config: dict) -> dict:
     elif reachable is False or chain_retrieval is False:
         status = "Critical"
     elif reachable is not True and chain_retrieval is not True:
-        status = "Not Assessed"
+        status = "Present / Not Tested"
     else:
         status = "Healthy"
 
@@ -268,8 +294,12 @@ def _aia_item(ca: CertificateAuthority, config: dict) -> dict:
         ca.name,
         {
             "aia_urls": urls or ["Not collected"],
+            "ca_issuer_urls": section.get("ca_issuer_urls") or urls or [],
+            "ocsp_urls": section.get("ocsp_urls") or [],
             "reachable": _bool_text(reachable),
             "chain_retrieval": _bool_text(chain_retrieval),
+            "tested_urls": section.get("tested_urls") or [],
+            "errors": section.get("errors") or [],
             "source": section.get("source") or "Not collected",
         },
         "Publish reachable AIA URLs so clients can build certificate chains reliably.",
@@ -439,7 +469,7 @@ def assess_pki_health(
 
     score, status, explanations = _score(items)
     counts = Counter(item["status"] for item in items)
-    limited_visibility = bool(items) and counts.get("Not Assessed", 0) / len(items) > 0.5
+    limited_visibility = bool(items) and counts.get("Not Assessed", 0) / len(items) > 0.4
     return {
         "score": score,
         "status": "Limited Visibility" if limited_visibility and status != "Unknown" else status,

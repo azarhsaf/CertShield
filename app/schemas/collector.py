@@ -40,6 +40,8 @@ class CertIn(BaseModel):
 
 
 class CollectorPayload(BaseModel):
+    collector_type: str = "adcs"
+    schema_version: str = "1.1"
     domain_name: str
     source_host: str
     collector_version: str = "legacy"

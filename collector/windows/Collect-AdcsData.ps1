@@ -45,6 +45,78 @@ function Extract-Urls {
   return @($urls | Select-Object -Unique)
 }
 
+
+function Get-RegistryUrls {
+  param([string]$ConfigString, [string]$RegPath)
+  $urls = @()
+  try {
+    $lines = certutil -config $ConfigString -getreg $RegPath 2>$null
+    foreach ($line in $lines) { $urls += Extract-Urls -Text $line }
+  } catch { }
+  return @($urls | Select-Object -Unique)
+}
+
+function Test-HttpUrl {
+  param([string]$Url)
+  try {
+    $request = [System.Net.WebRequest]::Create($Url)
+    $request.Method = 'GET'
+    $request.Timeout = 5000
+    $response = $request.GetResponse()
+    $stream = $response.GetResponseStream()
+    $ms = New-Object System.IO.MemoryStream
+    $stream.CopyTo($ms)
+    $response.Close()
+    return @{ ok = $true; bytes = $ms.ToArray(); error = $null }
+  } catch { return @{ ok = $false; bytes = $null; error = [string]$_ } }
+}
+
+function Get-CrlFreshness {
+  param([string[]]$Urls)
+  $tested = @(); $errors = @(); $thisUpdate = $null; $nextUpdate = $null; $reachable = $null
+  foreach ($url in $Urls) {
+    if ($url -notmatch '^https?://') { continue }
+    $tested += $url
+    $result = Test-HttpUrl -Url $url
+    if ($result.ok) {
+      $reachable = $true
+      $tmp = [System.IO.Path]::GetTempFileName()
+      try {
+        [System.IO.File]::WriteAllBytes($tmp, $result.bytes)
+        $crl = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
+        $dump = certutil -dump $tmp 2>$null
+        foreach ($line in $dump) {
+          if ($line -match 'ThisUpdate:\s*(.+)$') { $thisUpdate = $matches[1].Trim() }
+          if ($line -match 'NextUpdate:\s*(.+)$') { $nextUpdate = $matches[1].Trim() }
+        }
+      } catch { $errors += "CRL parse failed for $url: $_" } finally { Remove-Item -Path $tmp -Force -ErrorAction SilentlyContinue }
+      break
+    } else { $reachable = $false; $errors += "$url : $($result.error)" }
+  }
+  return @{ reachable = $reachable; tested_urls = @($tested); errors = @($errors); this_update = $thisUpdate; next_update = $nextUpdate }
+}
+
+function Get-KeyProtectionHint {
+  param([string]$ConfigString)
+  $provider = $null
+  $evidence = @()
+  try {
+    $lines = certutil -config $ConfigString -getreg CA\CSP 2>$null
+    foreach ($line in $lines) {
+      $evidence += [string]$line
+      if ($line -match 'Provider\s*=\s*(.+)$') { $provider = $matches[1].Trim() }
+      elseif ($line -match 'ProviderName\s*=\s*(.+)$') { $provider = $matches[1].Trim() }
+    }
+  } catch { $evidence += "CSP query failed: $_" }
+  $storage = 'unknown'; $hsm = 'unknown'
+  if ($provider) {
+    $p = $provider.ToLowerInvariant()
+    if ($p -match 'nshield|ncipher|thales|safenet|luna|utimaco|fortanix|azure key vault|hsm') { $storage = 'hsm'; $hsm = $true }
+    elseif ($p -match 'microsoft software|microsoft strong|microsoft enhanced|software') { $storage = 'software'; $hsm = $false }
+  }
+  return @{ provider = $provider; storage = $storage; hsm_detected = $hsm; evidence = @($evidence) }
+}
+
 function Get-CaCertificateHints {
   param([string]$ConfigString)
   $hint = @{
@@ -64,11 +136,12 @@ function Get-CaCertificateHints {
     $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($tmp)
     $hint.ca_certificate_collected = $true
     $hint.config.certificate_collected = $true
+    $hint.config.ca_certificate = @{ subject = $cert.Subject; issuer = $cert.Issuer; serial_number = $cert.SerialNumber; thumbprint = $cert.Thumbprint; not_before = $cert.NotBefore.ToString('yyyy-MM-ddTHH:mm:ss'); not_after = $cert.NotAfter.ToString('yyyy-MM-ddTHH:mm:ss'); signature_algorithm = $cert.SignatureAlgorithm.FriendlyName; key_size = $null; chain_complete = $null }
     $hint.config.certificate_expires_at = $cert.NotAfter.ToString('yyyy-MM-ddTHH:mm:ss')
     $hint.config.certificate_subject = $cert.Subject
     $hint.config.certificate_issuer = $cert.Issuer
     $hint.config.signature_algorithm = $cert.SignatureAlgorithm.FriendlyName
-    try { $hint.config.key_size = $cert.PublicKey.Key.KeySize } catch { $hint.config.key_size = $null }
+    try { $hint.config.key_size = $cert.PublicKey.Key.KeySize; $hint.config.ca_certificate.key_size = $cert.PublicKey.Key.KeySize } catch { $hint.config.key_size = $null }
     $crlUrls = @(); $aiaUrls = @(); $ocspUrls = @()
     foreach ($ext in $cert.Extensions) {
       $formatted = $ext.Format($true)
@@ -80,12 +153,22 @@ function Get-CaCertificateHints {
         }
       }
     }
+    $crlUrls += Get-RegistryUrls -ConfigString $ConfigString -RegPath 'CA\CRLPublicationURLs'
+    $aiaUrls += Get-RegistryUrls -ConfigString $ConfigString -RegPath 'CA\CACertPublicationURLs'
     $crlUrls = @($crlUrls | Select-Object -Unique)
     $aiaUrls = @($aiaUrls | Select-Object -Unique)
     $ocspUrls = @($ocspUrls | Select-Object -Unique)
-    if (-not $SkipCrl) { $hint.config.crl = @{ assessed = $true; configured = ($crlUrls.Count -gt 0); reachable = $null; urls = @($crlUrls); next_update = $null; source = 'ca certificate CDP extension' } }
-    $hint.config.aia = @{ assessed = $true; configured = ($aiaUrls.Count -gt 0); reachable = $null; urls = @($aiaUrls); source = 'ca certificate AIA extension' }
-    $hint.config.ocsp = @{ assessed = $true; configured = ($ocspUrls.Count -gt 0); reachable = $null; urls = @($ocspUrls); responder_status = 'not_tested' }
+    $crlHttp = @($crlUrls | Where-Object { $_ -match '^https?://' })
+    $crlLdap = @($crlUrls | Where-Object { $_ -match '^ldap://' })
+    $aiaHttp = @($aiaUrls | Where-Object { $_ -match '^https?://' })
+    $aiaLdap = @($aiaUrls | Where-Object { $_ -match '^ldap://' })
+    $crlFresh = Get-CrlFreshness -Urls $crlHttp
+    if (-not $SkipCrl) { $hint.config.crl = @{ assessed = $true; configured = ($crlUrls.Count -gt 0); reachable = $crlFresh.reachable; urls = @($crlUrls); http_urls = @($crlHttp); ldap_urls = @($crlLdap); this_update = $crlFresh.this_update; next_update = $crlFresh.next_update; tested_urls = @($crlFresh.tested_urls); errors = @($crlFresh.errors); source = 'ca certificate CDP extension and CA registry' } }
+    $aiaReachable = $null; $aiaTested = @(); $aiaErrors = @()
+    foreach ($url in $aiaHttp) { $aiaTested += $url; $r = Test-HttpUrl -Url $url; if ($r.ok) { $aiaReachable = $true; break } else { $aiaReachable = $false; $aiaErrors += "$url : $($r.error)" } }
+    $hint.config.aia = @{ assessed = $true; configured = ($aiaUrls.Count -gt 0); reachable = $aiaReachable; urls = @($aiaUrls); ca_issuer_urls = @($aiaUrls); ocsp_urls = @($ocspUrls); tested_urls = @($aiaTested); errors = @($aiaErrors); source = 'ca certificate AIA extension and CA registry' }
+    $hint.config.ocsp = @{ assessed = $true; configured = ($ocspUrls.Count -gt 0); reachable = $null; urls = @($ocspUrls); status = 'not_tested'; errors = @() }
+    $hint.config.key_protection = Get-KeyProtectionHint -ConfigString $ConfigString
   } catch {
     $hint.config.certificate_collection_reason = "CA certificate query failed: $_"
   } finally {
@@ -196,8 +279,9 @@ function Get-IssuedCertificates {
     }
     if ($cur.ContainsKey('request_id')) { $out += [pscustomobject]$cur }
     $HealthCoverage['issued_certificates_collected'] = ($out.Count -gt 0)
+    $HealthCoverage['issued_certificates_count'] = $out.Count
     if ($out.Count -eq 0) { $HealthCoverage['issued_certificates_reason'] = 'certutil returned zero issued certificate rows' }
-  } catch { $HealthCoverage['issued_certificates_collected'] = $false; $HealthCoverage['issued_certificates_reason'] = "certutil issued certificate query failed: $_"; Write-Warning "Issued certificate query failed: $_" }
+  } catch { $HealthCoverage['issued_certificates_collected'] = $false; $HealthCoverage['issued_certificates_count'] = 0; $HealthCoverage['issued_certificates_error'] = "certutil issued certificate query failed: $_"; $HealthCoverage['issued_certificates_reason'] = "certutil issued certificate query failed: $_"; Write-Warning "Issued certificate query failed: $_" }
   if ($out.Count -gt $RecentRequestLimit) { $out = $out | Select-Object -First $RecentRequestLimit }
   return @($out)
 }
@@ -211,6 +295,8 @@ $templates = @(Get-Templates -PublishedMap $publishedMap -HealthCoverage $health
 $issued = @(Get-IssuedCertificates -HealthCoverage $healthCoverage)
 
 $payload = [ordered]@{
+  collector_type = 'adcs'
+  schema_version = '1.1'
   domain_name = $DomainName
   source_host = $env:COMPUTERNAME
   collector_version = $CollectorVersion

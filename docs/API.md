@@ -42,3 +42,17 @@ The JSON report includes:
 `GET /findings/{finding_id}/simulate`
 
 UI-only read-only exposure validation page. No certificate requests, credential use, relay workflows, or privilege-changing operations are performed.
+
+## Collector schema version 1.1 additions
+
+Collectors should include:
+- `collector_type`: `adcs`, `ejbca`, `generic`, or future `tls`.
+- `schema_version`: normalized payload version, currently `1.1`.
+- `health_coverage`: booleans and errors describing whether CA certificate,
+  CRL, AIA, OCSP, issued certificate, template ACL, and CA registry/config data
+  were collected.
+
+CA `config` may include normalized `ca_certificate`, `crl`, `aia`, `ocsp`, and
+`key_protection` objects. Missing values should be represented as explicit
+`configured=false`, `status=not_assessed`, or `reason` values instead of being
+omitted.

@@ -47,5 +47,5 @@
 {%- endmacro %}
 
 {% macro status_badge(status) -%}
-  <span class="badge status-{{ (status or 'unknown')|lower|replace(' ', '-')|replace('_', '-') }}">{{ status or 'Unknown' }}</span>
+  <span class="badge status-{{ (status or 'unknown')|lower|replace(' ', '-')|replace('_', '-')|replace('/', '-') }}">{{ status or 'Unknown' }}</span>
 {%- endmacro %}

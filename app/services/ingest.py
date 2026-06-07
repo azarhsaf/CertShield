@@ -119,7 +119,9 @@ class IngestService:
             "findings": len(findings),
             "severity": dict(severity_counter),
             "by_category": dict(esc_counter),
+            "collector_type": payload.collector_type,
             "collector_version": payload.collector_version,
+            "schema_version": payload.schema_version,
             "health_coverage": payload.health_coverage,
         }
         health = assess_pki_health(
@@ -149,7 +151,9 @@ class IngestService:
                 details_json={
                     "scan_id": scan.id,
                     "domain": payload.domain_name,
+                    "collector_type": payload.collector_type,
                     "collector_version": payload.collector_version,
+                    "schema_version": payload.schema_version,
                 },
             )
         )

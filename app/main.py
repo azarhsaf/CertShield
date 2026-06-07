@@ -30,6 +30,7 @@ from app.models.entities import (
 )
 from app.schemas.collector import CollectorPayload
 from app.services.ingest import IngestService
+from app.services.pki_hierarchy import build_pki_hierarchy
 
 SEVERITY_ORDER = ["Critical", "High", "Medium", "Low"]
 
@@ -77,7 +78,13 @@ def _coverage_counts(db: Session, scan_id: int) -> dict[str, int]:
 
 
 def _nav_context(request: Request) -> dict:
-    return {"request": request, "current_user": request.session.get("user")}
+    return {
+        "request": request,
+        "current_user": request.session.get("user"),
+        "app_version": settings.app_version,
+        "build_name": settings.build_name,
+        "build_label": settings.build_label,
+    }
 
 
 def _assessment(scan: Scan | None, key: str, default):
@@ -211,6 +218,18 @@ def render_page(request: Request, name: str, query, key: str, db: Session):
     return templates.TemplateResponse(name, ctx)
 
 
+@app.get("/pki-hierarchy", response_class=HTMLResponse)
+def pki_hierarchy_page(request: Request, db: Session = Depends(get_db)):
+    ensure_authenticated(request)
+    latest_scan = _latest_scan(db)
+    cas = db.query(CertificateAuthority).filter_by(scan_id=latest_scan.id).all() if latest_scan else []
+    health = _assessment(latest_scan, "health", {})
+    best_practices = _assessment(latest_scan, "best_practices", {})
+    ctx = _nav_context(request)
+    ctx.update({"scan": latest_scan, "hierarchy": build_pki_hierarchy(cas, health, best_practices)})
+    return templates.TemplateResponse("pki_hierarchy.html", ctx)
+
+
 @app.get("/pki-posture", response_class=HTMLResponse)
 def pki_posture_page(request: Request, db: Session = Depends(get_db)):
     ensure_authenticated(request)
@@ -331,6 +350,9 @@ def settings_page(request: Request, db: Session = Depends(get_db)):
             "scan": latest_scan,
             "coverage": latest_scan.coverage_json if latest_scan else {},
             "collector_version": latest_scan.summary_json.get("collector_version", "none") if latest_scan else "none",
+            "collector_type": latest_scan.summary_json.get("collector_type", "none") if latest_scan else "none",
+            "schema_version": latest_scan.summary_json.get("schema_version", "none") if latest_scan else "none",
+            "git_commit": latest_scan.summary_json.get("git_commit", "unknown") if latest_scan else "unknown",
             "posture": _assessment(latest_scan, "posture", {}),
         }
     )

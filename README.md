@@ -177,3 +177,42 @@ Changes:
 - Improved CA inventory assessment coverage display with compact CRL, AIA, OCSP, web enrollment, CA policy, and CA role badges.
 - Improved collector health coverage fields for CA certificate, CRL, AIA, OCSP, issued certificates, template ACL, and CA registry/config evidence.
 - Added tests for PKI Health scoring, posture score caps, page rendering, no raw dict evidence on main pages, empty certificate collection guidance, and existing ingest compatibility.
+
+## Version 0.3.0 Release Notes
+
+Release date: 2026-06-07
+Build: **Phase 1.1 UI and Scoring Stabilization**
+
+What changed:
+- Added visible app version/build labels in the footer and Settings page.
+- Added a CA-agnostic collector contract with `collector_type` and `schema_version` so ADCS works now and EJBCA/generic collectors can be added later.
+- Added PKI Hierarchy view for Root/Sub CA relationships, independent PKI groupings, validation paths, and key protection posture.
+- Improved multi-CA ingest/display validation so multiple CAs in one scan are stored and shown together.
+- Improved CRL/AIA/OCSP logic to use real collector evidence and avoid false Healthy states.
+- Added key protection visibility for HSM/software/unknown CA keys.
+- Redesigned Best Practices into high-level category cards, top gaps, and recommendations.
+- Clarified issued certificate inventory versus future network TLS scanning.
+
+Known limitations:
+- ADCS collection remains read-only and best-effort; some CA registry, LDAP, or CRL reachability checks may require permissions or network access.
+- OCSP is optional and may be shown as Not Configured / Not Assessed when no responder URL is present.
+- EJBCA and TLS collectors are documented but not implemented in this release.
+
+## Upgrade from GitHub
+
+```bash
+sudo ./scripts/upgrade_linux.sh
+```
+
+The upgrade script stops the service, backs up `.env` and SQLite databases to
+`/opt/certshield-backups/<timestamp>/`, resets the working tree to `origin/main`,
+updates the virtual environment, validates migrations, runs tests, restores
+ownership, restarts the service, and checks `/health`.
+
+Rollback notes:
+- DB backups: `/opt/certshield-backups/<timestamp>/*.db`
+- Environment backups: `/opt/certshield-backups/<timestamp>/.env`
+- Code rollback example: `git reset --hard <previous-commit>` followed by service restart.
+
+See `docs/collectors.md` for the normalized collector contract and
+`collector/ejbca/README.md` for future EJBCA collector planning.
