@@ -80,6 +80,16 @@ def _nav_context(request: Request) -> dict:
     return {"request": request, "current_user": request.session.get("user")}
 
 
+def _assessment(scan: Scan | None, key: str, default):
+    if not scan:
+        return default
+    return (scan.summary_json or {}).get(key, default)
+
+
+def _latest_scan(db: Session) -> Scan | None:
+    return db.query(Scan).order_by(Scan.id.desc()).first()
+
+
 @contextmanager
 def db_context():
     db = SessionLocal()
@@ -154,7 +164,7 @@ def logout(request: Request, db: Session = Depends(get_db)):
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, db: Session = Depends(get_db)):
     ensure_authenticated(request)
-    latest_scan = db.query(Scan).order_by(Scan.id.desc()).first()
+    latest_scan = _latest_scan(db)
     severity = {sev: 0 for sev in SEVERITY_ORDER}
     by_category = {}
     coverage_counts = {}
@@ -171,6 +181,10 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             .all()
         )
     ctx = _nav_context(request)
+    posture = _assessment(latest_scan, "posture", {})
+    health_assessment = _assessment(latest_scan, "health", {})
+    best_practices = _assessment(latest_scan, "best_practices", {})
+    expiring = (health_assessment.get("items", [{}])[-2].get("evidence", {}) if health_assessment.get("items") else {})
     ctx.update(
         {
             "scan": latest_scan,
@@ -179,6 +193,10 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             "by_category": by_category,
             "coverage_counts": coverage_counts,
             "recent_certs": recent_certs,
+            "posture": posture,
+            "health": health_assessment,
+            "best_practices": best_practices,
+            "expiring_certificates": expiring.get("expiring_90", 0),
         }
     )
     return templates.TemplateResponse("dashboard.html", ctx)
@@ -186,11 +204,47 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
 
 def render_page(request: Request, name: str, query, key: str, db: Session):
     ensure_authenticated(request)
-    latest_scan = db.query(Scan).order_by(Scan.id.desc()).first()
+    latest_scan = _latest_scan(db)
     records = query.filter_by(scan_id=latest_scan.id).all() if latest_scan else []
     ctx = _nav_context(request)
     ctx.update({key: records, "scan": latest_scan})
     return templates.TemplateResponse(name, ctx)
+
+
+@app.get("/pki-posture", response_class=HTMLResponse)
+def pki_posture_page(request: Request, db: Session = Depends(get_db)):
+    ensure_authenticated(request)
+    latest_scan = _latest_scan(db)
+    ctx = _nav_context(request)
+    ctx.update({"scan": latest_scan, "posture": _assessment(latest_scan, "posture", {})})
+    return templates.TemplateResponse("pki_posture.html", ctx)
+
+
+@app.get("/pki-health", response_class=HTMLResponse)
+def pki_health_page(request: Request, db: Session = Depends(get_db)):
+    ensure_authenticated(request)
+    latest_scan = _latest_scan(db)
+    ctx = _nav_context(request)
+    ctx.update({"scan": latest_scan, "health": _assessment(latest_scan, "health", {})})
+    return templates.TemplateResponse("pki_health.html", ctx)
+
+
+@app.get("/best-practices", response_class=HTMLResponse)
+def best_practices_page(request: Request, db: Session = Depends(get_db)):
+    ensure_authenticated(request)
+    latest_scan = _latest_scan(db)
+    ctx = _nav_context(request)
+    ctx.update({"scan": latest_scan, "best_practices": _assessment(latest_scan, "best_practices", {})})
+    return templates.TemplateResponse("best_practices.html", ctx)
+
+
+@app.get("/reports", response_class=HTMLResponse)
+def reports_page(request: Request, db: Session = Depends(get_db)):
+    ensure_authenticated(request)
+    scans = db.query(Scan).order_by(Scan.id.desc()).all()
+    ctx = _nav_context(request)
+    ctx.update({"scans": scans})
+    return templates.TemplateResponse("reports.html", ctx)
 
 
 @app.get("/cas", response_class=HTMLResponse)
@@ -201,7 +255,7 @@ def cas_page(request: Request, db: Session = Depends(get_db)):
 @app.get("/templates", response_class=HTMLResponse)
 def template_page(request: Request, db: Session = Depends(get_db)):
     ensure_authenticated(request)
-    latest_scan = db.query(Scan).order_by(Scan.id.desc()).first()
+    latest_scan = _latest_scan(db)
     records = (
         db.query(CertificateTemplate)
         .options(joinedload(CertificateTemplate.permissions))
@@ -218,7 +272,7 @@ def template_page(request: Request, db: Session = Depends(get_db)):
 @app.get("/findings", response_class=HTMLResponse)
 def findings_page(request: Request, db: Session = Depends(get_db)):
     ensure_authenticated(request)
-    latest_scan = db.query(Scan).order_by(Scan.id.desc()).first()
+    latest_scan = _latest_scan(db)
     records = (
         db.query(Finding)
         .filter_by(scan_id=latest_scan.id)
@@ -260,7 +314,7 @@ def history_page(request: Request, db: Session = Depends(get_db)):
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request, db: Session = Depends(get_db)):
     ensure_authenticated(request)
-    latest_scan = db.query(Scan).order_by(Scan.id.desc()).first()
+    latest_scan = _latest_scan(db)
     masked = settings.collector_api_token[:4] + "..." + settings.collector_api_token[-4:]
     ctx = _nav_context(request)
     ctx.update(
@@ -283,9 +337,22 @@ def export_json(scan_id: int, request: Request, db: Session = Depends(get_db)):
     scan = db.query(Scan).filter_by(id=scan_id).first()
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
+    findings = db.query(Finding).filter_by(scan_id=scan.id).all()
+    summary = scan.summary_json or {}
     payload = {
-        "scan": scan.summary_json,
+        "scan": summary,
+        "executive_summary": {
+            "pki_posture_score": summary.get("posture", {}).get("score"),
+            "pki_health_score": summary.get("health", {}).get("score"),
+            "best_practice_score": summary.get("best_practices", {}).get("score"),
+            "critical_findings": sum(1 for f in findings if f.severity == "Critical" and f.coverage_state == "detected"),
+            "high_findings": sum(1 for f in findings if f.severity == "High" and f.coverage_state == "detected"),
+        },
+        "posture": summary.get("posture", {}),
+        "health": summary.get("health", {}),
+        "best_practices": summary.get("best_practices", {}),
         "coverage": scan.coverage_json,
+        "remediation_priorities": summary.get("remediation_priorities", {}),
         "cas": [c.name for c in db.query(CertificateAuthority).filter_by(scan_id=scan.id).all()],
         "findings": [
             {
@@ -295,8 +362,13 @@ def export_json(scan_id: int, request: Request, db: Session = Depends(get_db)):
                 "confidence": f.confidence,
                 "coverage_state": f.coverage_state,
                 "affected": f.affected_object,
+                "risk_score": (f.evidence_json or {}).get("risk_score"),
+                "business_impact": (f.evidence_json or {}).get("business_impact"),
+                "technical_impact": (f.evidence_json or {}).get("technical_impact"),
+                "score_breakdown": (f.evidence_json or {}).get("score_breakdown"),
+                "remediation": f.remediation,
             }
-            for f in db.query(Finding).filter_by(scan_id=scan.id).all()
+            for f in findings
         ],
     }
     return JSONResponse(payload)

@@ -1,197 +1,304 @@
-from dataclasses import dataclass
+from __future__ import annotations
+
+from collections import Counter
 from typing import Any
 
-from app.models.entities import CertificateAuthority, CertificateTemplate
+from app.models.entities import CertificateAuthority, CertificateTemplate, IssuedCertificate
+from app.services.risk_engine import _has_any_purpose, _has_client_auth
 
 
-@dataclass
-class BestPracticeAssessmentItem:
-    category: str
-    title: str
-    status: str
-    severity: str
-    affected_object: str
-    evidence: dict
-    recommendation: str
-    business_impact: str
-    technical_impact: str
-    confidence: str
-    control_refs: list[str]
-
-
-BROAD_PRINCIPALS = {"authenticated users", "domain users", "everyone"}
-
-
-def _cfg(ca: CertificateAuthority) -> dict:
-    return ca.config_json or {}
-
-
-def _raw(template: CertificateTemplate) -> dict:
-    return template.raw_json or {}
-
-
-def _join_eku(template: CertificateTemplate) -> str:
-    return " ".join(template.eku or []).lower()
-
-
-def _has_client_auth(template: CertificateTemplate) -> bool:
-    eku = _join_eku(template)
-    return "client authentication" in eku or "1.3.6.1.5.5.7.3.2" in eku
-
-
-def _has_broad_enroll(template: CertificateTemplate) -> bool:
-    return any((p.can_enroll or p.can_autoenroll) and p.principal.lower() in BROAD_PRINCIPALS for p in template.permissions)
-
-
-def _item(
+def _bp(
     category: str,
     title: str,
     status: str,
     severity: str,
-    affected_object: str,
+    affected: str,
     evidence: dict,
+    business: str,
+    technical: str,
     recommendation: str,
-    business_impact: str,
-    technical_impact: str,
     confidence: str = "medium",
-    control_refs: list[str] | None = None,
-) -> BestPracticeAssessmentItem:
-    return BestPracticeAssessmentItem(
-        category=category,
-        title=title,
-        status=status,
-        severity=severity,
-        affected_object=affected_object,
-        evidence=evidence,
-        recommendation=recommendation,
-        business_impact=business_impact,
-        technical_impact=technical_impact,
-        confidence=confidence,
-        control_refs=control_refs or ["PKI governance control placeholder"],
+    data_source: str = "collector",
+    not_assessed_reason: str | None = None,
+) -> dict:
+    return {
+        "category": category,
+        "title": title,
+        "status": status,
+        "severity": severity,
+        "affected_object": affected,
+        "evidence": evidence,
+        "business_impact": business,
+        "technical_impact": technical,
+        "recommendation": recommendation,
+        "confidence": confidence,
+        "data_source": data_source,
+        "not_assessed_reason": not_assessed_reason,
+    }
+
+
+def _score(items: list[dict]) -> tuple[int | None, str, dict]:
+    assessed = [item for item in items if item["status"] != "Not Assessed"]
+    counts = dict(Counter(item["status"] for item in items))
+    if not assessed:
+        return None, "Unknown", counts
+    score = 100
+    for item in assessed:
+        if item["status"] == "Fail":
+            score -= 12 if item["severity"] in {"Critical", "High"} else 7
+        elif item["status"] == "Warning":
+            score -= 5
+    score = max(score, 0)
+    return score, "Pass" if score >= 90 else "Warning" if score >= 70 else "Fail", counts
+
+
+def _config_bool(config: dict, key: str) -> bool | None:
+    value = config.get(key)
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return None
+    text = str(value).lower()
+    if text in {"true", "yes", "1", "enabled"}:
+        return True
+    if text in {"false", "no", "0", "disabled"}:
+        return False
+    return None
+
+
+def _ca_practices(ca: CertificateAuthority) -> list[dict]:
+    config = ca.config_json or {}
+    ca_type = str(config.get("ca_type", "issuing")).lower()
+    is_root = ca_type == "root"
+    category = "Root CA" if is_root else "Issuing CA"
+    items: list[dict] = []
+
+    if is_root:
+        offline = _config_bool(config, "offline")
+        items.append(
+            _bp(
+                category,
+                "Root CA should be offline",
+                "Pass" if offline is True else "Fail" if offline is False else "Not Assessed",
+                "Critical",
+                ca.name,
+                {"offline": offline},
+                "Online root CAs increase enterprise trust blast radius.",
+                "Root private key exposure can compromise the PKI hierarchy.",
+                "Keep the root CA offline except controlled CRL/key ceremony operations.",
+                "high" if offline is not None else "low",
+                not_assessed_reason="Collector did not provide root online/offline evidence." if offline is None else None,
+            )
+        )
+        domain_joined = _config_bool(config, "domain_joined")
+        items.append(
+            _bp(
+                category,
+                "Root CA should not be domain joined",
+                "Pass" if domain_joined is False else "Fail" if domain_joined is True else "Not Assessed",
+                "High",
+                ca.name,
+                {"domain_joined": domain_joined},
+                "Domain compromise should not directly expose root CA trust.",
+                "Domain-joined root CA increases attack surface and administrative dependencies.",
+                "Keep root CA systems outside the domain and tightly controlled.",
+                not_assessed_reason="Collector did not provide domain-join evidence." if domain_joined is None else None,
+            )
+        )
+    else:
+        on_dc = _config_bool(config, "installed_on_domain_controller")
+        items.append(
+            _bp(
+                category,
+                "Issuing CA should not run on a domain controller",
+                "Pass" if on_dc is False else "Fail" if on_dc is True else "Not Assessed",
+                "High",
+                ca.name,
+                {"installed_on_domain_controller": on_dc},
+                "Combining CA and DC roles increases business impact of host compromise.",
+                "CA private key and domain controller attack surface become coupled.",
+                "Run issuing CAs on dedicated hardened servers, not domain controllers.",
+                not_assessed_reason="Collector did not provide server role evidence." if on_dc is None else None,
+            )
+        )
+
+    audit = _config_bool(config, "auditing_enabled")
+    items.append(
+        _bp(
+            category,
+            "CA auditing should be enabled",
+            "Pass" if audit is True else "Fail" if audit is False else "Not Assessed",
+            "High",
+            ca.name,
+            {"auditing_enabled": audit},
+            "Missing audit trails delay incident response and compliance review.",
+            "Issuance and configuration changes may not be traceable.",
+            "Enable CA auditing for issuance, revocation, and configuration changes.",
+            not_assessed_reason="Collector did not provide CA audit configuration." if audit is None else None,
+        )
     )
 
+    backup = _config_bool(config, "backup_documented")
+    items.append(
+        _bp(
+            "Backup and Recovery",
+            "CA backup and recovery should be documented",
+            "Pass" if backup is True else "Warning" if backup is False else "Not Assessed",
+            "Medium",
+            ca.name,
+            {"backup_documented": backup},
+            "Unvalidated recovery increases outage duration during CA incidents.",
+            "CA database/private key recovery may be inconsistent or impossible.",
+            "Document and periodically test CA certificate, key, and database recovery.",
+            not_assessed_reason="Collector did not provide backup evidence." if backup is None else None,
+        )
+    )
+    return items
 
-def _bool_check(category: str, title: str, ca_name: str, value: Any, expected: bool, fail_severity: str, recommendation: str, business_impact: str, technical_impact: str) -> BestPracticeAssessmentItem:
-    if value is None:
-        return _item(category, title, "Not Assessed", "Info", ca_name, {}, recommendation, business_impact, technical_impact, "low")
-    passed = bool(value) is expected
-    return _item(category, title, "Pass" if passed else "Fail", "Info" if passed else fail_severity, ca_name, {"observed": value, "expected": expected}, recommendation, business_impact, technical_impact, "medium")
 
-
-def _root_ca_checks(ca: CertificateAuthority) -> list[BestPracticeAssessmentItem]:
-    config = _cfg(ca)
-    name = ca.name
+def _template_practices(template: CertificateTemplate) -> list[dict]:
+    principals = {p.principal.lower().split("\\")[-1]: p for p in template.permissions if p.can_enroll or p.can_autoenroll}
+    auth_capable = _has_client_auth(template.eku)
+    broad_auth = auth_capable and ("authenticated users" in principals or "domain users" in principals)
+    owner = (template.raw_json or {}).get("business_owner")
     return [
-        _bool_check("Root CA design", "Root CA should be offline", name, config.get("is_offline"), True, "Critical", "Keep the root CA offline except for controlled signing and CRL publication events.", "Reduces the likelihood that a root key compromise invalidates trust across the organization.", "Limits interactive and network exposure for the root CA private key."),
-        _bool_check("Root CA design", "Root CA should not be domain joined", name, config.get("domain_joined"), False, "High", "Keep root CAs out of Active Directory domain membership.", "Reduces business-wide trust disruption if AD administrative paths are compromised.", "Separates root CA administration from domain identity and policy paths."),
-        _bool_check("Root CA design", "Root CA should not issue end-entity certificates", name, config.get("issues_end_entity"), False, "High", "Use issuing CAs for end-entity certificates and reserve the root for CA signing operations.", "Preserves clean trust hierarchy and auditability.", "Prevents root CA direct dependency for routine certificate issuance."),
-        _bool_check("CA key protection", "Root CA private key should be offline or HSM protected", name, config.get("private_key_protected"), True, "High", "Protect the root CA private key with offline storage or an HSM-backed key ceremony.", "Protects the highest-value PKI trust anchor.", "Reduces key extraction and unauthorized signing risk."),
-        _bool_check("Documentation and operational governance", "Root CA key ceremony should be documented", name, config.get("key_ceremony_documented"), True, "Medium", "Document root CA key ceremony, authorized participants, approvals, and evidence retention.", "Improves audit readiness and operational continuity.", "Provides repeatable controls for root CA operations."),
-        _bool_check("Root CA design", "Root CA access should be restricted", name, config.get("restricted_access"), True, "High", "Restrict root CA access to dedicated PKI administrators with monitored approval paths.", "Limits blast radius from general administrative compromise.", "Reduces the number of principals able to influence root trust."),
+        _bp(
+            "Templates",
+            "Avoid broad enrollment on authentication templates",
+            "Fail" if broad_auth else "Pass",
+            "Critical" if broad_auth else "Low",
+            template.name,
+            {"eku": template.eku, "principals": list(principals)},
+            "Broad enrollment on authentication templates can create enterprise identity risk.",
+            "Low-privileged principals may obtain authentication-capable certificates if other safeguards are weak.",
+            "Remove Authenticated Users / Domain Users from Enroll or AutoEnroll and scope to dedicated security groups.",
+            "high",
+        ),
+        _bp(
+            "Templates",
+            "Avoid requester-supplied subject/SAN unless approved",
+            "Warning" if template.enrollee_supplies_subject else "Pass",
+            "High" if template.enrollee_supplies_subject else "Low",
+            template.name,
+            {"enrollee_supplies_subject": template.enrollee_supplies_subject},
+            "Requester-controlled identity fields can create governance and identity assurance gaps.",
+            "Subject/SAN values may not be authoritative unless tightly governed.",
+            "Disable enrollee-supplied subject/SAN unless a documented business case requires it.",
+            "high",
+        ),
+        _bp(
+            "Templates",
+            "Avoid Any Purpose EKU on templates",
+            "Fail" if _has_any_purpose(template.eku) else "Pass",
+            "High",
+            template.name,
+            {"eku": template.eku},
+            "Overly broad certificate usage weakens policy boundaries.",
+            "Certificates may be accepted for unintended purposes.",
+            "Replace Any Purpose usage with purpose-specific templates.",
+            "high",
+        ),
+        _bp(
+            "Templates",
+            "Avoid overly long validity periods",
+            "Warning" if template.validity_days > 825 else "Pass",
+            "Medium",
+            template.name,
+            {"validity_days": template.validity_days},
+            "Long-lived certificates increase exposure windows.",
+            "Mis-issued certificates remain valid longer and are harder to remediate.",
+            "Reduce validity to the organization baseline for the certificate purpose.",
+            "high",
+        ),
+        _bp(
+            "Templates",
+            "Important templates should have a business owner",
+            "Pass" if owner else "Not Assessed",
+            "Medium",
+            template.name,
+            {"business_owner": owner},
+            "Unowned templates complicate risk acceptance and remediation.",
+            "Template changes may lack accountable review.",
+            "Assign and document template owners for important templates.",
+            "medium" if owner else "low",
+            not_assessed_reason="Collector did not provide business owner metadata." if not owner else None,
+        ),
     ]
 
 
-def _issuing_ca_checks(ca: CertificateAuthority) -> list[BestPracticeAssessmentItem]:
-    config = _cfg(ca)
-    name = ca.name
-    signature_algorithm = str(config.get("signature_algorithm") or config.get("signature_hash") or "").lower()
-    key_size = config.get("key_size")
-    items = [
-        _bool_check("Issuing CA design", "Issuing CA should not be installed on a domain controller", name, config.get("installed_on_domain_controller"), False, "Critical", "Move issuing CA roles away from domain controllers and onto dedicated PKI infrastructure.", "Reduces coupling between AD outage/compromise and PKI issuance capability.", "Separates CA service attack surface from domain controller duties."),
-        _bool_check("CA key protection", "Issuing CA private key should be HSM protected where possible", name, config.get("private_key_protected"), True, "Medium", "Use HSM or strong software key protection for issuing CA private keys according to risk tier.", "Protects certificate issuance continuity and trust integrity.", "Reduces key extraction and unauthorized CA signing risk."),
-        _bool_check("Auditing and monitoring", "CA auditing should be enabled", name, config.get("audit_enabled"), True, "High", "Enable CA auditing and forward relevant events to monitoring systems.", "Improves incident investigation and audit evidence quality.", "Captures issuance, configuration, and administrative activity."),
-        _bool_check("Backup and recovery", "CA backup should be configured", name, config.get("backup_configured"), True, "Medium", "Document and test CA system, certificate, key, and database backup procedures.", "Reduces downtime and trust recovery risk during CA failure.", "Ensures CA database and key material can be restored under approved controls."),
-    ]
-    if signature_algorithm:
-        weak = "sha1" in signature_algorithm or "md5" in signature_algorithm
-        items.append(_item("CA configuration", "CA should use SHA256 or better", "Fail" if weak else "Pass", "High" if weak else "Info", name, {"signature_algorithm": signature_algorithm}, "Move CA certificate and issuance configuration to SHA256 or stronger where compatibility allows.", "Reduces audit and relying-party trust failures tied to weak algorithms.", "Avoids legacy signature algorithms with known weaknesses.", "medium"))
-    else:
-        items.append(_item("CA configuration", "CA signature algorithm not assessed", "Not Assessed", "Info", name, {}, "Collect CA certificate signature algorithm during certificate metadata collection.", "Missing cryptographic posture data can delay audit readiness.", "Cannot confirm hash algorithm strength without certificate metadata.", "low"))
-    if key_size:
-        weak_key = int(key_size) < 2048
-        items.append(_item("CA configuration", "CA key size should be RSA 2048 or stronger", "Fail" if weak_key else "Pass", "High" if weak_key else "Info", name, {"key_size": key_size}, "Use RSA 2048 or stronger, or an approved ECC equivalent, for CA keys.", "Reduces long-term trust and compliance risk.", "Improves cryptographic baseline strength.", "medium"))
-    else:
-        items.append(_item("CA configuration", "CA key size not assessed", "Not Assessed", "Info", name, {}, "Collect CA certificate key size during certificate metadata collection.", "Missing cryptographic posture data can delay audit readiness.", "Cannot confirm CA key strength without certificate metadata.", "low"))
-    cdp = config.get("cdp_urls") or config.get("crl_urls")
-    aia = config.get("aia_urls")
-    has_publication = bool(cdp) and bool(aia)
-    items.append(_item("CRL/AIA/OCSP publication", "CA should publish CRL and AIA locations", "Pass" if has_publication else "Warning", "Info" if has_publication else "Medium", name, {"cdp_urls": cdp, "aia_urls": aia}, "Publish and monitor CRL/CDP and AIA locations reachable by relying systems.", "Prevents outages and validation failures caused by missing chain or revocation data.", "Supports certificate path building and revocation checking.", "medium" if cdp is not None or aia is not None else "low"))
-    return items
-
-
-def _template_checks(template: CertificateTemplate) -> list[BestPracticeAssessmentItem]:
-    raw = _raw(template)
-    name = template.name
-    broad = _has_broad_enroll(template)
-    client_auth = _has_client_auth(template)
-    sensitive = client_auth or bool(raw.get("sensitive"))
-    items = [
-        _item("Certificate template governance", "Avoid Authenticated Users enrollment on high-risk templates", "Fail" if broad and sensitive else "Pass", "High" if broad and sensitive else "Info", name, {"broad_enrollment": broad, "sensitive": sensitive}, "Remove broad principals from high-risk template enrollment and scope access to dedicated security groups.", "Reduces the chance that routine users can access high-impact certificate workflows.", "Constrains enrollment permissions to approved identities.", "high"),
-        _item("Certificate template governance", "Avoid requester-supplied SAN unless approved", "Fail" if template.enrollee_supplies_subject and sensitive else "Pass", "High" if template.enrollee_supplies_subject and sensitive else "Info", name, {"enrollee_supplies_subject": template.enrollee_supplies_subject, "sensitive": sensitive}, "Disable requester-supplied subject/SAN on sensitive templates unless formally approved and monitored.", "Reduces identity assurance and audit risk for certificate-backed authentication.", "Prevents requesters from controlling identity fields on sensitive templates.", "high"),
-        _item("Certificate template governance", "Require manager approval for sensitive templates", "Warning" if sensitive and not template.manager_approval else "Pass", "Medium" if sensitive and not template.manager_approval else "Info", name, {"manager_approval": template.manager_approval, "sensitive": sensitive}, "Use manager approval only for certificate workflows where manual approval is an intended compensating control.", "Adds oversight to high-impact issuance without applying generic approval everywhere.", "Adds an issuance gate for selected sensitive templates.", "medium"),
-        _item("Certificate template governance", "Require authorized signatures for high-impact templates", "Warning" if sensitive and template.authorized_signatures == 0 else "Pass", "Medium" if sensitive and template.authorized_signatures == 0 else "Info", name, {"authorized_signatures": template.authorized_signatures, "sensitive": sensitive}, "Require authorized signatures for high-impact templates where enrollment should depend on a trusted approval chain.", "Improves governance over certificates that can affect privileged access or identity assurance.", "Adds cryptographic/request-signature gating for selected templates.", "medium"),
-    ]
-    exportable = raw.get("private_key_exportable")
-    if exportable is not None:
-        items.append(_item("Certificate template governance", "Avoid exportable private keys", "Fail" if exportable else "Pass", "Medium" if exportable else "Info", name, {"private_key_exportable": exportable}, "Disable exportable private keys unless a documented business case requires it.", "Reduces risk from key copying and uncontrolled certificate reuse.", "Keeps private keys bound to approved storage locations.", "medium"))
-    key_size = raw.get("minimum_key_size") or raw.get("min_key_size")
-    if key_size is not None:
-        weak_key = int(key_size) < 2048
-        items.append(_item("Certificate template governance", "Avoid weak template key sizes", "Fail" if weak_key else "Pass", "High" if weak_key else "Info", name, {"minimum_key_size": key_size}, "Set template minimum key size to RSA 2048 or stronger, or an approved ECC equivalent.", "Reduces cryptographic and audit risk for issued certificates.", "Improves key strength for newly issued certificates.", "medium"))
-    hash_algorithm = str(raw.get("hash_algorithm") or raw.get("signature_algorithm") or "").lower()
-    if hash_algorithm:
-        weak_hash = "sha1" in hash_algorithm or "md5" in hash_algorithm
-        items.append(_item("Certificate template governance", "Avoid SHA1 or weaker hash algorithms", "Fail" if weak_hash else "Pass", "High" if weak_hash else "Info", name, {"hash_algorithm": hash_algorithm}, "Use SHA256 or stronger for certificate templates and related issuance policy.", "Supports compliance and relying-party trust expectations.", "Avoids legacy weak hash algorithms.", "medium"))
-    if template.validity_days > 825:
-        items.append(_item("Certificate lifecycle management", "Avoid overly long certificate validity", "Warning", "Medium", name, {"validity_days": template.validity_days}, "Reduce validity for end-entity templates to the organizational baseline and automate renewal where appropriate.", "Limits long-lived exposure from stale or mis-issued certificates.", "Shortens the window where an issued certificate remains trusted.", "high"))
-    enabled = raw.get("enabled")
-    if enabled is False:
-        items.append(_item("Certificate template governance", "Disable unused templates", "Pass", "Info", name, {"enabled": enabled}, "Keep unused templates disabled and document ownership.", "Reduces template sprawl and review workload.", "Removes inactive issuance paths from routine use.", "medium"))
-    elif raw.get("unused") is True:
-        items.append(_item("Certificate template governance", "Disable unused templates", "Warning", "Low", name, {"unused": True}, "Disable templates that no longer have an assigned business owner or active use case.", "Reduces governance gaps and unnecessary issuance surface.", "Removes stale templates from publication and enrollment workflows.", "medium"))
-    return items
-
-
-def assess_best_practices(cas: list[CertificateAuthority], templates: list[CertificateTemplate], assessment_hints: dict | None = None) -> tuple[list[BestPracticeAssessmentItem], dict]:
-    hints = assessment_hints or {}
-    items: list[BestPracticeAssessmentItem] = []
-
-    root_seen = False
-    issuing_seen = False
+def assess_best_practices(
+    cas: list[CertificateAuthority],
+    templates: list[CertificateTemplate],
+    certificates: list[IssuedCertificate],
+    findings: list[Any],
+) -> dict:
+    items: list[dict] = []
     for ca in cas:
-        config = _cfg(ca)
-        role = str(config.get("role") or "").lower()
-        is_root = bool(config.get("is_root")) or role == "root"
-        if is_root:
-            root_seen = True
-            items.extend(_root_ca_checks(ca))
-        else:
-            issuing_seen = True
-            items.extend(_issuing_ca_checks(ca))
-
-    if not root_seen:
-        items.append(_item("Root CA design", "Root CA design not assessed", "Not Assessed", "Info", "Root CA", {"root_ca_seen": False}, "Collect or document root CA metadata such as offline state, domain membership, CRL publication, and key ceremony evidence.", "Root CA design gaps can remain invisible without explicit inventory.", "The scanner cannot confirm root CA tiering or key protection from current data.", "low"))
-    if not issuing_seen:
-        items.append(_item("Issuing CA design", "Issuing CA design not assessed", "Not Assessed", "Info", "Issuing CA", {"issuing_ca_seen": False}, "Collect issuing CA configuration metadata and role placement.", "Issuing CA posture gaps can remain invisible without explicit inventory.", "The scanner cannot confirm service placement, auditing, backup, or cryptographic baseline from current data.", "low"))
-
+        items.extend(_ca_practices(ca))
     for template in templates:
-        items.extend(_template_checks(template))
+        items.extend(_template_practices(template))
 
-    if not templates:
-        items.append(_item("Certificate template governance", "Certificate templates not collected", "Not Assessed", "Info", "Certificate templates", {}, "Collect certificate templates so governance checks can run.", "Template governance risk cannot be prioritized without template inventory.", "No template flags, EKUs, or permissions were available to assess.", "low"))
+    privileged_seen = any("admin" in (cert.requester or "").lower() for cert in certificates)
+    items.extend(
+        [
+            _bp(
+                "Lifecycle",
+                "Certificate expiry should be monitored",
+                "Pass" if certificates else "Warning",
+                "Medium",
+                "Certificate inventory",
+                {"issued_certificates": len(certificates)},
+                "Certificate outages can disrupt business services.",
+                "Expired certificates break authentication, TLS, and signing workflows.",
+                "Run the collector on a schedule and alert on 30/60/90-day certificate expiry windows.",
+                "high",
+            ),
+            _bp(
+                "Lifecycle",
+                "Certificates issued to privileged accounts should be reviewed",
+                "Warning" if privileged_seen else "Not Assessed",
+                "High",
+                "Issued certificates",
+                {"privileged_account_hint_seen": privileged_seen},
+                "Privileged account certificates require stronger ownership and monitoring.",
+                "Privileged certs may expand access if mishandled.",
+                "Collect account context and review certificates issued to privileged identities.",
+                "medium" if privileged_seen else "low",
+                not_assessed_reason="Collector did not provide authoritative privilege/account status metadata." if not privileged_seen else None,
+            ),
+            _bp(
+                "Auditing",
+                "Collector should run on a schedule",
+                "Not Assessed",
+                "Medium",
+                "Collector",
+                {},
+                "Stale data weakens posture management and audit readiness.",
+                "Findings and expiry windows may be missed between manual scans.",
+                "Run the Windows collector on a scheduled task and monitor ingest freshness.",
+                "low",
+                data_source="deployment",
+                not_assessed_reason="Scheduling evidence is not collected by the current payload.",
+            ),
+            _bp(
+                "Backup and Recovery",
+                "Offline root backup should be protected",
+                "Not Assessed",
+                "High",
+                "Root CA",
+                {},
+                "Root recovery material must be protected against theft and loss.",
+                "Unprotected backups can compromise or prevent PKI recovery.",
+                "Protect offline root backups with documented custody and recovery tests.",
+                "low",
+                data_source="operator evidence",
+                not_assessed_reason="Backup custody cannot be confirmed by the collector.",
+            ),
+        ]
+    )
 
-    if hints.get("ca_backup") == "not_assessed":
-        items.append(_item("Backup and recovery", "CA backup evidence not assessed", "Not Assessed", "Info", "PKI operations", {"hint": hints.get("ca_backup")}, "Add documented CA backup evidence or collector metadata in a future scan.", "Backup gaps can lead to prolonged PKI outage during CA failure.", "Recovery posture cannot be confirmed from current collector data.", "low"))
-
-    counts: dict[str, int] = {}
+    score, status, counts = _score(items)
+    grouped: dict[str, list[dict]] = {}
     for item in items:
-        counts[item.status] = counts.get(item.status, 0) + 1
-    penalty = counts.get("Fail", 0) * 12 + counts.get("Warning", 0) * 6 + counts.get("Not Assessed", 0) * 2
-    score = max(0, 100 - penalty)
-    summary = {
-        "score": score,
-        "counts": counts,
-        "total": len(items),
-        "top_gap_count": counts.get("Fail", 0) + counts.get("Warning", 0),
-    }
-    return items, summary
+        grouped.setdefault(item["category"], []).append(item)
+    return {"score": score, "status": status, "counts": counts, "items": items, "grouped": grouped}

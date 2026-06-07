@@ -131,3 +131,34 @@ python -m compileall app tests scripts
 
 ## Screenshots
 Use Playwright or browser capture in your environment and store in `docs/screenshots/` for runbooks.
+
+## Phase 1 PKI Posture Management Release Notes
+
+Version: **Phase 1 PKI Posture Management**
+
+Release Summary:
+- Added PKI Posture dashboard and scoring.
+- Added PKI Health assessment for CA service, CA certificate, CRL, AIA, OCSP, issuance, template health, collector coverage, and recommendations.
+- Added PKI Best Practice assessment for Root CA, Issuing CA, Templates, Lifecycle, Auditing, and Backup/Recovery controls.
+- Improved ADCS vulnerability finding evidence, risk scoring, score breakdown, business impact, technical impact, and remediation guidance.
+- Improved collector coverage visibility and data coverage matrix across posture, health, best practices, and settings pages.
+- Added visible product build label: `CertShield PKI Posture Management · Build: Phase 1 Posture`.
+- Added report JSON sections for `posture`, `health`, `best_practices`, `coverage`, and `remediation_priorities`.
+- Preserved backward compatibility with older collector payloads and the existing broad enrollment fallback used by current labs.
+
+## Product Pages
+- `/` - Executive dashboard with Overall PKI Posture, PKI Health, Best Practice Score, Critical ADCS Findings, Expiring Certificates, and Collector Coverage.
+- `/pki-posture` - Management and technical view of overall PKI risk, top risks, remediation priorities, and data coverage.
+- `/pki-health` - Operational PKI health for CA services, CA certificates, CRL/AIA/OCSP, issuance, template health, and collector coverage.
+- `/best-practices` - PKI governance and architecture checks grouped by Root CA, Issuing CA, Templates, Lifecycle, Auditing, and Backup/Recovery.
+- `/findings` - ADCS Vulnerability Assessment with risk score, severity, confidence, evidence, business impact, technical impact, coverage state, and safe remediation guidance.
+
+## Collector Optional Flags
+The PowerShell collector remains read-only and supports optional safety/diagnostic flags:
+- `-SkipIssued` - skip issued certificate enumeration.
+- `-DebugPayload` - print JSON payload before sending.
+- `-NoPost` - build the payload but do not send it.
+- `-OutputJson <path>` - write the payload to a JSON file.
+- `-SkipHealth` - mark health-adjacent CA metadata as not assessed.
+- `-SkipAcl` - mark ACL metadata as not assessed.
+- `-SkipCrl` - mark CRL metadata as not assessed.

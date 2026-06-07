@@ -97,6 +97,15 @@ def _simulation(path: str, preconditions: list[str], blast_radius: str, missing:
     }
 
 
+def _risk_score(severity: str, confidence: str, coverage_state: str) -> int:
+    base = {"Critical": 92, "High": 76, "Medium": 52, "Low": 24}.get(severity, 20)
+    if confidence == "low":
+        base -= 8
+    if coverage_state != "detected":
+        base = min(base, 20)
+    return max(0, min(base, 100))
+
+
 def _finding(
     *,
     rule_id: str,
@@ -115,6 +124,13 @@ def _finding(
     affected_object: str,
     coverage_state: str = "detected",
 ) -> RuleFinding:
+    enriched_evidence = {
+        **evidence,
+        "risk_score": _risk_score(severity, confidence, coverage_state),
+        "business_impact": rationale,
+        "technical_impact": trigger_conditions,
+        "score_breakdown": {"severity": severity, "confidence": confidence, "coverage_state": coverage_state},
+    }
     return RuleFinding(
         rule_id=rule_id,
         esc_category=esc_category,
@@ -124,7 +140,7 @@ def _finding(
         coverage_state=coverage_state,
         trigger_conditions=trigger_conditions,
         rationale=rationale,
-        evidence=evidence,
+        evidence=enriched_evidence,
         remediation=remediation,
         remediation_steps=remediation_steps,
         simulation_summary=simulation_summary,

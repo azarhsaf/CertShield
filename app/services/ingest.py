@@ -13,6 +13,9 @@ from app.models.entities import (
     TemplatePermission,
 )
 from app.schemas.collector import CollectorPayload
+from app.services.best_practices import assess_best_practices
+from app.services.health_assessment import assess_pki_health
+from app.services.posture_assessment import assess_pki_posture
 from app.services.risk_engine import evaluate_templates
 
 
@@ -63,9 +66,9 @@ class IngestService:
                 )
             templates.append(tpl)
 
+        certificates = []
         for cert in payload.issued_certificates:
-            db.add(
-                IssuedCertificate(
+            cert_row = IssuedCertificate(
                     scan_id=scan.id,
                     request_id=cert.request_id,
                     requester=cert.requester,
@@ -76,7 +79,8 @@ class IngestService:
                     expires_at=cert.expires_at,
                     status=cert.status,
                 )
-            )
+            db.add(cert_row)
+            certificates.append(cert_row)
 
         db.flush()
         findings, coverage = evaluate_templates(templates, cas)
@@ -108,7 +112,7 @@ class IngestService:
 
         scan.completed_at = datetime.utcnow()
         scan.coverage_json = coverage
-        scan.summary_json = {
+        base_summary = {
             "cas": len(payload.cas),
             "templates": len(payload.templates),
             "certificates": len(payload.issued_certificates),
@@ -116,6 +120,16 @@ class IngestService:
             "severity": dict(severity_counter),
             "by_category": dict(esc_counter),
             "collector_version": payload.collector_version,
+        }
+        health = assess_pki_health(cas, templates, certificates, findings, scan.completed_at, payload.collector_version, payload.source_host)
+        best_practices = assess_best_practices(cas, templates, certificates, findings)
+        posture = assess_pki_posture(findings, health, best_practices, coverage, base_summary)
+        scan.summary_json = {
+            **base_summary,
+            "health": health,
+            "best_practices": best_practices,
+            "posture": posture,
+            "remediation_priorities": posture.get("remediation_priorities", {}),
         }
 
         db.add(

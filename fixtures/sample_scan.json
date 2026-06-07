@@ -1,7 +1,53 @@
 {
   "domain_name": "corp.local",
   "source_host": "collector01",
-  "cas": [{"name": "CORP-CA", "dns_name": "ca01.corp.local", "status": "online", "config": {"audit_filter": "127"}}],
+  "collector_version": "collector-ps51-1.2",
+  "cas": [
+    {
+      "name": "CORP-ROOT-CA",
+      "dns_name": "rootca.corp.local",
+      "status": "online",
+      "config": {
+        "ca_type": "root",
+        "offline": false,
+        "domain_joined": true,
+        "certificate_expires_at": "2026-08-15",
+        "signature_algorithm": "sha256RSA",
+        "key_size": 4096,
+        "chain_complete": true,
+        "crl": {"assessed": true, "configured": true, "reachable": true, "next_update": "2026-07-15"},
+        "aia": {"assessed": true, "configured": true, "reachable": true},
+        "ocsp": {"assessed": false},
+        "auditing_enabled": true,
+        "backup_documented": false,
+        "published_templates": []
+      }
+    },
+    {
+      "name": "CORP-CA",
+      "dns_name": "ca01.corp.local",
+      "status": "online",
+      "config": {
+        "ca_type": "issuing",
+        "installed_on_domain_controller": false,
+        "certificate_expires_at": "2027-12-31",
+        "signature_algorithm": "sha256RSA",
+        "key_size": 2048,
+        "chain_complete": true,
+        "crl": {"assessed": true, "configured": true, "reachable": false, "next_update": "2026-06-01"},
+        "aia": {"assessed": true, "configured": false},
+        "ocsp": {"assessed": true, "configured": false},
+        "editf_attributesubjectaltname2": true,
+        "manage_ca_principals": ["PKI Admins"],
+        "web_enrollment_enabled": true,
+        "ntlm_enabled": true,
+        "epa_enabled": false,
+        "auditing_enabled": false,
+        "backup_documented": true,
+        "published_templates": ["UserClientAuth", "AnyPurposeTemplate"]
+      }
+    }
+  ],
   "templates": [
     {
       "name": "UserClientAuth",
@@ -14,10 +60,25 @@
       "renewal_days": 30,
       "published_to": ["CORP-CA"],
       "permissions": [{"principal": "Authenticated Users", "can_enroll": true, "can_autoenroll": false}],
-      "raw": {}
+      "raw": {"acl_assessed": true, "acl_details": [{"principal": "Domain Users", "rights": ["GenericWrite"]}]}
+    },
+    {
+      "name": "AnyPurposeTemplate",
+      "display_name": "Any Purpose Workstation",
+      "eku": ["2.5.29.37.0"],
+      "enrollee_supplies_subject": false,
+      "manager_approval": false,
+      "authorized_signatures": 0,
+      "validity_days": 730,
+      "renewal_days": 30,
+      "published_to": ["CORP-CA"],
+      "permissions": [{"principal": "Domain Users", "can_enroll": true, "can_autoenroll": false}],
+      "raw": {"acl_assessed": false}
     }
   ],
   "issued_certificates": [
-    {"request_id": "1001", "requester": "CORP\\jdoe", "template_name": "UserClientAuth", "subject": "CN=jdoe", "san": "upn=jdoe@corp.local", "issued_at": "2026-01-01", "expires_at": "2028-12-31", "status": "issued"}
-  ]
+    {"request_id": "1001", "requester": "CORP\\jdoe", "template_name": "UserClientAuth", "subject": "CN=jdoe", "san": "upn=jdoe@corp.local", "issued_at": "2026-01-01", "expires_at": "2026-06-25", "status": "issued"},
+    {"request_id": "1002", "requester": "CORP\\svc-web", "template_name": "AnyPurposeTemplate", "subject": "CN=web01", "san": "dns=web01.corp.local", "issued_at": "2025-01-01", "expires_at": "2026-06-30", "status": "issued"}
+  ],
+  "assessment_hints": {"esc8_web_enrollment": "detected"}
 }

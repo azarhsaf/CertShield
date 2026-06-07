@@ -1,285 +1,205 @@
-from dataclasses import dataclass
+from __future__ import annotations
+
+from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
 
-from app.models.entities import CertificateAuthority, CertificateTemplate
+from app.models.entities import CertificateAuthority, CertificateTemplate, IssuedCertificate
 
-
-@dataclass
-class HealthAssessmentItem:
-    category: str
-    title: str
-    status: str
-    severity: str
-    affected_object: str
-    evidence: dict
-    recommendation: str
-    confidence: str
-
-
-def _config(ca: CertificateAuthority) -> dict:
-    return ca.config_json or {}
-
-
-def _nested(mapping: dict, *keys: str) -> Any:
-    cur: Any = mapping
-    for key in keys:
-        if not isinstance(cur, dict) or key not in cur:
-            return None
-        cur = cur[key]
-    return cur
+HEALTH_STATUS_ORDER = {"Critical": 0, "Warning": 1, "Healthy": 2, "Not Assessed": 3, "Unknown": 4}
 
 
 def _parse_date(value: Any) -> datetime | None:
     if not value:
         return None
-    if isinstance(value, datetime):
-        return value.replace(tzinfo=None)
     text = str(value).strip()
-    for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%m/%d/%Y", "%m/%d/%Y %I:%M:%S %p"):
+    for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%m/%d/%Y %I:%M %p", "%m/%d/%Y"):
         try:
-            return datetime.strptime(text[: len(fmt)], fmt)
+            return datetime.strptime(text[: len(fmt)], fmt).replace(tzinfo=timezone.utc)
         except ValueError:
             continue
     try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(timezone.utc).replace(tzinfo=None)
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
     except ValueError:
         return None
 
 
-def _item(category: str, title: str, status: str, severity: str, affected_object: str, evidence: dict, recommendation: str, confidence: str = "medium") -> HealthAssessmentItem:
-    return HealthAssessmentItem(
-        category=category,
-        title=title,
-        status=status,
-        severity=severity,
-        affected_object=affected_object,
-        evidence=evidence,
-        recommendation=recommendation,
-        confidence=confidence,
-    )
+def _days_until(value: Any) -> int | None:
+    dt = _parse_date(value)
+    if not dt:
+        return None
+    return (dt - datetime.now(timezone.utc)).days
 
 
-def _date_health(category: str, title: str, affected_object: str, value: Any, warning_days: int, critical_when_expired: bool, recommendation: str) -> HealthAssessmentItem:
-    parsed = _parse_date(value)
-    if not parsed:
-        return _item(category, f"{title} not assessed", "Unknown", "Info", affected_object, {"value": value}, recommendation, "low")
-    days_remaining = (parsed - datetime.utcnow()).days
-    evidence = {"not_after_or_next_update": parsed.date().isoformat(), "days_remaining": days_remaining}
-    if critical_when_expired and days_remaining < 0:
-        return _item(category, f"{title} is expired", "Critical", "Critical", affected_object, evidence, recommendation, "high")
-    if days_remaining <= warning_days:
-        return _item(category, f"{title} expires soon", "Warning", "Medium", affected_object, evidence, recommendation, "high")
-    return _item(category, f"{title} is current", "Healthy", "Info", affected_object, evidence, "Continue monitoring this date on each scan.", "high")
+def _status_for_expiry(days: int | None) -> str:
+    if days is None:
+        return "Not Assessed"
+    if days < 0:
+        return "Critical"
+    if days <= 30:
+        return "Critical"
+    if days <= 180:
+        return "Warning"
+    return "Healthy"
 
 
-def _template_is_dangerous(template: CertificateTemplate) -> bool:
-    eku = " ".join(template.eku or []).lower()
-    has_client_auth = "client authentication" in eku or "1.3.6.1.5.5.7.3.2" in eku
-    broad_enroll = any((p.can_enroll or p.can_autoenroll) and p.principal.lower() in {"authenticated users", "domain users", "everyone"} for p in template.permissions)
-    return has_client_auth and broad_enroll and template.enrollee_supplies_subject and not template.manager_approval
+def _item(category: str, title: str, status: str, affected: str, evidence: dict, recommendation: str) -> dict:
+    return {
+        "category": category,
+        "title": title,
+        "status": status,
+        "affected_object": affected,
+        "evidence": evidence,
+        "recommendation": recommendation,
+    }
 
 
-def _cert_expiry_items(certificates: list[Any]) -> list[HealthAssessmentItem]:
-    if not certificates:
-        return [
-            _item(
-                "Certificate Inventory",
-                "Issued certificate inventory not collected",
-                "Unknown",
-                "Info",
-                "Issued certificate database",
-                {"certificates_seen": 0},
-                "Run the collector without -SkipIssued when operationally acceptable, or import issued certificate inventory through a future supported connector.",
-                "medium",
-            )
-        ]
-    items: list[HealthAssessmentItem] = []
-    expired = 0
-    expiring = 0
-    for cert in certificates:
-        expires = _parse_date(getattr(cert, "expires_at", ""))
-        if not expires:
-            continue
-        days_remaining = (expires - datetime.utcnow()).days
-        if days_remaining < 0:
-            expired += 1
-        elif days_remaining <= 30:
-            expiring += 1
-    if expired:
-        items.append(
-            _item(
-                "Certificate Lifecycle",
-                "Expired issued certificates observed",
-                "Warning",
-                "Medium",
-                "Issued certificates",
-                {"expired_count": expired},
-                "Review expired certificates and remove, renew, or document them according to certificate lifecycle policy.",
-                "medium",
-            )
-        )
-    if expiring:
-        items.append(
-            _item(
-                "Certificate Lifecycle",
-                "Issued certificates expire within 30 days",
-                "Warning",
-                "Medium",
-                "Issued certificates",
-                {"expiring_30_days": expiring},
-                "Prioritize renewal or decommissioning for certificates approaching expiry.",
-                "medium",
-            )
-        )
-    if not items:
-        items.append(
-            _item(
-                "Certificate Lifecycle",
-                "Issued certificate expiry posture is healthy",
-                "Healthy",
-                "Info",
-                "Issued certificates",
-                {"certificates_seen": len(certificates)},
-                "Continue regular certificate lifecycle monitoring.",
-                "medium",
-            )
-        )
-    return items
+def _score(items: list[dict]) -> tuple[int | None, str]:
+    assessed = [item for item in items if item["status"] not in {"Not Assessed", "Unknown"}]
+    if not assessed:
+        return None, "Unknown"
+    score = 100
+    for item in assessed:
+        if item["status"] == "Critical":
+            score -= 25
+        elif item["status"] == "Warning":
+            score -= 10
+    score = max(score, 0)
+    if score >= 90:
+        return score, "Healthy"
+    if score >= 70:
+        return score, "Warning"
+    if score >= 40:
+        return score, "Degraded"
+    return score, "Critical"
 
 
 def assess_pki_health(
     cas: list[CertificateAuthority],
     templates: list[CertificateTemplate],
-    certificates: list[Any],
-    assessment_hints: dict | None = None,
-) -> tuple[list[HealthAssessmentItem], dict]:
-    hints = assessment_hints or {}
-    items: list[HealthAssessmentItem] = []
-
-    if cas:
-        items.append(
-            _item(
-                "Inventory",
-                "Enterprise CAs collected",
-                "Healthy",
-                "Info",
-                "PKI inventory",
-                {"ca_count": len(cas)},
-                "Continue collecting CA inventory each scan.",
-                "high",
-            )
-        )
-    else:
-        items.append(
-            _item(
-                "Inventory",
-                "No Enterprise CAs collected",
-                "Critical",
-                "High",
-                "PKI inventory",
-                {"ca_count": 0},
-                "Verify collector permissions and certutil availability so CA inventory can be assessed.",
-                "high",
-            )
-        )
-
-    dangerous_templates = [t.name for t in templates if _template_is_dangerous(t)]
-    items.append(
-        _item(
-            "Template Risk",
-            "Dangerous template count calculated",
-            "Warning" if dangerous_templates else "Healthy",
-            "High" if dangerous_templates else "Info",
-            "Certificate templates",
-            {"dangerous_template_count": len(dangerous_templates), "templates": dangerous_templates},
-            "Review dangerous templates first because they create the clearest certificate exposure paths.",
-            "high",
-        )
-    )
-
-    failed_count = sum(1 for c in certificates if str(getattr(c, "status", "")).lower() == "failed")
-    pending_count = sum(1 for c in certificates if str(getattr(c, "status", "")).lower() == "pending")
-    recently_issued = sum(1 for c in certificates if str(getattr(c, "status", "issued")).lower() == "issued")
-    items.append(
-        _item(
-            "Request Volume",
-            "Certificate request status summarized",
-            "Warning" if failed_count or pending_count else "Healthy",
-            "Medium" if failed_count else "Low" if pending_count else "Info",
-            "CA request database",
-            {"failed": failed_count, "pending": pending_count, "recently_issued": recently_issued},
-            "Review failed and pending requests for operational issues, policy drift, or stalled approvals.",
-            "medium" if certificates else "low",
-        )
-    )
+    certificates: list[IssuedCertificate],
+    findings: list[Any],
+    scan_completed_at: Any,
+    collector_version: str,
+    source_host: str,
+) -> dict:
+    items: list[dict] = []
+    expiry_risks: list[dict] = []
 
     for ca in cas:
-        config = _config(ca)
-        name = ca.name
-        service_status = config.get("service_status")
-        if service_status:
-            healthy = str(service_status).lower() in {"running", "online", "started"}
-            items.append(
-                _item(
-                    "CA Service",
-                    "CA service is running" if healthy else "CA service is not running",
-                    "Healthy" if healthy else "Critical",
-                    "Info" if healthy else "Critical",
-                    name,
-                    {"service_status": service_status},
-                    "Investigate CA service availability and restart only through approved operational procedures." if not healthy else "Continue monitoring CA service state.",
-                    "medium",
-                )
+        config = ca.config_json or {}
+        items.append(
+            _item(
+                "CA Service Health",
+                "CA service query status",
+                "Healthy" if ca.status.lower() == "online" else "Critical",
+                ca.name,
+                {"status": ca.status, "dns_name": ca.dns_name, "source_host": source_host},
+                "Investigate CA service availability and collector reachability if status is not online.",
             )
-        else:
-            items.append(_item("CA Service", "CA service status not assessed", "Unknown", "Info", name, {}, "Collect CA service status where the collector has sufficient local visibility.", "low"))
+        )
 
-        ca_expiry = config.get("certificate_not_after") or _nested(config, "certificate", "not_after") or config.get("not_after")
-        items.append(_date_health("CA Certificate", "CA certificate", name, ca_expiry, 90, True, "Renew or replace CA certificates before expiry using approved PKI change procedures."))
+        ca_days = _days_until(config.get("certificate_expires_at") or config.get("ca_certificate_expires_at"))
+        ca_status = _status_for_expiry(ca_days)
+        items.append(
+            _item(
+                "CA Certificate Health",
+                "CA certificate expiry",
+                ca_status,
+                ca.name,
+                {
+                    "expires_at": config.get("certificate_expires_at") or config.get("ca_certificate_expires_at"),
+                    "days_remaining": ca_days,
+                    "signature_algorithm": config.get("signature_algorithm"),
+                    "key_size": config.get("key_size"),
+                    "chain_complete": config.get("chain_complete", "Not Assessed"),
+                },
+                "Renew CA certificates before expiry and validate chain completeness, signature algorithm, and key size.",
+            )
+        )
+        if ca_status in {"Critical", "Warning"}:
+            expiry_risks.append({"type": "CA certificate", "ca": ca.name, "days_remaining": ca_days, "status": ca_status})
 
-        crl_next = config.get("crl_next_update") or _nested(config, "crl", "next_update")
-        items.append(_date_health("CRL", "CRL", name, crl_next, 7, True, "Publish a fresh CRL and verify CDP publication before clients depend on stale revocation data."))
-
-        for url_type, key in (("AIA", "aia_urls"), ("CDP", "cdp_urls")):
-            urls = config.get(key) or _nested(config, "certificate", key)
-            if urls is None:
-                items.append(_item(url_type, f"{url_type} URL reachability not assessed", "Unknown", "Info", name, {}, f"Collect and validate {url_type} publication URLs during the next collector enhancement.", "low"))
-            elif not urls:
-                items.append(_item(url_type, f"{url_type} URL missing", "Warning", "Medium", name, {key: urls}, f"Publish valid {url_type} locations so clients can build and validate certificate chains reliably.", "medium"))
+        for health_key, title, category, recommendation in (
+            ("crl", "CRL publication and freshness", "CRL Health", "Publish valid CRLs at reachable CDP URLs and monitor nextUpdate values."),
+            ("aia", "AIA chain retrieval", "AIA Health", "Publish reachable AIA URLs so clients can build certificate chains reliably."),
+            ("ocsp", "OCSP responder status", "OCSP Health", "Assess OCSP responder configuration and OCSP signing certificate expiry where OCSP is used."),
+        ):
+            section = config.get(health_key, {}) if isinstance(config.get(health_key), dict) else {}
+            assessed = section.get("assessed") or config.get(f"{health_key}_assessed")
+            configured = section.get("configured") or config.get(f"{health_key}_configured")
+            reachable = section.get("reachable") or config.get(f"{health_key}_reachable")
+            expires_days = _days_until(section.get("expires_at") or section.get("next_update"))
+            if assessed is not True and configured is None:
+                status = "Not Assessed"
+            elif configured is False:
+                status = "Warning"
+            elif reachable is False:
+                status = "Critical"
             else:
-                reachable = config.get(f"{key}_reachable")
-                status = "Healthy" if reachable is not False else "Warning"
-                items.append(_item(url_type, f"{url_type} URLs collected", status, "Info" if status == "Healthy" else "Medium", name, {key: urls, "reachable": reachable}, f"Verify {url_type} URLs remain reachable from relying systems.", "medium"))
+                status = _status_for_expiry(expires_days) if expires_days is not None else "Healthy"
+            items.append(_item(category, title, status, ca.name, {"configured": configured, "reachable": reachable, "days_remaining": expires_days, "details": section}, recommendation))
+            if status in {"Critical", "Warning"}:
+                expiry_risks.append({"type": category, "ca": ca.name, "days_remaining": expires_days, "status": status})
 
-        ocsp = config.get("ocsp_status") or _nested(config, "ocsp", "status") or hints.get("ocsp_status")
-        if ocsp:
-            healthy = str(ocsp).lower() in {"healthy", "online", "ok"}
-            items.append(_item("OCSP", "OCSP status assessed", "Healthy" if healthy else "Warning", "Info" if healthy else "Medium", name, {"ocsp_status": ocsp}, "Review OCSP service state if deployed and required by relying parties.", "medium"))
-        else:
-            items.append(_item("OCSP", "OCSP not assessed", "Unknown", "Info", name, {}, "Collect OCSP responder status where deployed; otherwise document that OCSP is not used.", "low"))
+    cert_status = Counter(cert.status.lower() for cert in certificates)
+    expired_certs = 0
+    expiring_30 = 0
+    expiring_60 = 0
+    expiring_90 = 0
+    for cert in certificates:
+        days = _days_until(cert.expires_at)
+        if days is None:
+            continue
+        if days < 0:
+            expired_certs += 1
+        if 0 <= days <= 30:
+            expiring_30 += 1
+        if 0 <= days <= 60:
+            expiring_60 += 1
+        if 0 <= days <= 90:
+            expiring_90 += 1
 
-    items.extend(_cert_expiry_items(certificates))
+    items.append(
+        _item(
+            "Certificate Issuance Health",
+            "Issued certificate data collection",
+            "Healthy" if certificates else "Warning",
+            "Certificate database",
+            {
+                "issued": len(certificates),
+                "failed": cert_status.get("failed", 0),
+                "pending": cert_status.get("pending", 0),
+                "expired": expired_certs,
+                "expiring_30": expiring_30,
+                "expiring_60": expiring_60,
+                "expiring_90": expiring_90,
+            },
+            "Collect issued certificate inventory regularly and monitor failed, pending, expired, and soon-expiring certificates.",
+        )
+    )
 
-    counts: dict[str, int] = {}
-    for item in items:
-        counts[item.status] = counts.get(item.status, 0) + 1
-    score = max(0, 100 - counts.get("Critical", 0) * 25 - counts.get("Warning", 0) * 10 - counts.get("Unknown", 0) * 3)
-    if score >= 85:
-        overall = "Healthy"
-    elif score >= 60:
-        overall = "Warning"
-    else:
-        overall = "Critical"
-    summary = {
+    high_risk_templates = sum(1 for finding in findings if getattr(finding, "affected_object", None) in {t.name for t in templates} and getattr(finding, "severity", "") in {"Critical", "High"})
+    not_fully_assessed = sum(1 for template in templates if not (template.raw_json or {}).get("acl_assessed"))
+    items.append(
+        _item(
+            "Template Health",
+            "Template inventory and assessment coverage",
+            "Warning" if not_fully_assessed else "Healthy",
+            "Certificate Templates",
+            {"collected": len(templates), "high_risk_templates": high_risk_templates, "not_fully_assessed": not_fully_assessed, "enabled": len(templates), "disabled": 0},
+            "Collect template ACL metadata where possible and prioritize remediation for high-risk authentication templates.",
+        )
+    )
+
+    score, status = _score(items)
+    counts = Counter(item["status"] for item in items)
+    return {
         "score": score,
-        "status": overall,
-        "counts": counts,
-        "ca_count": len(cas),
-        "template_count": len(templates),
-        "dangerous_template_count": len(dangerous_templates),
-        "failed_request_count": failed_count,
-        "pending_request_count": pending_count,
-        "recently_issued_count": recently_issued,
+        "status": status,
+        "counts": dict(counts),
+        "collector": {"version": collector_version, "source_host": source_host, "last_successful_scan": str(scan_completed_at), "last_failed_scan": None},
+        "items": items,
+        "expiry_risks": expiry_risks,
+        "recommendations": [item["recommendation"] for item in items if item["status"] in {"Critical", "Warning", "Not Assessed"}][:10],
     }
-    return items, summary

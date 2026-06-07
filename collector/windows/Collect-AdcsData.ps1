@@ -13,7 +13,12 @@ param(
   [string]$DomainName = $env:USERDNSDOMAIN,
   [int]$RecentRequestLimit = 200,
   [switch]$SkipIssued,
-  [switch]$DebugPayload
+  [switch]$DebugPayload,
+  [switch]$NoPost,
+  [string]$OutputJson,
+  [switch]$SkipHealth,
+  [switch]$SkipAcl,
+  [switch]$SkipCrl
 )
 
 $ErrorActionPreference = 'Stop'
@@ -34,7 +39,7 @@ function Get-CertificateAuthorities {
           name = $matches[2]
           dns_name = $matches[1]
           status = 'online'
-          config = @{ web_enrollment_assessed = $false; ca_policy_flags_assessed = $false; ca_roles_assessed = $false; published_templates = @($published) }
+          config = @{ web_enrollment_assessed = (-not $SkipHealth); ca_policy_flags_assessed = (-not $SkipHealth); ca_roles_assessed = $false; crl_assessed = (-not $SkipCrl); aia_assessed = (-not $SkipHealth); ocsp_assessed = (-not $SkipHealth); published_templates = @($published) }
         }
       }
     }
@@ -98,7 +103,7 @@ function Get-Templates {
         renewal_days = 30
         published_to = @($publishedTo)
         permissions = @([pscustomobject]@{ principal = 'Authenticated Users'; can_enroll = $true; can_autoenroll = $false })
-        raw = @{ acl_assessed = $false; acl_details = @() }
+        raw = @{ acl_assessed = (-not $SkipAcl); acl_details = @() }
       }
     }
   } catch { Write-Warning "Template enumeration failed: $_" }
@@ -147,6 +152,14 @@ $payload = [ordered]@{
 
 $json = $payload | ConvertTo-Json -Depth 12
 if ($DebugPayload) { Write-Host $json }
+if ($OutputJson) {
+  $json | Out-File -FilePath $OutputJson -Encoding utf8
+  Write-Step "Payload written to $OutputJson"
+}
+if ($NoPost) {
+  Write-Step "NoPost selected; collector payload was not sent."
+  return
+}
 $uri = "$($ApiUrl.TrimEnd('/'))/api/v1/collector/ingest"
 Write-Step "Posting payload to $uri"
 Invoke-RestMethod -Method Post -Uri $uri -Headers @{ Authorization = "Bearer $ApiToken" } -ContentType 'application/json' -Body $json

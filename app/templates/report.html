@@ -1,9 +1,11 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><title>CertShield Report</title>
-<style>body{font-family:Arial,sans-serif;margin:2rem} .sev{font-weight:bold}</style></head>
+<style>body{font-family:Arial,sans-serif;margin:2rem;color:#0f172a} .sev{font-weight:bold} section{margin:1.5rem 0} table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:.4rem;text-align:left}</style></head>
 <body>
-<h1>CertShield Report</h1>
-<p>Scan #{{scan.id}} · Domain {{scan.domain_name}} · Completed {{scan.completed_at}}</p>
-<h2>Findings</h2>
-<ul>{% for f in findings %}<li><span class="sev">[{{f.severity}}]</span> {{f.title}} · {{f.esc_category}} · {{f.confidence}} · {{f.coverage_state}} ({{f.affected_object}})</li>{% endfor %}</ul>
+<h1>CertShield PKI Posture Management Report</h1>
+<p>Build: Phase 1 Posture · Scan #{{scan.id}} · Domain {{scan.domain_name}} · Completed {{scan.completed_at}}</p>
+<section><h2>Executive Summary</h2><ul><li>PKI Posture Score: {{scan.summary_json.posture.score if scan.summary_json.posture else 'Unknown'}}</li><li>PKI Health Score: {{scan.summary_json.health.score if scan.summary_json.health else 'Unknown'}}</li><li>Best Practice Score: {{scan.summary_json.best_practices.score if scan.summary_json.best_practices else 'Unknown'}}</li></ul></section>
+<section><h2>Top Risks</h2><ul>{% for risk in scan.summary_json.posture.top_risks %}<li>{{risk.severity}} · {{risk.title}} · {{risk.recommendation}}</li>{% else %}<li>No top risks in report.</li>{% endfor %}</ul></section>
+<section><h2>Findings</h2><ul>{% for f in findings %}<li><span class="sev">[{{f.severity}}]</span> {{f.title}} · {{f.esc_category}} · {{f.confidence}} · {{f.coverage_state}} ({{f.affected_object}})</li>{% endfor %}</ul></section>
+<section><h2>Collector Coverage</h2><ul>{% for k,v in scan.coverage_json.items() %}<li>{{k}}: {{v}}</li>{% endfor %}</ul></section>
 </body></html>
