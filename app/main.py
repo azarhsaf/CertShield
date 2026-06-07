@@ -299,7 +299,12 @@ def finding_simulation_page(finding_id: int, request: Request, db: Session = Dep
 
 @app.get("/certificates", response_class=HTMLResponse)
 def certs_page(request: Request, db: Session = Depends(get_db)):
-    return render_page(request, "certificates.html", db.query(IssuedCertificate), "certificates", db)
+    ensure_authenticated(request)
+    latest_scan = _latest_scan(db)
+    records = db.query(IssuedCertificate).filter_by(scan_id=latest_scan.id).all() if latest_scan else []
+    ctx = _nav_context(request)
+    ctx.update({"certificates": records, "scan": latest_scan})
+    return templates.TemplateResponse("certificates.html", ctx)
 
 
 @app.get("/history", response_class=HTMLResponse)
@@ -326,6 +331,7 @@ def settings_page(request: Request, db: Session = Depends(get_db)):
             "scan": latest_scan,
             "coverage": latest_scan.coverage_json if latest_scan else {},
             "collector_version": latest_scan.summary_json.get("collector_version", "none") if latest_scan else "none",
+            "posture": _assessment(latest_scan, "posture", {}),
         }
     )
     return templates.TemplateResponse("settings.html", ctx)
@@ -343,16 +349,37 @@ def export_json(scan_id: int, request: Request, db: Session = Depends(get_db)):
         "scan": summary,
         "executive_summary": {
             "pki_posture_score": summary.get("posture", {}).get("score"),
+            "pki_posture_status": summary.get("posture", {}).get("status"),
             "pki_health_score": summary.get("health", {}).get("score"),
+            "pki_health_status": summary.get("health", {}).get("status"),
             "best_practice_score": summary.get("best_practices", {}).get("score"),
+            "best_practice_status": summary.get("best_practices", {}).get("status"),
+            "posture_score_explanation": summary.get("posture", {}).get("score_explanation", []),
+            "health_score_explanation": summary.get("health", {}).get("score_explanation", []),
+            "best_practice_score_explanation": summary.get("best_practices", {}).get("score_explanation", []),
             "critical_findings": sum(1 for f in findings if f.severity == "Critical" and f.coverage_state == "detected"),
             "high_findings": sum(1 for f in findings if f.severity == "High" and f.coverage_state == "detected"),
+            "not_assessed_summary": {
+                "coverage": sum(1 for state in (scan.coverage_json or {}).values() if state in {"not_assessed", "insufficient_data"}),
+                "health": summary.get("health", {}).get("counts", {}).get("Not Assessed", 0),
+                "best_practices": summary.get("best_practices", {}).get("counts", {}).get("Not Assessed", 0),
+            },
         },
         "posture": summary.get("posture", {}),
         "health": summary.get("health", {}),
         "best_practices": summary.get("best_practices", {}),
         "coverage": scan.coverage_json,
+        "collector_coverage": summary.get("posture", {}).get("data_coverage", {}),
         "remediation_priorities": summary.get("remediation_priorities", {}),
+        "top_risks": summary.get("posture", {}).get("top_risks", []),
+        "health_issues": [
+            item for item in summary.get("health", {}).get("items", [])
+            if item.get("status") in {"Critical", "Warning", "Not Assessed"}
+        ],
+        "best_practice_gaps": [
+            item for item in summary.get("best_practices", {}).get("items", [])
+            if item.get("status") in {"Fail", "Warning", "Not Assessed"}
+        ],
         "cas": [c.name for c in db.query(CertificateAuthority).filter_by(scan_id=scan.id).all()],
         "findings": [
             {
@@ -367,6 +394,11 @@ def export_json(scan_id: int, request: Request, db: Session = Depends(get_db)):
                 "technical_impact": (f.evidence_json or {}).get("technical_impact"),
                 "score_breakdown": (f.evidence_json or {}).get("score_breakdown"),
                 "remediation": f.remediation,
+                "structured_evidence": {
+                    key: value
+                    for key, value in (f.evidence_json or {}).items()
+                    if key not in {"business_impact", "technical_impact", "score_breakdown"}
+                },
             }
             for f in findings
         ],

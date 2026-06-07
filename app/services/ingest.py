@@ -120,8 +120,18 @@ class IngestService:
             "severity": dict(severity_counter),
             "by_category": dict(esc_counter),
             "collector_version": payload.collector_version,
+            "health_coverage": payload.health_coverage,
         }
-        health = assess_pki_health(cas, templates, certificates, findings, scan.completed_at, payload.collector_version, payload.source_host)
+        health = assess_pki_health(
+            cas,
+            templates,
+            certificates,
+            findings,
+            scan.completed_at,
+            payload.collector_version,
+            payload.source_host,
+            payload.health_coverage,
+        )
         best_practices = assess_best_practices(cas, templates, certificates, findings)
         posture = assess_pki_posture(findings, health, best_practices, coverage, base_summary)
         scan.summary_json = {

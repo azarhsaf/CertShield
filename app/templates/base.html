@@ -8,18 +8,15 @@
   <link rel="stylesheet" href="/static/css/style.css" />
 </head>
 <body>
-<nav class="navbar navbar-expand-xl app-nav">
-  <div class="container-fluid px-4">
-    <a class="navbar-brand d-flex align-items-center gap-2" href="/">
-      <span class="brand-dot"></span>
-      <span>CertShield</span><span class="product-pill">PKI Posture</span>
-    </a>
+<nav class="navbar navbar-expand-xl app-nav py-1">
+  <div class="container-fluid px-3">
+    <a class="navbar-brand compact-brand" href="/"><span class="brand-dot"></span>CertShield <span class="product-pill">PKI Posture</span></a>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMain"><span class="navbar-toggler-icon"></span></button>
     <div class="collapse navbar-collapse" id="navMain">
-      <ul class="navbar-nav me-auto">
+      <ul class="navbar-nav me-auto compact-nav">
         <li class="nav-item"><a class="nav-link" href="/">Dashboard</a></li>
-        <li class="nav-item"><a class="nav-link" href="/pki-posture">PKI Posture</a></li>
-        <li class="nav-item"><a class="nav-link" href="/pki-health">PKI Health</a></li>
+        <li class="nav-item"><a class="nav-link" href="/pki-posture">Posture</a></li>
+        <li class="nav-item"><a class="nav-link" href="/pki-health">Health</a></li>
         <li class="nav-item"><a class="nav-link" href="/best-practices">Best Practices</a></li>
         <li class="nav-item"><a class="nav-link" href="/cas">CAs</a></li>
         <li class="nav-item"><a class="nav-link" href="/templates">Templates</a></li>
@@ -29,12 +26,12 @@
         <li class="nav-item"><a class="nav-link" href="/history">History</a></li>
         <li class="nav-item"><a class="nav-link" href="/settings">Settings</a></li>
       </ul>
-      {% if current_user %}<div class="d-flex align-items-center gap-3"><span class="text-light small">Signed in as <strong>{{ current_user }}</strong></span><a class="btn btn-sm btn-outline-light" href="/logout">Logout</a></div>{% endif %}
+      {% if current_user %}<div class="user-area"><span>Signed in as <strong>{{ current_user }}</strong></span><a class="btn btn-sm btn-outline-light" href="/logout">Logout</a></div>{% endif %}
     </div>
   </div>
 </nav>
 
-<main class="container-fluid px-4 py-4">
+<main class="container-fluid px-3 py-3">
   {% block content %}{% endblock %}
 </main>
 <footer class="app-footer">CertShield PKI Posture Management · Build: Phase 1 Posture</footer>

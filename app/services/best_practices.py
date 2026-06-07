@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Any
 
 from app.models.entities import CertificateAuthority, CertificateTemplate, IssuedCertificate
 from app.services.risk_engine import _has_any_purpose, _has_client_auth
@@ -37,19 +36,53 @@ def _bp(
     }
 
 
-def _score(items: list[dict]) -> tuple[int | None, str, dict]:
-    assessed = [item for item in items if item["status"] != "Not Assessed"]
-    counts = dict(Counter(item["status"] for item in items))
-    if not assessed:
-        return None, "Unknown", counts
+def _score(items: list[dict]) -> tuple[int | None, str, dict, list[str]]:
+    if not items:
+        return None, "Unknown", {}, ["No best-practice checks were produced from the latest scan."]
+
     score = 100
-    for item in assessed:
-        if item["status"] == "Fail":
-            score -= 12 if item["severity"] in {"Critical", "High"} else 7
-        elif item["status"] == "Warning":
-            score -= 5
-    score = max(score, 0)
-    return score, "Pass" if score >= 90 else "Warning" if score >= 70 else "Fail", counts
+    explanations: list[str] = []
+    counts = Counter(item["status"] for item in items)
+    critical_fails = sum(
+        1 for item in items if item["status"] == "Fail" and item["severity"] == "Critical"
+    )
+    for item in items:
+        status = item["status"]
+        severity = item["severity"]
+        if status == "Fail":
+            penalty = {"Critical": 25, "High": 15, "Medium": 8}.get(severity, 4)
+            score -= penalty
+            explanations.append(f"-{penalty}: {item['title']} failed for {item['affected_object']}.")
+        elif status == "Warning":
+            penalty = {"Critical": 12, "High": 10, "Medium": 6}.get(severity, 3)
+            score -= penalty
+            explanations.append(f"-{penalty}: {item['title']} has a warning for {item['affected_object']}.")
+        elif status == "Not Assessed":
+            penalty = 7 if severity in {"Critical", "High"} else 4
+            score -= penalty
+            explanations.append(f"-{penalty}: {item['title']} was not assessed for {item['affected_object']}.")
+
+    not_assessed_ratio = counts.get("Not Assessed", 0) / len(items)
+    if not_assessed_ratio > 0.5:
+        score = min(score, 69)
+        explanations.append("Score capped at 69 because more than half of best-practice checks are Not Assessed.")
+    if critical_fails == 1:
+        score = min(score, 69)
+        explanations.append("Score capped at 69 because a Critical best-practice failure was detected.")
+    elif critical_fails > 1:
+        score = min(score, 49)
+        explanations.append("Score capped at 49 because multiple Critical best-practice failures were detected.")
+
+    score = max(0, min(score, 100))
+    if score >= 90:
+        status = "Strong"
+    elif score >= 70:
+        status = "Warning"
+    elif score >= 40:
+        status = "Weak"
+    else:
+        status = "Critical"
+    return score, status, dict(counts), explanations
 
 
 def _config_bool(config: dict, key: str) -> bool | None:
@@ -112,7 +145,7 @@ def _ca_practices(ca: CertificateAuthority) -> list[dict]:
                 category,
                 "Issuing CA should not run on a domain controller",
                 "Pass" if on_dc is False else "Fail" if on_dc is True else "Not Assessed",
-                "High",
+                "Critical" if on_dc is True else "High",
                 ca.name,
                 {"installed_on_domain_controller": on_dc},
                 "Combining CA and DC roles increases business impact of host compromise.",
@@ -157,22 +190,51 @@ def _ca_practices(ca: CertificateAuthority) -> list[dict]:
 
 
 def _template_practices(template: CertificateTemplate) -> list[dict]:
-    principals = {p.principal.lower().split("\\")[-1]: p for p in template.permissions if p.can_enroll or p.can_autoenroll}
+    raw = template.raw_json or {}
+    permission_data_available = bool(template.permissions) or raw.get("permissions_assessed") is True
+    principals = {
+        p.principal.lower().split("\\")[-1]: p
+        for p in template.permissions
+        if p.can_enroll or p.can_autoenroll
+    }
+    broad_principals = "authenticated users" in principals or "domain users" in principals
     auth_capable = _has_client_auth(template.eku)
-    broad_auth = auth_capable and ("authenticated users" in principals or "domain users" in principals)
-    owner = (template.raw_json or {}).get("business_owner")
+    owner = raw.get("business_owner")
+    if not permission_data_available:
+        broad_status = "Not Assessed"
+        broad_severity = "High"
+        broad_reason = "Collector did not provide template permission metadata."
+    elif auth_capable and broad_principals and template.enrollee_supplies_subject:
+        broad_status = "Fail"
+        broad_severity = "Critical"
+        broad_reason = None
+    elif broad_principals:
+        broad_status = "Warning"
+        broad_severity = "High" if auth_capable else "Medium"
+        broad_reason = None
+    else:
+        broad_status = "Pass"
+        broad_severity = "Low"
+        broad_reason = None
+
     return [
         _bp(
             "Templates",
             "Avoid broad enrollment on authentication templates",
-            "Fail" if broad_auth else "Pass",
-            "Critical" if broad_auth else "Low",
+            broad_status,
+            broad_severity,
             template.name,
-            {"eku": template.eku, "principals": list(principals)},
+            {
+                "eku": template.eku,
+                "principals": list(principals),
+                "permission_data_available": permission_data_available,
+                "enrollee_supplies_subject": template.enrollee_supplies_subject,
+            },
             "Broad enrollment on authentication templates can create enterprise identity risk.",
             "Low-privileged principals may obtain authentication-capable certificates if other safeguards are weak.",
             "Remove Authenticated Users / Domain Users from Enroll or AutoEnroll and scope to dedicated security groups.",
-            "high",
+            "high" if permission_data_available else "low",
+            not_assessed_reason=broad_reason,
         ),
         _bp(
             "Templates",
@@ -216,7 +278,7 @@ def _template_practices(template: CertificateTemplate) -> list[dict]:
             "Pass" if owner else "Not Assessed",
             "Medium",
             template.name,
-            {"business_owner": owner},
+            {"business_owner": owner or "Not collected"},
             "Unowned templates complicate risk acceptance and remediation.",
             "Template changes may lack accountable review.",
             "Assign and document template owners for important templates.",
@@ -230,7 +292,7 @@ def assess_best_practices(
     cas: list[CertificateAuthority],
     templates: list[CertificateTemplate],
     certificates: list[IssuedCertificate],
-    findings: list[Any],
+    findings: list[object],
 ) -> dict:
     items: list[dict] = []
     for ca in cas:
@@ -297,8 +359,16 @@ def assess_best_practices(
         ]
     )
 
-    score, status, counts = _score(items)
+    score, status, counts, explanations = _score(items)
     grouped: dict[str, list[dict]] = {}
     for item in items:
         grouped.setdefault(item["category"], []).append(item)
-    return {"score": score, "status": status, "counts": counts, "items": items, "grouped": grouped}
+    return {
+        "score": score,
+        "status": status,
+        "score_explanation": explanations,
+        "limited_visibility": bool(items) and counts.get("Not Assessed", 0) / len(items) > 0.5,
+        "counts": counts,
+        "items": items,
+        "grouped": grouped,
+    }

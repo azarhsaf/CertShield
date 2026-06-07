@@ -162,3 +162,18 @@ The PowerShell collector remains read-only and supports optional safety/diagnost
 - `-SkipHealth` - mark health-adjacent CA metadata as not assessed.
 - `-SkipAcl` - mark ACL metadata as not assessed.
 - `-SkipCrl` - mark CRL metadata as not assessed.
+
+## Phase 1.1 UI and Scoring Stabilization Release Notes
+
+Release: **Phase 1.1 UI and Scoring Stabilization**
+
+Changes:
+- Improved UI layout with compact one-line desktop navigation, smaller cards, tighter table spacing, and responsive wrapping.
+- Replaced raw JSON/Python-dict evidence on main pages with readable evidence rows and pills.
+- Fixed PKI Health scoring to avoid false Healthy status when CRL, AIA, OCSP, CA certificate, or issuance data is missing.
+- Added Limited Visibility handling and score caps when more than half of required checks are Not Assessed.
+- Improved PKI Posture score penalties and score caps when Critical ADCS findings or broad enrollment/requester-controlled identity exposure are detected.
+- Clarified ADCS issued certificate inventory versus network SSL/TLS scanning; TLS endpoint scanning is not configured in this phase.
+- Improved CA inventory assessment coverage display with compact CRL, AIA, OCSP, web enrollment, CA policy, and CA role badges.
+- Improved collector health coverage fields for CA certificate, CRL, AIA, OCSP, issued certificates, template ACL, and CA registry/config evidence.
+- Added tests for PKI Health scoring, posture score caps, page rendering, no raw dict evidence on main pages, empty certificate collection guidance, and existing ingest compatibility.

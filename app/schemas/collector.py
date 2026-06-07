@@ -47,3 +47,4 @@ class CollectorPayload(BaseModel):
     templates: list[TemplateIn] = Field(default_factory=list)
     issued_certificates: list[CertIn] = Field(default_factory=list)
     assessment_hints: dict = Field(default_factory=dict)
+    health_coverage: dict = Field(default_factory=dict)
