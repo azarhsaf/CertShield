@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header"><div><div class="eyebrow">Operational Availability</div><h1>PKI Health</h1><p>Is the PKI infrastructure working correctly and can clients validate certificates without outage?</p></div></div>
+{% if health %}
+<div class="row g-3 mb-4">
+  <div class="col-md-3"><div class="metric-card"><div class="metric-title">Health Score</div><div class="metric-value">{{health.score if health.score is not none else 'Unknown'}}</div><div>{{health.status}}</div></div></div>
+  <div class="col-md-3"><div class="metric-card"><div class="metric-title">Healthy</div><div class="metric-value">{{health.counts.Healthy or 0}}</div></div></div>
+  <div class="col-md-3"><div class="metric-card"><div class="metric-title">Warning</div><div class="metric-value">{{health.counts.Warning or 0}}</div></div></div>
+  <div class="col-md-3"><div class="metric-card"><div class="metric-title">Critical</div><div class="metric-value">{{health.counts.Critical or 0}}</div></div></div>
+</div>
+<div class="row g-3 mb-4">
+  <div class="col-lg-7"><div class="card card-panel"><div class="card-body"><h2 class="h5">CA Health / CRL / AIA / OCSP</h2><div class="table-responsive"><table class="table modern-table"><thead><tr><th>Section</th><th>Check</th><th>Status</th><th>Affected</th><th>Evidence</th></tr></thead><tbody>{% for item in health.items %}<tr><td>{{item.category}}</td><td>{{item.title}}</td><td><span class="badge status-{{item.status|lower|replace(' ', '-')}}">{{item.status}}</span></td><td>{{item.affected_object}}</td><td><code>{{item.evidence}}</code></td></tr>{% endfor %}</tbody></table></div></div></div></div>
+  <div class="col-lg-5"><div class="card card-panel mb-3"><div class="card-body"><h2 class="h5">Collector Coverage</h2><p><strong>Collector:</strong> {{health.collector.version}}</p><p><strong>Source host:</strong> {{health.collector.source_host}}</p><p><strong>Last successful scan:</strong> {{health.collector.last_successful_scan}}</p><p><strong>Last failed scan:</strong> {{health.collector.last_failed_scan or 'None recorded'}}</p></div></div><div class="card card-panel"><div class="card-body"><h2 class="h5">Recommendations</h2><ul>{% for rec in health.recommendations %}<li>{{rec}}</li>{% else %}<li>No active health recommendations.</li>{% endfor %}</ul></div></div></div>
+</div>
+<div class="card card-panel"><div class="card-body"><h2 class="h5">Expiry Risks</h2>{% for risk in health.expiry_risks %}<span class="badge text-bg-warning me-1">{{risk.type}} · {{risk.ca}} · {{risk.status}}</span>{% else %}<p class="text-secondary mb-0">No expiry risks detected from collected data.</p>{% endfor %}</div></div>
+{% else %}<div class="empty-state">No PKI health assessment available yet.</div>{% endif %}
+{% endblock %}

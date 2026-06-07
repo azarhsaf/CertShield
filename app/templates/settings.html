@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1 class="h3 mb-3">Settings / Collector Information</h1>
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card card-panel"><div class="card-body">
+      <h2 class="h5">Connector</h2>
+      <p><strong>Collector endpoint:</strong> <code>{{collector_endpoint}}</code></p>
+      <p><strong>Collector token (masked):</strong> <code>{{collector_token}}</code></p>
+      <p><strong>Latest collector version:</strong> <code>{{collector_version}}</code></p>
+      <p><strong>Last scan time:</strong> {{scan.completed_at if scan else 'No scan received'}}</p>
+      <p><strong>Product build:</strong> CertShield PKI Posture Management · Phase 1 Posture</p>
+      <p class="small text-secondary mb-0">Current PowerShell collector preserves the broad enrollment fallback and adds optional posture metadata when available.</p>
+    </div></div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card card-panel"><div class="card-body">
+      <h2 class="h5">Runtime & Data Coverage Matrix</h2>
+      <p><strong>Runtime bind:</strong> {{bind_host}}:{{bind_port}}</p>
+      {% if coverage %}
+        {% for category,state in coverage.items() %}<span class="badge text-bg-secondary me-1 mb-1">{{category}}: {{state}}</span>{% endfor %}
+      {% else %}
+        <p class="text-secondary">No scan coverage data yet.</p>
+      {% endif %}
+      <p class="small text-secondary mt-3 mb-0">Simulation features are read-only. No live exploitation actions, certificate requests, credential use, or privilege changes are performed.</p>
+    </div></div>
+  </div>
+</div>
+{% endblock %}

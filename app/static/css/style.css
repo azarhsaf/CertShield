@@ -1,0 +1,74 @@
+:root {
+  --bg: #f2f5fb;
+  --panel: #ffffff;
+  --text: #12213f;
+  --muted: #6d7791;
+  --nav: #0f172a;
+  --primary: #245bff;
+}
+
+body { background: var(--bg); color: var(--text); }
+.app-nav { background: var(--nav); box-shadow: 0 6px 18px rgba(15, 23, 42, .25); }
+.navbar-brand, .nav-link { color: #e8efff !important; }
+.nav-link:hover { color: #ffffff !important; }
+.brand-dot { width: 12px; height: 12px; border-radius: 50%; background: #34d399; display: inline-block; }
+
+.card-panel, .metric-card, .login-card, .empty-state {
+  border: 1px solid #e4e9f5;
+  background: var(--panel);
+  border-radius: 14px;
+  box-shadow: 0 10px 25px rgba(17, 24, 39, .06);
+}
+
+.metric-card { padding: 1rem 1.2rem; }
+.metric-title { color: var(--muted); font-size: .9rem; }
+.metric-value { font-size: 2rem; font-weight: 700; line-height: 1.15; }
+
+.modern-table th { font-size: .85rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.modern-table td { font-size: .94rem; }
+
+.sev-critical { background: #dc2626 !important; color: #fff !important; }
+.sev-high { background: #ea580c !important; color: #fff !important; }
+.sev-medium { background: #ca8a04 !important; color: #fff !important; }
+.sev-low { background: #2563eb !important; color: #fff !important; }
+
+.sev-border-critical { border-left: 5px solid #dc2626; }
+.sev-border-high { border-left: 5px solid #ea580c; }
+.sev-border-medium { border-left: 5px solid #ca8a04; }
+.sev-border-low { border-left: 5px solid #2563eb; }
+
+.progress { height: 8px; }
+.progress-bar.sev-critical { background: #dc2626; }
+.progress-bar.sev-high { background: #ea580c; }
+.progress-bar.sev-medium { background: #ca8a04; }
+.progress-bar.sev-low { background: #2563eb; }
+
+.empty-state { padding: 2rem; text-align: center; }
+
+.login-body {
+  background: radial-gradient(circle at top, #1f2a44 10%, #0b1020 55%);
+  min-height: 100vh;
+}
+.login-shell { min-height: 100vh; display: grid; place-items: center; padding: 1rem; }
+.login-card { width: 100%; max-width: 460px; padding: 2rem; }
+.brand-badge { width: 62px; height: 62px; border-radius: 16px; background: linear-gradient(135deg, #245bff, #38bdf8); color: #fff; font-weight: 700; margin: auto; display: grid; place-items: center; }
+
+@media (max-width: 768px) {
+  .metric-value { font-size: 1.6rem; }
+}
+.product-pill { font-size: .72rem; border: 1px solid rgba(255,255,255,.35); border-radius: 999px; padding: .1rem .45rem; color: #dbeafe; }
+.hero-panel, .page-header { background: linear-gradient(135deg, #0f172a, #1d4ed8); color: white; border-radius: 18px; padding: 2rem; box-shadow: 0 18px 40px rgba(15, 23, 42, .18); display: flex; justify-content: space-between; align-items: center; }
+.hero-panel h1, .page-header h1 { font-weight: 800; margin: .25rem 0; }
+.hero-panel p, .page-header p { color: #dbeafe; margin: 0; }
+.eyebrow { text-transform: uppercase; letter-spacing: .12em; font-size: .76rem; color: #93c5fd; font-weight: 700; }
+.score-card { background: linear-gradient(180deg, #ffffff, #eff6ff); border-color: #bfdbfe; }
+.risk-row { display: grid; grid-template-columns: auto 1fr auto; gap: .75rem; align-items: start; padding: .75rem 0; border-bottom: 1px solid #e5e7eb; }
+.risk-row:last-child { border-bottom: 0; }
+.risk-score { background: #0f172a; color: white; border-radius: 999px; padding: .2rem .55rem; font-weight: 700; display: inline-block; min-width: 2.4rem; text-align: center; }
+.status-pass, .status-healthy { background: #16a34a !important; color: white !important; }
+.status-fail, .status-critical { background: #dc2626 !important; color: white !important; }
+.status-warning, .status-degraded { background: #ca8a04 !important; color: white !important; }
+.status-not-assessed, .status-unknown { background: #64748b !important; color: white !important; }
+.evidence-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: .75rem; }
+.evidence-box pre { white-space: pre-wrap; font-size: .78rem; margin: .5rem 0 0; color: #334155; }
+.app-footer { text-align: center; color: #64748b; font-size: .85rem; padding: 1.25rem; border-top: 1px solid #e2e8f0; }
