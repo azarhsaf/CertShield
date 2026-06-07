@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% from 'macros/evidence.html' import status_badge, evidence_table %}
+{% macro ca_node(node, depth=0) -%}
+<div class="ca-node depth-{{depth}}">
+  <div class="ca-node-main">
+    <div><strong>{{node.name}}</strong><div class="small text-secondary">{{node.dns_name or 'No host collected'}} · {{node.role}}</div></div>
+    <div class="ca-node-badges">{{status_badge(node.status|title)}} {{status_badge(node.crl_status)}} {{status_badge(node.aia_status)}} {{status_badge(node.ocsp_status)}} {{status_badge(node.key_protection.status)}} <span class="badge sev-{{'high' if node.risk_badge == 'High' else 'critical' if node.risk_badge == 'Critical' else 'medium' if node.risk_badge == 'Warning' else 'low'}}">{{node.risk_badge}}</span></div>
+  </div>
+  <details class="ca-details"><summary>Certificate, publication, and validation evidence</summary>
+    <div class="row g-2 mt-2">
+      <div class="col-lg-6">{{ evidence_table({'subject': node.subject, 'issuer': node.issuer, 'serial_number': node.serial_number, 'thumbprint': node.thumbprint, 'valid_from': node.not_before, 'valid_to': node.not_after, 'signature_algorithm': node.signature_algorithm, 'key_size': node.key_size, 'chain_complete': node.chain_complete}) }}</div>
+      <div class="col-lg-6">{{ evidence_table({'crl_urls': node.crl_urls, 'aia_urls': node.aia_urls, 'ocsp_urls': node.ocsp_urls, 'crl_next_update': node.crl_next_update, 'published_templates': node.published_templates, 'key_protection': node.key_protection}) }}</div>
+    </div>
+    <div class="row g-2 mt-2"><div class="col-lg-6"><h3 class="mini-heading">Health Issues</h3><ul class="compact-list">{% for item in node.health_issues[:5] %}<li>{{item.category}}: {{item.title}} ({{item.status}})</li>{% else %}<li class="text-secondary">No health issues for this CA.</li>{% endfor %}</ul></div><div class="col-lg-6"><h3 class="mini-heading">Best-Practice Gaps</h3><ul class="compact-list">{% for item in node.best_practice_gaps[:5] %}<li>{{item.category}}: {{item.title}} ({{item.status}})</li>{% else %}<li class="text-secondary">No best-practice gaps for this CA.</li>{% endfor %}</ul></div></div>
+  </details>
+  {% for child in node.children %}{{ ca_node(child, depth + 1) }}{% endfor %}
+</div>
+{%- endmacro %}
+{% block content %}
+<div class="page-title"><div><div class="eyebrow">PKI Environment</div><h1>PKI Hierarchy</h1><p>Root and issuing CA relationships, validation paths, key protection, and hierarchy-level health.</p></div></div>
+<div class="metric-grid mb-3"><div class="metric-card"><div class="metric-title">CAs Collected</div><div class="metric-value">{{hierarchy.ca_count}}</div></div><div class="metric-card"><div class="metric-title">Independent PKIs</div><div class="metric-value">{{hierarchy.independent_hierarchies}}</div></div><div class="metric-card"><div class="metric-title">Latest Scan</div><div class="small">{{scan.completed_at if scan else 'No scan received'}}</div></div></div>
+{% for pki in hierarchy.hierarchies %}
+<div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">{{pki.name}}{% if pki.external_root %} <span class="badge text-bg-secondary">Unknown / External Root</span>{% endif %}</h2>{{ ca_node(pki.root) }}</div></div>
+{% else %}<div class="empty-state compact-card">No CAs collected yet.</div>{% endfor %}
+{% endblock %}

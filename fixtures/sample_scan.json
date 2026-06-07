@@ -1,0 +1,370 @@
+{
+  "domain_name": "corp.local",
+  "source_host": "collector01",
+  "collector_version": "collector-ps51-1.2",
+  "cas": [
+    {
+      "name": "CORP-ROOT-CA",
+      "dns_name": "rootca.corp.local",
+      "status": "online",
+      "config": {
+        "ca_type": "root",
+        "offline": false,
+        "domain_joined": true,
+        "certificate_expires_at": "2026-08-15",
+        "signature_algorithm": "sha256RSA",
+        "key_size": 4096,
+        "chain_complete": true,
+        "crl": {
+          "assessed": true,
+          "configured": true,
+          "reachable": true,
+          "next_update": "2026-07-15",
+          "urls": [
+            "http://rootca.corp.local/CertEnroll/CORP-ROOT-CA.crl"
+          ],
+          "source": "fixture"
+        },
+        "aia": {
+          "assessed": true,
+          "configured": true,
+          "reachable": true,
+          "urls": [
+            "http://rootca.corp.local/CertEnroll/CORP-ROOT-CA.crt"
+          ],
+          "source": "fixture"
+        },
+        "ocsp": {
+          "assessed": false,
+          "urls": [],
+          "responder_status": "not_assessed"
+        },
+        "auditing_enabled": true,
+        "backup_documented": false,
+        "published_templates": [],
+        "ca_certificate": {
+          "subject": "CN=CORP-ROOT-CA",
+          "issuer": "CN=CORP-ROOT-CA",
+          "serial_number": "CORP-ROOT-CA-SERIAL",
+          "thumbprint": "CORP-ROOT-CA-THUMB",
+          "not_before": "2021-01-01",
+          "not_after": "2026-08-15",
+          "signature_algorithm": "sha256RSA",
+          "key_size": 4096,
+          "chain_complete": true
+        },
+        "key_protection": {
+          "provider": "Microsoft Software Key Storage Provider",
+          "storage": "software",
+          "hsm_detected": false,
+          "evidence": [
+            "fixture root software key"
+          ]
+        }
+      }
+    },
+    {
+      "name": "CORP-CA",
+      "dns_name": "ca01.corp.local",
+      "status": "online",
+      "config": {
+        "ca_type": "issuing",
+        "installed_on_domain_controller": false,
+        "certificate_expires_at": "2027-12-31",
+        "signature_algorithm": "sha256RSA",
+        "key_size": 2048,
+        "chain_complete": true,
+        "crl": {
+          "assessed": true,
+          "configured": true,
+          "reachable": false,
+          "next_update": "2026-06-01",
+          "urls": [
+            "http://ca01.corp.local/CertEnroll/CORP-CA.crl"
+          ],
+          "source": "fixture"
+        },
+        "aia": {
+          "assessed": true,
+          "configured": false,
+          "urls": [],
+          "source": "fixture"
+        },
+        "ocsp": {
+          "assessed": true,
+          "configured": false,
+          "urls": [],
+          "responder_status": "not_assessed"
+        },
+        "editf_attributesubjectaltname2": true,
+        "manage_ca_principals": [
+          "PKI Admins"
+        ],
+        "web_enrollment_enabled": true,
+        "ntlm_enabled": true,
+        "epa_enabled": false,
+        "auditing_enabled": false,
+        "backup_documented": true,
+        "published_templates": [
+          "UserClientAuth",
+          "AnyPurposeTemplate"
+        ],
+        "ca_certificate": {
+          "subject": "CN=CORP-CA",
+          "issuer": "CN=CORP-ROOT-CA",
+          "serial_number": "CORP-CA-SERIAL",
+          "thumbprint": "CORP-CA-THUMB",
+          "not_before": "2021-01-01",
+          "not_after": "2027-12-31",
+          "signature_algorithm": "sha256RSA",
+          "key_size": 2048,
+          "chain_complete": true
+        },
+        "key_protection": {
+          "provider": "nCipher Security World Key Storage Provider",
+          "storage": "hsm",
+          "hsm_detected": true,
+          "evidence": [
+            "fixture HSM provider"
+          ]
+        }
+      }
+    },
+    {
+      "name": "CORP-ISSUING-02",
+      "dns_name": "ca02.corp.local",
+      "status": "online",
+      "config": {
+        "ca_type": "issuing",
+        "installed_on_domain_controller": false,
+        "certificate_expires_at": "2028-05-01",
+        "signature_algorithm": "sha256RSA",
+        "key_size": 2048,
+        "chain_complete": true,
+        "ca_certificate": {
+          "subject": "CN=CORP-ISSUING-02",
+          "issuer": "CN=CORP-ROOT-CA",
+          "serial_number": "CORP-ISSUING-02-SERIAL",
+          "thumbprint": "CORP-ISSUING-02-THUMB",
+          "not_before": "2022-01-01",
+          "not_after": "2028-05-01",
+          "signature_algorithm": "sha256RSA",
+          "key_size": 2048,
+          "chain_complete": true
+        },
+        "crl": {
+          "assessed": true,
+          "configured": true,
+          "reachable": true,
+          "next_update": "2026-07-15",
+          "urls": [
+            "http://ca02.corp.local/CertEnroll/CORP-ISSUING-02.crl"
+          ],
+          "http_urls": [
+            "http://ca02.corp.local/CertEnroll/CORP-ISSUING-02.crl"
+          ],
+          "ldap_urls": [],
+          "source": "fixture"
+        },
+        "aia": {
+          "assessed": true,
+          "configured": true,
+          "reachable": null,
+          "urls": [
+            "http://ca02.corp.local/CertEnroll/CORP-ISSUING-02.crt"
+          ],
+          "ca_issuer_urls": [
+            "http://ca02.corp.local/CertEnroll/CORP-ISSUING-02.crt"
+          ],
+          "ocsp_urls": [],
+          "source": "fixture"
+        },
+        "ocsp": {
+          "assessed": true,
+          "configured": false,
+          "urls": [],
+          "status": "not_configured"
+        },
+        "auditing_enabled": true,
+        "backup_documented": true,
+        "published_templates": [
+          "UserClientAuth"
+        ],
+        "key_protection": {
+          "provider": "Microsoft Software Key Storage Provider",
+          "storage": "software",
+          "hsm_detected": false,
+          "evidence": [
+            "fixture issuing software key"
+          ]
+        }
+      }
+    },
+    {
+      "name": "LAB-ROOT-CA",
+      "dns_name": "labroot.lab.local",
+      "status": "offline",
+      "config": {
+        "ca_type": "root",
+        "offline": true,
+        "domain_joined": false,
+        "certificate_expires_at": "2032-01-01",
+        "signature_algorithm": "sha384RSA",
+        "key_size": 4096,
+        "chain_complete": true,
+        "ca_certificate": {
+          "subject": "CN=LAB-ROOT-CA",
+          "issuer": "CN=LAB-ROOT-CA",
+          "serial_number": "LAB-ROOT-SERIAL",
+          "thumbprint": "LAB-ROOT-THUMB",
+          "not_before": "2020-01-01",
+          "not_after": "2032-01-01",
+          "signature_algorithm": "sha384RSA",
+          "key_size": 4096,
+          "chain_complete": true
+        },
+        "crl": {
+          "assessed": true,
+          "configured": true,
+          "reachable": null,
+          "next_update": "2026-12-01",
+          "urls": [
+            "ldap:///CN=LAB-ROOT-CA,CN=CDP,CN=Public Key Services,CN=Services,CN=Configuration,DC=lab,DC=local"
+          ],
+          "http_urls": [],
+          "ldap_urls": [
+            "ldap:///CN=LAB-ROOT-CA,CN=CDP,CN=Public Key Services,CN=Services,CN=Configuration,DC=lab,DC=local"
+          ],
+          "source": "fixture"
+        },
+        "aia": {
+          "assessed": true,
+          "configured": true,
+          "reachable": null,
+          "urls": [
+            "ldap:///CN=LAB-ROOT-CA,CN=AIA,CN=Public Key Services,CN=Services,CN=Configuration,DC=lab,DC=local"
+          ],
+          "ca_issuer_urls": [
+            "ldap:///CN=LAB-ROOT-CA,CN=AIA,CN=Public Key Services,CN=Services,CN=Configuration,DC=lab,DC=local"
+          ],
+          "ocsp_urls": [],
+          "source": "fixture"
+        },
+        "ocsp": {
+          "assessed": true,
+          "configured": false,
+          "urls": [],
+          "status": "not_configured"
+        },
+        "auditing_enabled": null,
+        "backup_documented": null,
+        "published_templates": [],
+        "key_protection": {
+          "provider": "Thales Luna KSP",
+          "storage": "hsm",
+          "hsm_detected": true,
+          "evidence": [
+            "fixture HSM provider"
+          ]
+        }
+      }
+    }
+  ],
+  "templates": [
+    {
+      "name": "UserClientAuth",
+      "display_name": "User Client Auth",
+      "eku": [
+        "Client Authentication",
+        "1.3.6.1.5.5.7.3.2"
+      ],
+      "enrollee_supplies_subject": true,
+      "manager_approval": false,
+      "authorized_signatures": 0,
+      "validity_days": 1095,
+      "renewal_days": 30,
+      "published_to": [
+        "CORP-CA"
+      ],
+      "permissions": [
+        {
+          "principal": "Authenticated Users",
+          "can_enroll": true,
+          "can_autoenroll": false
+        }
+      ],
+      "raw": {
+        "acl_assessed": true,
+        "acl_details": [
+          {
+            "principal": "Domain Users",
+            "rights": [
+              "GenericWrite"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "AnyPurposeTemplate",
+      "display_name": "Any Purpose Workstation",
+      "eku": [
+        "2.5.29.37.0"
+      ],
+      "enrollee_supplies_subject": false,
+      "manager_approval": false,
+      "authorized_signatures": 0,
+      "validity_days": 730,
+      "renewal_days": 30,
+      "published_to": [
+        "CORP-CA"
+      ],
+      "permissions": [
+        {
+          "principal": "Domain Users",
+          "can_enroll": true,
+          "can_autoenroll": false
+        }
+      ],
+      "raw": {
+        "acl_assessed": false
+      }
+    }
+  ],
+  "issued_certificates": [
+    {
+      "request_id": "1001",
+      "requester": "CORP\\jdoe",
+      "template_name": "UserClientAuth",
+      "subject": "CN=jdoe",
+      "san": "upn=jdoe@corp.local",
+      "issued_at": "2026-01-01",
+      "expires_at": "2026-06-25",
+      "status": "issued"
+    },
+    {
+      "request_id": "1002",
+      "requester": "CORP\\svc-web",
+      "template_name": "AnyPurposeTemplate",
+      "subject": "CN=web01",
+      "san": "dns=web01.corp.local",
+      "issued_at": "2025-01-01",
+      "expires_at": "2026-06-30",
+      "status": "issued"
+    }
+  ],
+  "assessment_hints": {
+    "esc8_web_enrollment": "detected"
+  },
+  "health_coverage": {
+    "ca_certificate_collected": true,
+    "crl_collected": true,
+    "aia_collected": true,
+    "ocsp_collected": true,
+    "issued_certificates_collected": true,
+    "template_acl_collected": true,
+    "ca_registry_collected": true
+  },
+  "collector_type": "adcs",
+  "schema_version": "1.1"
+}

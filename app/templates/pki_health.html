@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% from 'macros/evidence.html' import evidence_table, status_badge %}
+{% block content %}
+<div class="page-title"><div><div class="eyebrow">Operational Availability</div><h1>PKI Health</h1><p>Can the PKI issue certificates and can clients validate certificates without outage?</p></div></div>
+{% if health %}
+{% if health.limited_visibility %}<div class="alert alert-warning compact-alert">Limited Visibility: more than 40% of PKI health checks are Not Assessed, so the health score is capped.</div>{% endif %}
+<div class="metric-grid mb-3">
+  <div class="metric-card"><div class="metric-title">Health Score</div><div class="metric-value">{{health.score if health.score is not none else 'Unknown'}}</div><div>{{status_badge(health.status)}}</div></div>
+  <div class="metric-card"><div class="metric-title">Healthy</div><div class="metric-value">{{health.counts.Healthy or 0}}</div></div>
+  <div class="metric-card"><div class="metric-title">Warning</div><div class="metric-value">{{health.counts.Warning or 0}}</div></div>
+  <div class="metric-card"><div class="metric-title">Critical</div><div class="metric-value">{{health.counts.Critical or 0}}</div></div>
+  <div class="metric-card"><div class="metric-title">Not Assessed</div><div class="metric-value">{{health.counts['Not Assessed'] or 0}}</div></div>
+</div>
+<div class="row g-3 mb-3">
+  <div class="col-xl-8"><div class="card card-panel"><div class="card-body compact-card"><h2 class="section-title">Health Checks</h2><div class="table-responsive"><table class="table modern-table table-sm align-middle"><thead><tr><th>Section</th><th>Check</th><th>Status</th><th>Affected</th><th>Evidence</th></tr></thead><tbody>{% for item in health['items'] %}<tr><td class="nowrap">{{item.category}}</td><td class="text-wrap-sm">{{item.title}}</td><td>{{status_badge(item.status)}}</td><td class="text-wrap-sm">{{item.affected_object}}</td><td class="evidence-cell">{{evidence_table(item.evidence)}}</td></tr>{% endfor %}</tbody></table></div></div></div></div>
+  <div class="col-xl-4">
+    <div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">Collector Coverage</h2><div class="kv"><span>Collector</span><strong>{{health.collector.version}}</strong></div><div class="kv"><span>Source Host</span><strong>{{health.collector.source_host}}</strong></div><div class="kv"><span>Last Successful Scan</span><strong>{{health.collector.last_successful_scan}}</strong></div><div class="kv"><span>Last Failed Scan</span><strong>{{health.collector.last_failed_scan or 'None recorded'}}</strong></div></div></div>
+    <div class="card card-panel"><div class="card-body compact-card"><h2 class="section-title">Score Explanation</h2><ul class="compact-list">{% for item in health.score_explanation %}<li>{{item}}</li>{% else %}<li>No health score penalties.</li>{% endfor %}</ul></div></div>
+  </div>
+</div>
+<div class="row g-3">
+  <div class="col-lg-6"><div class="card card-panel"><div class="card-body compact-card"><h2 class="section-title">Expiry Risks</h2>{% for risk in health.expiry_risks %}<span class="badge text-bg-warning me-1 mb-1">{{risk.type}} · {{risk.ca}} · {{risk.status}}</span>{% else %}<p class="text-secondary mb-0">No expiry risks detected from collected data.</p>{% endfor %}</div></div></div>
+  <div class="col-lg-6"><div class="card card-panel"><div class="card-body compact-card"><h2 class="section-title">Recommendations</h2><ul class="compact-list">{% for rec in health.recommendations %}<li>{{rec}}</li>{% else %}<li>No active health recommendations.</li>{% endfor %}</ul></div></div></div>
+</div>
+{% else %}<div class="empty-state compact-card">No PKI health assessment available yet.</div>{% endif %}
+{% endblock %}

@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% from 'macros/evidence.html' import status_badge %}
+{% block content %}
+<div class="page-title"><div><div class="eyebrow">Certificate Lifecycle</div><h1>ADCS Issued Certificates / Requests</h1><p>This page shows CA-issued certificate/request metadata collected from ADCS. Network TLS endpoint scanning is not configured in this phase.</p></div></div>
+{% set health = scan.summary_json.health if scan and scan.summary_json.health else {} %}
+<div class="metric-grid mb-3">
+  <div class="metric-card"><div class="metric-title">Issued Cert Collection</div><div>{{status_badge('Collected' if certificates else 'Not Assessed')}}</div></div>
+  <div class="metric-card"><div class="metric-title">Records Collected</div><div class="metric-value">{{certificates|length}}</div></div>
+  <div class="metric-card"><div class="metric-title">Last Collection Time</div><div class="small">{{scan.completed_at if scan else 'No scan received'}}</div></div>
+  <div class="metric-card"><div class="metric-title">Network TLS Scan</div><div>{{status_badge('Not Configured')}}</div></div>
+</div>
+{% if not certificates %}
+<div class="alert alert-warning compact-alert"><strong>Issued certificate data was not collected in the latest scan.</strong> Possible reasons: collector ran with <code>-SkipIssued</code>, the CA returned zero rows, the collector account lacks CA read permission, or <code>certutil -view</code> was unavailable on the collector host.</div>
+<div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">How to collect issued certificates</h2><ul class="compact-list"><li>Run the collector without <code>-SkipIssued</code>.</li><li>Use an account with CA read permission.</li><li>Confirm <code>certutil -view -restrict "Disposition=20"</code> works on the CA or collector host.</li></ul></div></div>
+{% endif %}
+<div class="card card-panel"><div class="card-body compact-card"><h2 class="section-title">Issued Certificates</h2><div class="table-responsive">
+<table class="table modern-table table-sm align-middle"><thead><tr><th>Request ID</th><th>Requester</th><th>Template</th><th>Subject</th><th>SAN</th><th>Status</th><th>Issued</th><th>Expires</th></tr></thead><tbody>
+{% for c in certificates %}<tr><td>{{c.request_id}}</td><td class="text-wrap-sm">{{c.requester or '-'}}</td><td>{{c.template_name or '-'}}</td><td class="text-wrap-sm">{{c.subject or '-'}}</td><td class="text-wrap-sm">{{c.san or '-'}}</td><td>{{status_badge(c.status|title)}}</td><td>{{c.issued_at or '-'}}</td><td>{{c.expires_at or '-'}}</td></tr>{% else %}<tr><td colspan="8" class="text-secondary">No issued certificate records found for latest scan.</td></tr>{% endfor %}
+</tbody></table></div></div></div>
+{% endblock %}
