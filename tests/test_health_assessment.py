@@ -37,7 +37,7 @@ def test_crl_with_url_reachable_and_future_next_update_is_healthy():
     by_category = {item["category"]: item for item in health["items"]}
     assert by_category["CRL Health"]["status"] == "Healthy"
     assert by_category["AIA Health"]["status"] == "Healthy"
-    assert by_category["OCSP Health"]["status"] == "Not Assessed"
+    assert by_category["OCSP Health"]["status"] == "Not Configured"
 
 
 def test_aia_present_not_tested_is_not_false_healthy_or_not_assessed():

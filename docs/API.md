@@ -56,3 +56,15 @@ CA `config` may include normalized `ca_certificate`, `crl`, `aia`, `ocsp`, and
 `key_protection` objects. Missing values should be represented as explicit
 `configured=false`, `status=not_assessed`, or `reason` values instead of being
 omitted.
+
+## Health evidence fields
+
+Collectors should include explicit health evidence rather than leaving ambiguous nulls:
+
+- `config.ca_certificate`: subject, issuer, serial number, thumbprint, not_before, not_after, signature_algorithm, key_size.
+- `config.crl`: configured, urls, http_urls, ldap_urls, reachable, this_update, next_update, days_remaining, tested_urls, errors, reason.
+- `config.aia`: configured, urls, ca_issuer_urls, ocsp_urls, reachable, tested_urls, errors, reason.
+- `config.ocsp`: configured, urls, reachable, tested_urls, status, errors, reason.
+- `health_coverage.issued_certificates_*`: collection status, queried CAs, record count, reason, and errors for CA database inventory.
+
+If a signal cannot be collected, send `assessed=false` plus a human-readable `reason`; do not rely on missing fields to imply health.

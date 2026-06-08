@@ -216,3 +216,13 @@ Rollback notes:
 
 See `docs/collectors.md` for the normalized collector contract and
 `collector/ejbca/README.md` for future EJBCA collector planning.
+
+## Health Collection Notes
+
+The PKI Health page now shows exactly where each health signal came from:
+
+- **CA certificate health** is collected by the Windows collector with `certutil -config <CAHost\CAName> -ca.cert <file>`. If this is Not Assessed, run the collector without `-SkipHealth` from a domain-joined host that can query the CA.
+- **CRL/CDP health** is extracted from the CA certificate CDP extension and `certutil -config <CAHost\CAName> -getreg CA\CRLPublicationURLs`. HTTP CRL URLs are fetched automatically and parsed for `thisUpdate` / `nextUpdate` when reachable. LDAP-only CDPs are displayed as present but not HTTP-tested.
+- **AIA health** is extracted from the CA certificate AIA extension and `certutil -config <CAHost\CAName> -getreg CA\CACertPublicationURLs`. HTTP CA issuer URLs are probed automatically.
+- **OCSP health** is extracted from OCSP URLs in the AIA extension. If no OCSP URL exists, CertShield shows Not Configured rather than Healthy. If an OCSP URL is present, the collector performs a safe HTTP endpoint reachability probe only; it does not submit OCSP validation requests.
+- **Certificate issuance health** is collected per CA with `certutil -config <CAHost\CAName> -view -restrict "Disposition=20"`. The collector account must be allowed to read CA database/request rows. If the page shows zero rows, check the displayed collection reason and confirm the command works manually on the collector host.

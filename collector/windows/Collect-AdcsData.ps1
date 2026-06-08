@@ -24,7 +24,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$CollectorVersion = 'collector-ps51-1.3'
+$CollectorVersion = 'collector-ps51-1.4'
 
 function Write-Step { param([string]$Message) Write-Host "[CertShield] $Message" }
 function Empty-List { return @() }
@@ -66,9 +66,34 @@ function Test-HttpUrl {
     $stream = $response.GetResponseStream()
     $ms = New-Object System.IO.MemoryStream
     $stream.CopyTo($ms)
+    $statusCode = $null
+    try { $statusCode = [int]$response.StatusCode } catch { }
     $response.Close()
-    return @{ ok = $true; bytes = $ms.ToArray(); error = $null }
-  } catch { return @{ ok = $false; bytes = $null; error = [string]$_ } }
+    return @{ ok = $true; reachable = $true; status_code = $statusCode; bytes = $ms.ToArray(); error = $null }
+  } catch {
+    $statusCode = $null
+    $reachable = $false
+    try {
+      if ($_.Exception.Response) {
+        $statusCode = [int]$_.Exception.Response.StatusCode
+        $reachable = $true
+        $_.Exception.Response.Close()
+      }
+    } catch { }
+    return @{ ok = $false; reachable = $reachable; status_code = $statusCode; bytes = $null; error = [string]$_ }
+  }
+}
+
+function Convert-CertDateText {
+  param([string]$Value)
+  if (-not $Value) { return $null }
+  try { return ([datetime]$Value).ToString('yyyy-MM-ddTHH:mm:ss') } catch { return $Value }
+}
+
+function Get-DaysRemaining {
+  param([string]$Value)
+  if (-not $Value) { return $null }
+  try { return [int](([datetime]$Value) - (Get-Date)).TotalDays } catch { return $null }
 }
 
 function Get-CrlFreshness {
@@ -86,14 +111,14 @@ function Get-CrlFreshness {
         $crl = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
         $dump = certutil -dump $tmp 2>$null
         foreach ($line in $dump) {
-          if ($line -match 'ThisUpdate:\s*(.+)$') { $thisUpdate = $matches[1].Trim() }
-          if ($line -match 'NextUpdate:\s*(.+)$') { $nextUpdate = $matches[1].Trim() }
+          if ($line -match 'ThisUpdate:\s*(.+)$') { $thisUpdate = Convert-CertDateText -Value $matches[1].Trim() }
+          if ($line -match 'NextUpdate:\s*(.+)$') { $nextUpdate = Convert-CertDateText -Value $matches[1].Trim() }
         }
-      } catch { $errors += "CRL parse failed for $url: $_" } finally { Remove-Item -Path $tmp -Force -ErrorAction SilentlyContinue }
+      } catch { $errors += "CRL parse failed for $($url): $_" } finally { Remove-Item -Path $tmp -Force -ErrorAction SilentlyContinue }
       break
-    } else { $reachable = $false; $errors += "$url : $($result.error)" }
+    } else { $reachable = $result.reachable; $errors += "$url : $($result.error)" }
   }
-  return @{ reachable = $reachable; tested_urls = @($tested); errors = @($errors); this_update = $thisUpdate; next_update = $nextUpdate }
+  return @{ reachable = $reachable; tested_urls = @($tested); errors = @($errors); this_update = $thisUpdate; next_update = $nextUpdate; days_remaining = (Get-DaysRemaining -Value $nextUpdate) }
 }
 
 function Get-KeyProtectionHint {
@@ -124,9 +149,9 @@ function Get-CaCertificateHints {
     config = @{
       certificate_collected = $false
       certificate_collection_reason = 'not available from current collector'
-      crl = @{ assessed = $false; configured = $null; reachable = $null; urls = @(); next_update = $null; source = 'not collected' }
-      aia = @{ assessed = $false; configured = $null; reachable = $null; urls = @(); source = 'not collected' }
-      ocsp = @{ assessed = $false; configured = $null; reachable = $null; urls = @(); responder_status = 'not_assessed' }
+      crl = @{ assessed = $false; configured = $null; reachable = $null; urls = @(); next_update = $null; source = 'not collected'; reason = 'collector did not collect CRL evidence yet' }
+      aia = @{ assessed = $false; configured = $null; reachable = $null; urls = @(); source = 'not collected'; reason = 'collector did not collect AIA evidence yet' }
+      ocsp = @{ assessed = $false; configured = $null; reachable = $null; urls = @(); responder_status = 'not_assessed'; reason = 'collector did not collect OCSP evidence yet' }
     }
   }
   if ($SkipHealth) { return $hint }
@@ -163,11 +188,31 @@ function Get-CaCertificateHints {
     $aiaHttp = @($aiaUrls | Where-Object { $_ -match '^https?://' })
     $aiaLdap = @($aiaUrls | Where-Object { $_ -match '^ldap://' })
     $crlFresh = Get-CrlFreshness -Urls $crlHttp
-    if (-not $SkipCrl) { $hint.config.crl = @{ assessed = $true; configured = ($crlUrls.Count -gt 0); reachable = $crlFresh.reachable; urls = @($crlUrls); http_urls = @($crlHttp); ldap_urls = @($crlLdap); this_update = $crlFresh.this_update; next_update = $crlFresh.next_update; tested_urls = @($crlFresh.tested_urls); errors = @($crlFresh.errors); source = 'ca certificate CDP extension and CA registry' } }
+    if (-not $SkipCrl) {
+      $crlReason = 'CRL/CDP URLs extracted from CA certificate and registry; HTTP CRL fetch attempted when HTTP URLs were present.'
+      if ($crlUrls.Count -eq 0) { $crlReason = 'No CRL/CDP URL was extracted from the CA certificate or registry.' }
+      elseif ($crlHttp.Count -eq 0) { $crlReason = 'Only non-HTTP CRL/CDP URLs were found; LDAP reachability is recorded as not tested by this collector.' }
+      $hint.config.crl = @{ assessed = $true; configured = ($crlUrls.Count -gt 0); reachable = $crlFresh.reachable; urls = @($crlUrls); http_urls = @($crlHttp); ldap_urls = @($crlLdap); this_update = $crlFresh.this_update; next_update = $crlFresh.next_update; days_remaining = $crlFresh.days_remaining; tested_urls = @($crlFresh.tested_urls); errors = @($crlFresh.errors); source = 'ca certificate CDP extension and CA registry'; reason = $crlReason }
+    }
     $aiaReachable = $null; $aiaTested = @(); $aiaErrors = @()
-    foreach ($url in $aiaHttp) { $aiaTested += $url; $r = Test-HttpUrl -Url $url; if ($r.ok) { $aiaReachable = $true; break } else { $aiaReachable = $false; $aiaErrors += "$url : $($r.error)" } }
-    $hint.config.aia = @{ assessed = $true; configured = ($aiaUrls.Count -gt 0); reachable = $aiaReachable; urls = @($aiaUrls); ca_issuer_urls = @($aiaUrls); ocsp_urls = @($ocspUrls); tested_urls = @($aiaTested); errors = @($aiaErrors); source = 'ca certificate AIA extension and CA registry' }
-    $hint.config.ocsp = @{ assessed = $true; configured = ($ocspUrls.Count -gt 0); reachable = $null; urls = @($ocspUrls); status = 'not_tested'; errors = @() }
+    foreach ($url in $aiaHttp) {
+      $aiaTested += $url
+      $r = Test-HttpUrl -Url $url
+      if ($r.reachable) { $aiaReachable = $true; break } else { $aiaReachable = $false; $aiaErrors += "$url : $($r.error)" }
+    }
+    $aiaReason = 'AIA URLs extracted from CA certificate and registry; HTTP AIA reachability attempted when HTTP URLs were present.'
+    if ($aiaUrls.Count -eq 0) { $aiaReason = 'No AIA CA issuer URL was extracted from the CA certificate or registry.' }
+    elseif ($aiaHttp.Count -eq 0) { $aiaReason = 'Only non-HTTP AIA URLs were found; LDAP reachability is recorded as not tested by this collector.' }
+    $hint.config.aia = @{ assessed = $true; configured = ($aiaUrls.Count -gt 0); reachable = $aiaReachable; urls = @($aiaUrls); ca_issuer_urls = @($aiaUrls); ocsp_urls = @($ocspUrls); tested_urls = @($aiaTested); errors = @($aiaErrors); source = 'ca certificate AIA extension and CA registry'; reason = $aiaReason }
+    $ocspReachable = $null; $ocspTested = @(); $ocspErrors = @()
+    foreach ($url in @($ocspUrls | Where-Object { $_ -match '^https?://' })) {
+      $ocspTested += $url
+      $r = Test-HttpUrl -Url $url
+      if ($r.reachable) { $ocspReachable = $true; break } else { $ocspReachable = $false; $ocspErrors += "$url : $($r.error)" }
+    }
+    $ocspReason = 'No OCSP URL was present in the CA certificate AIA extension.'
+    if ($ocspUrls.Count -gt 0) { $ocspReason = 'OCSP URLs extracted from AIA; HTTP endpoint reachability was probed without sending OCSP requests.' }
+    $hint.config.ocsp = @{ assessed = $true; configured = ($ocspUrls.Count -gt 0); reachable = $ocspReachable; urls = @($ocspUrls); tested_urls = @($ocspTested); status = 'not_tested'; errors = @($ocspErrors); reason = $ocspReason; source = 'ca certificate AIA extension' }
     $hint.config.key_protection = Get-KeyProtectionHint -ConfigString $ConfigString
   } catch {
     $hint.config.certificate_collection_reason = "CA certificate query failed: $_"
@@ -215,6 +260,7 @@ function Get-CertificateAuthorities {
         $config['ca_policy_flags_assessed'] = (-not $SkipHealth)
         $config['ca_roles_assessed'] = $false
         $config['published_templates'] = @($published)
+        $config['config_string'] = $configString
         $cas += [pscustomobject]@{ name = $caName; dns_name = $dns; status = 'online'; config = $config }
       }
     }
@@ -261,27 +307,50 @@ function Get-Templates {
 function Parse-CertValue { param([string]$Line) $parts = $Line -split ':',2; if ($parts.Count -lt 2) { return '' }; return $parts[1].Trim() }
 
 function Get-IssuedCertificates {
-  param([hashtable]$HealthCoverage)
+  param([hashtable]$HealthCoverage, [object[]]$Cas)
   $out = @()
-  if ($SkipIssued) { $HealthCoverage['issued_certificates_collected'] = $false; $HealthCoverage['issued_certificates_reason'] = 'collector ran with SkipIssued'; return @($out) }
+  $queried = @()
+  if ($SkipIssued) {
+    $HealthCoverage['issued_certificates_collected'] = $false
+    $HealthCoverage['issued_certificates_reason'] = 'collector ran with SkipIssued'
+    $HealthCoverage['issued_certificates_count'] = 0
+    return @($out)
+  }
   try {
-    $lines = certutil -view -restrict "Disposition=20" -out "RequestID,RequesterName,CertificateTemplate,CommonName,NotBefore,NotAfter" 2>$null
-    $cur = @{}
-    foreach ($line in $lines) {
-      if ($line -match '^Request ID:\s*(.+)$') {
-        if ($cur.ContainsKey('request_id')) { $out += [pscustomobject]$cur; $cur = @{} }
-        $cur = @{ request_id=$matches[1].Trim(); requester=''; template_name=''; subject=''; san=''; issued_at=''; expires_at=''; status='issued' }
-      } elseif ($line -match '^Requester Name:') { $cur['requester'] = Parse-CertValue -Line $line }
-      elseif ($line -match '^Certificate Template:') { $cur['template_name'] = Parse-CertValue -Line $line }
-      elseif ($line -match '^Issued Common Name:') { $cur['subject'] = Parse-CertValue -Line $line }
-      elseif ($line -match '^Certificate Effective Date:') { $cur['issued_at'] = Parse-CertValue -Line $line }
-      elseif ($line -match '^Certificate Expiration Date:') { $cur['expires_at'] = Parse-CertValue -Line $line }
+    foreach ($ca in $Cas) {
+      $configString = $null
+      try { $configString = [string]$ca.config.config_string } catch { }
+      if (-not $configString) { continue }
+      $queried += $configString
+      $lines = certutil -config $configString -view -restrict "Disposition=20" -out "RequestID,RequesterName,CertificateTemplate,CommonName,NotBefore,NotAfter" 2>$null
+      $cur = @{}
+      foreach ($line in $lines) {
+        if ($line -match '^\s*Request\s*ID:\s*(.+)$') {
+          if ($cur.ContainsKey('request_id')) { $out += [pscustomobject]$cur; $cur = @{} }
+          $cur = @{ request_id=$matches[1].Trim(); requester=''; template_name=''; subject=''; san=''; issued_at=''; expires_at=''; status='issued' }
+        } elseif ($line -match '^\s*Requester\s*Name:') { $cur['requester'] = Parse-CertValue -Line $line }
+        elseif ($line -match '^\s*Certificate\s*Template:') { $cur['template_name'] = Parse-CertValue -Line $line }
+        elseif ($line -match '^\s*(Issued\s*)?Common\s*Name:') { $cur['subject'] = Parse-CertValue -Line $line }
+        elseif ($line -match '^\s*(Certificate\s*)?(Effective\s*Date|NotBefore):') { $cur['issued_at'] = Parse-CertValue -Line $line }
+        elseif ($line -match '^\s*(Certificate\s*)?(Expiration\s*Date|NotAfter):') { $cur['expires_at'] = Parse-CertValue -Line $line }
+      }
+      if ($cur.ContainsKey('request_id')) { $out += [pscustomobject]$cur }
     }
-    if ($cur.ContainsKey('request_id')) { $out += [pscustomobject]$cur }
-    $HealthCoverage['issued_certificates_collected'] = ($out.Count -gt 0)
+    if ($queried.Count -eq 0) { throw 'No CA config strings were available for certutil -view.' }
+    $HealthCoverage['issued_certificates_collected'] = $true
     $HealthCoverage['issued_certificates_count'] = $out.Count
-    if ($out.Count -eq 0) { $HealthCoverage['issued_certificates_reason'] = 'certutil returned zero issued certificate rows' }
-  } catch { $HealthCoverage['issued_certificates_collected'] = $false; $HealthCoverage['issued_certificates_count'] = 0; $HealthCoverage['issued_certificates_error'] = "certutil issued certificate query failed: $_"; $HealthCoverage['issued_certificates_reason'] = "certutil issued certificate query failed: $_"; Write-Warning "Issued certificate query failed: $_" }
+    $HealthCoverage['issued_certificates_queried_cas'] = @($queried)
+    $HealthCoverage['issued_certificates_query'] = 'certutil -config <CAHost\CAName> -view -restrict Disposition=20'
+    if ($out.Count -eq 0) { $HealthCoverage['issued_certificates_reason'] = 'certutil queried CA database successfully but returned zero issued certificate rows' }
+    else { $HealthCoverage['issued_certificates_reason'] = 'certutil issued certificate rows parsed successfully' }
+  } catch {
+    $HealthCoverage['issued_certificates_collected'] = $false
+    $HealthCoverage['issued_certificates_count'] = 0
+    $HealthCoverage['issued_certificates_error'] = "certutil issued certificate query failed: $_"
+    $HealthCoverage['issued_certificates_reason'] = "certutil issued certificate query failed. Run from a host/account that can read the CA database. Error: $_"
+    $HealthCoverage['issued_certificates_queried_cas'] = @($queried)
+    Write-Warning "Issued certificate query failed: $_"
+  }
   if ($out.Count -gt $RecentRequestLimit) { $out = $out | Select-Object -First $RecentRequestLimit }
   return @($out)
 }
@@ -292,7 +361,7 @@ $healthCoverage = @{ ca_certificate_collected = $false; crl_collected = $false; 
 $publishedMap = Get-PublishedTemplateMap
 $cas = @(Get-CertificateAuthorities -PublishedMap $publishedMap -HealthCoverage $healthCoverage)
 $templates = @(Get-Templates -PublishedMap $publishedMap -HealthCoverage $healthCoverage)
-$issued = @(Get-IssuedCertificates -HealthCoverage $healthCoverage)
+$issued = @(Get-IssuedCertificates -HealthCoverage $healthCoverage -Cas $cas)
 
 $payload = [ordered]@{
   collector_type = 'adcs'

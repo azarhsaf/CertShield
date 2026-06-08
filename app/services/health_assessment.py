@@ -55,6 +55,22 @@ def _list_value(*values: Any) -> list[Any]:
     return []
 
 
+def _errors(section: dict) -> list[str]:
+    value = section.get("errors") or section.get("error") or []
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    if str(value).strip():
+        return [str(value)]
+    return []
+
+
+def _reason(*values: Any, default: str) -> str:
+    for value in values:
+        if isinstance(value, str) and value.strip():
+            return value
+    return default
+
+
 def _expiry_status(days: int | None, missing: str = "Not Assessed") -> str:
     if days is None:
         return missing
@@ -187,7 +203,21 @@ def _ca_certificate_item(ca: CertificateAuthority, config: dict) -> tuple[dict, 
     expires_at = cert.get("not_after") or config.get("certificate_expires_at") or config.get("ca_certificate_expires_at")
     days = _days_until(expires_at)
     status = _expiry_status(days)
+    certificate_collected = config.get("certificate_collected") is True or bool(cert)
+    collection_reason = _reason(
+        config.get("certificate_collection_reason"),
+        cert.get("collection_reason"),
+        default=(
+            "Collected by the Windows collector with certutil -config <CAHost\\CAName> -ca.cert."
+            if certificate_collected
+            else "Not collected. Run the current Windows collector from a host that can query the CA; it uses certutil -ca.cert."
+        ),
+    )
     evidence = {
+        "assessment_result": status,
+        "collection_source": "ADCS certutil -ca.cert / normalized ca_certificate payload",
+        "collector_command": "certutil -config <CAHost\\CAName> -ca.cert <file>",
+        "collection_reason": collection_reason,
         "expires_at": expires_at or "Not collected",
         "days_remaining": days if days is not None else "Not collected",
         "subject": cert.get("subject") or config.get("certificate_subject") or config.get("subject") or "Not collected",
@@ -198,6 +228,7 @@ def _ca_certificate_item(ca: CertificateAuthority, config: dict) -> tuple[dict, 
         "signature_algorithm": cert.get("signature_algorithm") or config.get("signature_algorithm") or "Not collected",
         "key_size": cert.get("key_size") or config.get("key_size") or "Not collected",
         "chain_complete": _bool_text(cert.get("chain_complete") if "chain_complete" in cert else config.get("chain_complete")),
+        "how_to_collect": "Run collector/windows/Collect-AdcsData.ps1 without -SkipHealth from a domain-joined host with certutil access to the CA.",
     }
     item = _item(
         "CA Certificate Health",
@@ -213,34 +244,66 @@ def _ca_certificate_item(ca: CertificateAuthority, config: dict) -> tuple[dict, 
         risk = {"type": "CA certificate", "ca": ca.name, "days_remaining": days, "status": status}
     return item, risk
 
-
 def _crl_item(ca: CertificateAuthority, config: dict) -> tuple[dict, dict | None]:
     section = config.get("crl") if isinstance(config.get("crl"), dict) else {}
-    urls = _list_value(section.get("urls"), section.get("http_urls"), section.get("ldap_urls"), section.get("url"), config.get("crl_urls"), config.get("cdp_urls"))
+    urls = _list_value(
+        section.get("urls"),
+        section.get("http_urls"),
+        section.get("ldap_urls"),
+        section.get("url"),
+        config.get("crl_urls"),
+        config.get("cdp_urls"),
+    )
     assessed = section.get("assessed") if "assessed" in section else config.get("crl_assessed")
     configured = section.get("configured") if "configured" in section else config.get("crl_configured")
     reachable = section.get("reachable") if "reachable" in section else config.get("crl_reachable")
     next_update = section.get("next_update") or section.get("expires_at") or config.get("crl_next_update")
     days = _days_until(next_update)
+    errors = _errors(section)
+    reason = _reason(
+        section.get("reason"),
+        section.get("collection_reason"),
+        default="CRL evidence is extracted from the CA certificate CDP extension and ADCS CA registry values.",
+    )
 
-    if assessed is not True or (not urls and configured is not True):
+    if assessed is not True and not urls:
         status = "Not Assessed"
+        reason = _reason(
+            section.get("reason"),
+            section.get("collection_reason"),
+            default="Collector did not provide CRL/CDP URLs or freshness data. Run the collector without -SkipHealth/-SkipCrl.",
+        )
     elif configured is False or not urls:
         status = "Warning"
-    elif reachable is False or (days is not None and days < 0):
+        reason = _reason(section.get("reason"), default="No CRL/CDP URL was configured or extracted from the CA certificate/registry.")
+    elif reachable is False:
         status = "Critical"
+        reason = _reason(section.get("reason"), default="At least one HTTP CRL URL was tested and was not reachable.")
+    elif days is not None and days < 0:
+        status = "Critical"
+        reason = _reason(section.get("reason"), default="The CRL nextUpdate value is in the past.")
+    elif reachable is True and days is not None and days <= 3:
+        status = "Warning"
+        reason = _reason(section.get("reason"), default="The CRL is reachable but expires within three days.")
+    elif reachable is True and days is not None:
+        status = "Healthy"
+        reason = _reason(section.get("reason"), default="HTTP CRL was fetched successfully and nextUpdate is in the future.")
     elif reachable is not True and days is not None and days >= 0:
         status = "Present / Not Tested"
-    elif reachable is not True:
-        status = "Not Assessed"
-    elif days is not None and days <= 3:
-        status = "Warning"
-    elif days is None:
-        status = "Not Assessed"
+        reason = _reason(section.get("reason"), default="CRL/CDP path and freshness were collected, but reachability was not confirmed.")
     else:
-        status = "Healthy"
+        status = "Not Assessed"
+        reason = _reason(section.get("reason"), default="CRL URL exists, but freshness/reachability was not collected or parsed.")
 
     evidence = {
+        "assessment_result": status,
+        "collection_source": section.get("source") or "CA certificate CDP extension, ADCS CA registry, and HTTP CRL fetch",
+        "collector_commands": [
+            "certutil -config <CAHost\\CAName> -ca.cert <file>",
+            "certutil -config <CAHost\\CAName> -getreg CA\\CRLPublicationURLs",
+            "HTTP GET for CRL URLs when present",
+        ],
+        "reason": reason,
         "crl_urls": urls or ["Not collected"],
         "http_urls": section.get("http_urls") or [],
         "ldap_urls": section.get("ldap_urls") or [],
@@ -249,9 +312,9 @@ def _crl_item(ca: CertificateAuthority, config: dict) -> tuple[dict, dict | None
         "next_update": next_update or "Not collected",
         "days_remaining": days if days is not None else "Not collected",
         "tested_urls": section.get("tested_urls") or [],
-        "errors": section.get("errors") or [],
+        "errors": errors or ["None recorded"],
         "delta_crl": _bool_text(section.get("delta_crl")),
-        "source": section.get("source") or "Not collected",
+        "how_to_collect": "Run the Windows collector without -SkipCrl. Ensure the collector host can reach HTTP CDP URLs if reachability should be tested.",
     }
     item = _item(
         "CRL Health",
@@ -267,7 +330,6 @@ def _crl_item(ca: CertificateAuthority, config: dict) -> tuple[dict, dict | None
         risk = {"type": "CRL", "ca": ca.name, "days_remaining": days, "status": status}
     return item, risk
 
-
 def _aia_item(ca: CertificateAuthority, config: dict) -> dict:
     section = config.get("aia") if isinstance(config.get("aia"), dict) else {}
     urls = _list_value(section.get("urls"), section.get("ca_issuer_urls"), section.get("url"), config.get("aia_urls"))
@@ -275,17 +337,28 @@ def _aia_item(ca: CertificateAuthority, config: dict) -> dict:
     configured = section.get("configured") if "configured" in section else config.get("aia_configured")
     reachable = section.get("reachable") if "reachable" in section else config.get("aia_reachable")
     chain_retrieval = section.get("chain_retrieval")
+    errors = _errors(section)
+    reason = _reason(
+        section.get("reason"),
+        section.get("collection_reason"),
+        default="AIA evidence is extracted from the CA certificate AIA extension and ADCS CA registry values.",
+    )
 
-    if assessed is not True or (not urls and configured is not True):
+    if assessed is not True and not urls:
         status = "Not Assessed"
+        reason = _reason(section.get("reason"), default="Collector did not provide AIA URLs. Run the collector without -SkipHealth.")
     elif configured is False or not urls:
         status = "Warning"
+        reason = _reason(section.get("reason"), default="No AIA CA issuer URL was configured or extracted.")
     elif reachable is False or chain_retrieval is False:
         status = "Critical"
+        reason = _reason(section.get("reason"), default="An AIA URL was tested and was not reachable.")
     elif reachable is not True and chain_retrieval is not True:
         status = "Present / Not Tested"
+        reason = _reason(section.get("reason"), default="AIA URL is present, but chain retrieval/reachability was not confirmed.")
     else:
         status = "Healthy"
+        reason = _reason(section.get("reason"), default="AIA URL was collected and reachability/chain retrieval evidence is healthy.")
 
     return _item(
         "AIA Health",
@@ -293,19 +366,26 @@ def _aia_item(ca: CertificateAuthority, config: dict) -> dict:
         status,
         ca.name,
         {
+            "assessment_result": status,
+            "collection_source": section.get("source") or "CA certificate AIA extension, ADCS CA registry, and HTTP AIA fetch",
+            "collector_commands": [
+                "certutil -config <CAHost\\CAName> -ca.cert <file>",
+                "certutil -config <CAHost\\CAName> -getreg CA\\CACertPublicationURLs",
+                "HTTP GET for AIA CA issuer URLs when present",
+            ],
+            "reason": reason,
             "aia_urls": urls or ["Not collected"],
             "ca_issuer_urls": section.get("ca_issuer_urls") or urls or [],
             "ocsp_urls": section.get("ocsp_urls") or [],
             "reachable": _bool_text(reachable),
             "chain_retrieval": _bool_text(chain_retrieval),
             "tested_urls": section.get("tested_urls") or [],
-            "errors": section.get("errors") or [],
-            "source": section.get("source") or "Not collected",
+            "errors": errors or ["None recorded"],
+            "how_to_collect": "Run the Windows collector without -SkipHealth. Ensure HTTP AIA URLs are reachable from the collector if reachability should be tested.",
         },
         "Publish reachable AIA URLs so clients can build certificate chains reliably.",
         "validation",
     )
-
 
 def _ocsp_item(ca: CertificateAuthority, config: dict) -> dict:
     section = config.get("ocsp") if isinstance(config.get("ocsp"), dict) else {}
@@ -315,19 +395,26 @@ def _ocsp_item(ca: CertificateAuthority, config: dict) -> dict:
     reachable = section.get("reachable") if "reachable" in section else config.get("ocsp_reachable")
     responder_status = section.get("responder_status") or section.get("status")
     signing_days = _days_until(section.get("signing_certificate_expires_at"))
+    errors = _errors(section)
 
-    if assessed is not True or (not urls and configured is not True):
+    if assessed is not True and not urls:
         status = "Not Assessed"
-    elif configured is False:
-        status = "Not Assessed"
+        reason = _reason(section.get("reason"), default="Collector did not provide OCSP responder URL evidence.")
+    elif configured is False or not urls:
+        status = "Not Configured"
+        reason = _reason(section.get("reason"), default="No OCSP URL was present in AIA. OCSP may be intentionally unused, but it is not healthy evidence.")
     elif reachable is False or str(responder_status).lower() in {"failed", "offline", "critical"}:
         status = "Critical"
+        reason = _reason(section.get("reason"), default="OCSP responder URL was present but reachability/status check failed.")
     elif reachable is not True:
-        status = "Not Assessed"
+        status = "Present / Not Tested"
+        reason = _reason(section.get("reason"), default="OCSP URL is present, but responder reachability was not confirmed.")
     elif signing_days is not None and signing_days <= 30:
         status = "Warning"
+        reason = _reason(section.get("reason"), default="OCSP responder is reachable but signing certificate expires soon.")
     else:
         status = "Healthy"
+        reason = _reason(section.get("reason"), default="OCSP URL was present and reachable from the collector.")
 
     return _item(
         "OCSP Health",
@@ -335,16 +422,21 @@ def _ocsp_item(ca: CertificateAuthority, config: dict) -> dict:
         status,
         ca.name,
         {
+            "assessment_result": status,
+            "collection_source": section.get("source") or "OCSP URLs from AIA extension with HTTP reachability probe",
+            "reason": reason,
             "ocsp_urls": urls or ["Not configured / Not collected"],
             "reachable": _bool_text(reachable),
             "responder_status": responder_status or "Not collected",
+            "tested_urls": section.get("tested_urls") or [],
+            "errors": errors or ["None recorded"],
             "signing_certificate_expires_at": section.get("signing_certificate_expires_at") or "Not collected",
             "signing_certificate_days_remaining": signing_days if signing_days is not None else "Not collected",
+            "how_to_collect": "OCSP URLs are extracted from AIA. If you use OCSP, make sure the URL is in the CA certificate AIA extension and reachable from the collector.",
         },
         "Assess OCSP responder configuration and OCSP signing certificate expiry where OCSP is used.",
         "validation",
     )
-
 
 def assess_pki_health(
     cas: list[CertificateAuthority],
@@ -412,15 +504,33 @@ def assess_pki_health(
             expiring_90 += 1
 
     issued_collected = health_coverage.get("issued_certificates_collected")
+    issued_count = health_coverage.get("issued_certificates_count", len(certificates))
+    issued_reason = health_coverage.get("issued_certificates_reason")
+    issued_error = health_coverage.get("issued_certificates_error")
+    queried_cas = health_coverage.get("issued_certificates_queried_cas") or []
     if certificates:
         issuance_status = "Healthy"
         collection_status = "Collected"
+        collection_reason = _reason(issued_reason, default="Collector parsed issued certificate rows from the CA database.")
     elif issued_collected is False:
         issuance_status = "Not Assessed"
-        collection_status = health_coverage.get("issued_certificates_reason") or "Skipped, failed, or not available"
-    else:
+        collection_status = "Not collected"
+        collection_reason = _reason(
+            issued_error,
+            issued_reason,
+            default="Collector skipped or failed issued certificate enumeration.",
+        )
+    elif issued_collected is True:
         issuance_status = "Warning"
-        collection_status = "No issued certificate rows returned"
+        collection_status = "Collected zero rows"
+        collection_reason = _reason(
+            issued_reason,
+            default="Collector queried the CA database successfully, but certutil returned zero issued rows for the configured restriction/window.",
+        )
+    else:
+        issuance_status = "Not Assessed"
+        collection_status = "No collector status"
+        collection_reason = "The collector payload did not include issued certificate collection status. Run the current collector without -SkipIssued."
     items.append(
         _item(
             "Certificate Issuance Health",
@@ -428,7 +538,14 @@ def assess_pki_health(
             issuance_status,
             "Certificate database",
             {
+                "assessment_result": issuance_status,
                 "collection_status": collection_status,
+                "collection_reason": collection_reason,
+                "collector_command": "certutil -config <CAHost\\CAName> -view -restrict Disposition=20 -out RequestID,RequesterName,CertificateTemplate,CommonName,NotBefore,NotAfter",
+                "required_access": "Run as an account that can read the CA database/view issued requests on each CA.",
+                "queried_cas": queried_cas or ["Not collected"],
+                "records_reported_by_collector": issued_count,
+                "records_stored": len(certificates),
                 "issued": len(certificates),
                 "failed": cert_status.get("failed", 0),
                 "pending": cert_status.get("pending", 0),
@@ -436,6 +553,8 @@ def assess_pki_health(
                 "expiring_30": expiring_30,
                 "expiring_60": expiring_60,
                 "expiring_90": expiring_90,
+                "how_to_collect": "Run collector/windows/Collect-AdcsData.ps1 without -SkipIssued from a CA admin workstation or CA server where certutil -view works for the selected account.",
+                "errors": [issued_error] if issued_error else ["None recorded"],
             },
             "Collect issued certificate inventory regularly and monitor failed, pending, expired, and soon-expiring certificates.",
             "availability",

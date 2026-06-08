@@ -100,3 +100,6 @@ body { background: var(--bg); color: var(--text); font-size: 14px; }
 .status-present---not-tested { background: #64748b !important; color: white !important; }
 .best-card-grid { display: grid; grid-template-columns: repeat(3, minmax(220px, 1fr)); gap: .75rem; }
 @media (max-width: 992px) { .best-card-grid { grid-template-columns: 1fr; } }
+.health-how-grid { display: grid; grid-template-columns: repeat(5, minmax(160px, 1fr)); gap: .75rem; font-size: .86rem; }
+@media (max-width: 1200px) { .health-how-grid { grid-template-columns: repeat(2, minmax(180px, 1fr)); } }
+@media (max-width: 640px) { .health-how-grid { grid-template-columns: 1fr; } }
