@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% from 'macros/evidence.html' import evidence_table, status_badge %}
+{% block content %}
+<div class="page-title"><div><div class="eyebrow">ADCS Vulnerability Assessment</div><h1>Findings</h1><p>Can ADCS misconfiguration lead to certificate misuse or domain compromise?</p></div></div>
+{% if findings %}
+<div class="d-grid gap-2">
+{% for f in findings %}
+{% set evidence = f.evidence_json or {} %}
+<div class="card card-panel finding-card sev-border-{{f.severity|lower}}">
+  <div class="card-body compact-card">
+    <div class="finding-head">
+      <div><div class="small text-secondary">{{f.rule_id}}</div><h2>{{f.title}}</h2><div class="small">Affected: <strong>{{f.affected_object}}</strong></div></div>
+      <div class="finding-badges"><span class="risk-score">{{evidence.risk_score or 0}}</span><span class="badge sev-{{f.severity|lower}}">{{f.severity}}</span><span class="badge text-bg-dark">{{f.esc_category}}</span><span class="badge text-bg-secondary">{{f.confidence}}</span>{{status_badge(f.coverage_state|replace('_',' ')|title)}}</div>
+    </div>
+    <div class="row g-3 mt-1">
+      <div class="col-lg-7"><p class="mb-1"><strong>Trigger:</strong> {{f.trigger_conditions}}</p><p class="mb-1"><strong>Business impact:</strong> {{evidence.business_impact or f.rationale}}</p><p class="mb-1"><strong>Technical impact:</strong> {{evidence.technical_impact or f.trigger_conditions}}</p><p class="mb-1"><strong>Safe remediation guidance:</strong> {{f.remediation}}</p>{% if f.remediation_steps_json %}<ol class="compact-list">{% for s in f.remediation_steps_json %}<li>{{s}}</li>{% endfor %}</ol>{% endif %}</div>
+      <div class="col-lg-5"><div class="evidence-box"><strong>Evidence</strong>{{evidence_table(evidence)}}</div></div>
+    </div>
+    <a class="btn btn-sm btn-outline-primary mt-2" href="/findings/{{f.id}}/simulate">Validate Exposure (Safe)</a>
+  </div>
+</div>
+{% endfor %}
+</div>
+{% else %}<div class="empty-state compact-card"><h2 class="h5">No findings in latest scan</h2></div>{% endif %}
+{% endblock %}

@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1 class="h3 mb-3">Certificate Template Inventory</h1>
+<div class="card card-panel"><div class="card-body"><div class="table-responsive">
+<table class="table modern-table align-middle">
+  <thead><tr><th>Template</th><th>EKU Signals</th><th>Identity Control</th><th>Approval</th><th>Permissions</th></tr></thead>
+  <tbody>
+  {% for t in templates_data %}
+  {% set eku = (t.eku|join(' ')|lower) %}
+  <tr>
+    <td><div class="fw-semibold">{{t.display_name}}</div><div class="small text-secondary">{{t.name}}</div></td>
+    <td>
+      {% if 'client authentication' in eku or '1.3.6.1.5.5.7.3.2' in eku %}<span class="badge text-bg-danger">Client Auth</span>{% endif %}
+      {% if '2.5.29.37.0' in eku or 'any purpose' in eku %}<span class="badge text-bg-warning">Any Purpose</span>{% endif %}
+      {% if '1.3.6.1.4.1.311.20.2.1' in eku or 'enrollment agent' in eku %}<span class="badge text-bg-dark">Enrollment Agent</span>{% endif %}
+      {% for e in t.eku %}<div class="small text-secondary">{{e}}</div>{% endfor %}
+    </td>
+    <td><span class="badge {{ 'text-bg-warning' if t.enrollee_supplies_subject else 'text-bg-secondary' }}">{{ 'Enrollee supplies subject' if t.enrollee_supplies_subject else 'Server-defined subject' }}</span></td>
+    <td><span class="badge {{ 'text-bg-success' if t.manager_approval else 'text-bg-danger' }}">{{ 'Manager approval' if t.manager_approval else 'No manager approval' }}</span><div class="small">Signatures: {{t.authorized_signatures}}</div></td>
+    <td>{% for p in t.permissions %}<div class="small"><strong>{{p.principal}}</strong> {% if p.can_enroll %}<span class="badge text-bg-danger">Enroll</span>{% endif %}{% if p.can_autoenroll %}<span class="badge text-bg-warning">AutoEnroll</span>{% endif %}</div>{% else %}-{% endfor %}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="5" class="text-secondary">No templates in latest scan.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div></div>
+{% endblock %}
