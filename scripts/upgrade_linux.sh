@@ -34,6 +34,7 @@ python -m pip install -e '.[dev]'
 echo "[CertShield] Validating migrations and tests"
 python scripts/validate_migrations.py
 pytest -q
+python -m ruff check app tests
 
 echo "[CertShield] Restoring ownership"
 chown -R certshield:certshield "$APP_DIR" 2>/dev/null || true

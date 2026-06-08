@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "certshield"
-version = "0.2.0"
+version = "0.3.1"
 description = "Defensive ADCS security assessment and visibility platform"
 readme = "README.md"
 requires-python = ">=3.11"

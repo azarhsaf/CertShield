@@ -1,8 +1,9 @@
 {% extends 'base.html' %}
-{% from 'macros/evidence.html' import status_badge %}
+{% from 'macros/evidence.html' import status_badge, evidence_table %}
 {% block content %}
-<div class="page-title"><div><div class="eyebrow">Certificate Lifecycle</div><h1>ADCS Issued Certificates / Requests</h1><p>This page shows CA-issued certificate/request metadata collected from ADCS. Network TLS endpoint scanning is not configured in this phase.</p></div></div>
+<div class="page-title"><div><div class="eyebrow">Certificate Lifecycle</div><h1>ADCS Issued Certificates / Requests</h1><p>This page shows CA-issued certificate/request metadata collected from ADCS. Network TLS endpoint scanning is not configured in this phase / release.</p></div></div>
 {% set health = scan.summary_json.health if scan and scan.summary_json.health else {} %}
+{% set issuance = none %}{% if health and health['items'] %}{% for item in health['items'] %}{% if item.category == 'Certificate Issuance Health' %}{% set issuance = item %}{% endif %}{% endfor %}{% endif %}
 <div class="metric-grid mb-3">
   <div class="metric-card"><div class="metric-title">Issued Cert Collection</div><div>{{status_badge('Collected' if certificates else 'Not Assessed')}}</div></div>
   <div class="metric-card"><div class="metric-title">Records Collected</div><div class="metric-value">{{certificates|length}}</div></div>
@@ -10,8 +11,9 @@
   <div class="metric-card"><div class="metric-title">Network TLS Scan</div><div>{{status_badge('Not Configured')}}</div></div>
 </div>
 {% if not certificates %}
-<div class="alert alert-warning compact-alert"><strong>Issued certificate data was not collected in the latest scan.</strong> Possible reasons: collector ran with <code>-SkipIssued</code>, the CA returned zero rows, the collector account lacks CA read permission, or <code>certutil -view</code> was unavailable on the collector host.</div>
-<div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">How to collect issued certificates</h2><ul class="compact-list"><li>Run the collector without <code>-SkipIssued</code>.</li><li>Use an account with CA read permission.</li><li>Confirm <code>certutil -view -restrict "Disposition=20"</code> works on the CA or collector host.</li></ul></div></div>
+<div class="alert alert-warning compact-alert"><strong>Issued certificate data was not collected in the latest scan. Issued certificate records were not collected in this scan.</strong> Review the collection status below. Common causes are <code>-SkipIssued</code>, insufficient CA read permission, zero rows returned by the CA database, or <code>certutil -view</code> failure on the collector host.</div>
+{% if health and health['items'] %}{% for item in health['items'] %}{% if item.category == 'Certificate Issuance Health' %}<div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">Collection Status From Latest Scan</h2>{{ evidence_table(item.evidence) }}</div></div>{% endif %}{% endfor %}{% endif %}
+<div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">How to collect issued certificates</h2><ul class="compact-list"><li>Run the collector without <code>-SkipIssued</code>.</li><li>Run from a CA management host or CA server.</li><li>Use an account with CA read permission.</li><li>Confirm <code>certutil -config &lt;CAHost\CAName&gt; -view -restrict "Disposition=20"</code> works on the collector host.</li></ul></div></div>
 {% endif %}
 <div class="card card-panel"><div class="card-body compact-card"><h2 class="section-title">Issued Certificates</h2><div class="table-responsive">
 <table class="table modern-table table-sm align-middle"><thead><tr><th>Request ID</th><th>Requester</th><th>Template</th><th>Subject</th><th>SAN</th><th>Status</th><th>Issued</th><th>Expires</th></tr></thead><tbody>

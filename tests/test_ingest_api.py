@@ -74,6 +74,9 @@ def test_ingest_and_dashboard_flow():
         assert 'LAB-ROOT-CA' in hierarchy.text
         assert 'PKI #1' in hierarchy.text
         assert 'PKI #2' in hierarchy.text
+        assert 'http://ca02.corp.local/CertEnroll/CORP-ISSUING-02.crl' in hierarchy.text
+        health_page = client.get('/pki-health')
+        assert 'http://ca02.corp.local/CertEnroll/CORP-ISSUING-02.crl' in health_page.text
 
 
 def test_certificates_page_explains_empty_collection():
@@ -139,3 +142,21 @@ def test_legacy_payload_without_health_coverage_still_ingests():
         )
         assert r.status_code == 200
         assert r.json()['status'] == 'ok'
+        lp = client.get('/login')
+        csrf = lp.text.split('name="csrf_token" value="')[1].split('"')[0]
+        client.post('/login', data={'username': 'admin', 'password': 'ChangeMeNow!', 'csrf_token': csrf}, follow_redirects=True)
+        page = client.get('/pki-hierarchy')
+        assert page.status_code == 200
+        assert 'Unclassified CAs - Insufficient Certificate Metadata' in page.text
+        assert 'LEGACY-CA' in page.text
+        assert 'Unknown Root / External Root' not in page.text
+
+
+def test_hierarchy_page_empty_db_does_not_crash():
+    with TestClient(app) as client:
+        lp = client.get('/login')
+        csrf = lp.text.split('name="csrf_token" value="')[1].split('"')[0]
+        client.post('/login', data={'username': 'admin', 'password': 'ChangeMeNow!', 'csrf_token': csrf}, follow_redirects=True)
+        page = client.get('/pki-hierarchy')
+        assert page.status_code == 200
+        assert 'PKI Hierarchy' in page.text

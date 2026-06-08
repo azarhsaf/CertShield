@@ -226,3 +226,16 @@ The PKI Health page now shows exactly where each health signal came from:
 - **AIA health** is extracted from the CA certificate AIA extension and `certutil -config <CAHost\CAName> -getreg CA\CACertPublicationURLs`. HTTP CA issuer URLs are probed automatically.
 - **OCSP health** is extracted from OCSP URLs in the AIA extension. If no OCSP URL exists, CertShield shows Not Configured rather than Healthy. If an OCSP URL is present, the collector performs a safe HTTP endpoint reachability probe only; it does not submit OCSP validation requests.
 - **Certificate issuance health** is collected per CA with `certutil -config <CAHost\CAName> -view -restrict "Disposition=20"`. The collector account must be allowed to read CA database/request rows. If the page shows zero rows, check the displayed collection reason and confirm the command works manually on the collector host.
+
+
+## Version 0.3.1 Release Notes
+
+Release date: 2026-06-08
+Build: **Phase 1.2 Hierarchy and Evidence Stabilization**
+
+What changed:
+- PKI Hierarchy no longer creates a fake root when CA certificate metadata is missing; affected CAs are shown as Unclassified with collection guidance.
+- Hierarchy grouping now uses CA certificate Subject/Issuer plus SKI/AKI when available, and creates an External / Uncollected Parent CA only when child issuer evidence exists.
+- ADCS collector emits richer CA certificate metadata including public key algorithm, SKI, AKI, self-signed status, role hint, CRL file URLs, and expanded key provider evidence.
+- Health and hierarchy pages show CRL/AIA/OCSP publication evidence and collection reasons instead of placeholder “Not collected” trees.
+- Footer and Settings identify Version 0.3.1 / Phase 1.2.

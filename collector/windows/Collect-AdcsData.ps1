@@ -24,7 +24,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$CollectorVersion = 'collector-ps51-1.4'
+$CollectorVersion = 'collector-ps51-1.5'
 
 function Write-Step { param([string]$Message) Write-Host "[CertShield] $Message" }
 function Empty-List { return @() }
@@ -40,7 +40,7 @@ function Extract-Urls {
   param([string]$Text)
   $urls = @()
   if (-not $Text) { return @($urls) }
-  $matches = [regex]::Matches($Text, '(https?://[^\s,;]+|ldap://[^\s,;]+)')
+  $matches = [regex]::Matches($Text, '(https?://[^\s,;]+|ldap://[^\s,;]+|file://[^\s,;]+)')
   foreach ($m in $matches) { $urls += [string]$m.Value }
   return @($urls | Select-Object -Unique)
 }
@@ -96,6 +96,12 @@ function Get-DaysRemaining {
   try { return [int](([datetime]$Value) - (Get-Date)).TotalDays } catch { return $null }
 }
 
+function Normalize-ExtensionText {
+  param([string]$Value)
+  if (-not $Value) { return $null }
+  return (($Value -replace '\r?\n', ' ') -replace '\s+', ' ').Trim()
+}
+
 function Get-CrlFreshness {
   param([string[]]$Urls)
   $tested = @(); $errors = @(); $thisUpdate = $null; $nextUpdate = $null; $reachable = $null
@@ -136,10 +142,10 @@ function Get-KeyProtectionHint {
   $storage = 'unknown'; $hsm = 'unknown'
   if ($provider) {
     $p = $provider.ToLowerInvariant()
-    if ($p -match 'nshield|ncipher|thales|safenet|luna|utimaco|fortanix|azure key vault|hsm') { $storage = 'hsm'; $hsm = $true }
+    if ($p -match 'nshield|ncipher|thales|safenet|luna|entrust|utimaco|fortanix|azure key vault|keycontrol|aws cloudhsm|google cloud kms|hsm') { $storage = 'hsm'; $hsm = $true }
     elseif ($p -match 'microsoft software|microsoft strong|microsoft enhanced|software') { $storage = 'software'; $hsm = $false }
   }
-  return @{ provider = $provider; storage = $storage; hsm_detected = $hsm; evidence = @($evidence) }
+  return @{ provider = $provider; crypto_provider = $provider; key_storage_provider = $provider; provider_type = $storage; key_container = $null; storage = $storage; hsm_detected = $hsm; evidence = @($evidence) }
 }
 
 function Get-CaCertificateHints {
@@ -149,6 +155,7 @@ function Get-CaCertificateHints {
     config = @{
       certificate_collected = $false
       certificate_collection_reason = 'not available from current collector'
+      ca_certificate = @{ collected = $false; error = 'not available from current collector' }
       crl = @{ assessed = $false; configured = $null; reachable = $null; urls = @(); next_update = $null; source = 'not collected'; reason = 'collector did not collect CRL evidence yet' }
       aia = @{ assessed = $false; configured = $null; reachable = $null; urls = @(); source = 'not collected'; reason = 'collector did not collect AIA evidence yet' }
       ocsp = @{ assessed = $false; configured = $null; reachable = $null; urls = @(); responder_status = 'not_assessed'; reason = 'collector did not collect OCSP evidence yet' }
@@ -161,12 +168,14 @@ function Get-CaCertificateHints {
     $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($tmp)
     $hint.ca_certificate_collected = $true
     $hint.config.certificate_collected = $true
-    $hint.config.ca_certificate = @{ subject = $cert.Subject; issuer = $cert.Issuer; serial_number = $cert.SerialNumber; thumbprint = $cert.Thumbprint; not_before = $cert.NotBefore.ToString('yyyy-MM-ddTHH:mm:ss'); not_after = $cert.NotAfter.ToString('yyyy-MM-ddTHH:mm:ss'); signature_algorithm = $cert.SignatureAlgorithm.FriendlyName; key_size = $null; chain_complete = $null }
-    $hint.config.certificate_expires_at = $cert.NotAfter.ToString('yyyy-MM-ddTHH:mm:ss')
-    $hint.config.certificate_subject = $cert.Subject
-    $hint.config.certificate_issuer = $cert.Issuer
-    $hint.config.signature_algorithm = $cert.SignatureAlgorithm.FriendlyName
-    try { $hint.config.key_size = $cert.PublicKey.Key.KeySize; $hint.config.ca_certificate.key_size = $cert.PublicKey.Key.KeySize } catch { $hint.config.key_size = $null }
+    $subjectKeyIdentifier = $null
+    $authorityKeyIdentifier = $null
+    $publicKeyAlgorithm = $cert.PublicKey.Oid.FriendlyName
+    $keySize = $null
+    try { $keySize = $cert.PublicKey.Key.KeySize } catch { $keySize = $null }
+    $isSelfSigned = ($cert.Subject -eq $cert.Issuer)
+    $caRoleHint = 'issuing'
+    if ($isSelfSigned) { $caRoleHint = 'root' }
     $crlUrls = @(); $aiaUrls = @(); $ocspUrls = @()
     foreach ($ext in $cert.Extensions) {
       $formatted = $ext.Format($true)
@@ -177,7 +186,19 @@ function Get-CaCertificateHints {
           if ($url -match '/ocsp' -or $formatted -match 'OCSP') { $ocspUrls += $url } else { $aiaUrls += $url }
         }
       }
+      elseif ($ext.Oid.Value -eq '2.5.29.14') { $subjectKeyIdentifier = Normalize-ExtensionText -Value $formatted }
+      elseif ($ext.Oid.Value -eq '2.5.29.35') { $authorityKeyIdentifier = Normalize-ExtensionText -Value $formatted }
     }
+    $hint.config.ca_certificate = @{ collected = $true; subject = $cert.Subject; issuer = $cert.Issuer; serial_number = $cert.SerialNumber; thumbprint = $cert.Thumbprint; not_before = $cert.NotBefore.ToString('yyyy-MM-ddTHH:mm:ss'); not_after = $cert.NotAfter.ToString('yyyy-MM-ddTHH:mm:ss'); signature_algorithm = $cert.SignatureAlgorithm.FriendlyName; public_key_algorithm = $publicKeyAlgorithm; key_size = $keySize; subject_key_identifier = $subjectKeyIdentifier; authority_key_identifier = $authorityKeyIdentifier; is_self_signed = $isSelfSigned; ca_role_hint = $caRoleHint; chain_complete = $null }
+    $hint.config.certificate_expires_at = $cert.NotAfter.ToString('yyyy-MM-ddTHH:mm:ss')
+    $hint.config.certificate_subject = $cert.Subject
+    $hint.config.certificate_issuer = $cert.Issuer
+    $hint.config.signature_algorithm = $cert.SignatureAlgorithm.FriendlyName
+    $hint.config.public_key_algorithm = $publicKeyAlgorithm
+    $hint.config.key_size = $keySize
+    $hint.config.subject_key_identifier = $subjectKeyIdentifier
+    $hint.config.authority_key_identifier = $authorityKeyIdentifier
+    $hint.config.ca_role_hint = $caRoleHint
     $crlUrls += Get-RegistryUrls -ConfigString $ConfigString -RegPath 'CA\CRLPublicationURLs'
     $aiaUrls += Get-RegistryUrls -ConfigString $ConfigString -RegPath 'CA\CACertPublicationURLs'
     $crlUrls = @($crlUrls | Select-Object -Unique)
@@ -185,6 +206,7 @@ function Get-CaCertificateHints {
     $ocspUrls = @($ocspUrls | Select-Object -Unique)
     $crlHttp = @($crlUrls | Where-Object { $_ -match '^https?://' })
     $crlLdap = @($crlUrls | Where-Object { $_ -match '^ldap://' })
+    $crlFile = @($crlUrls | Where-Object { $_ -match '^file://' })
     $aiaHttp = @($aiaUrls | Where-Object { $_ -match '^https?://' })
     $aiaLdap = @($aiaUrls | Where-Object { $_ -match '^ldap://' })
     $crlFresh = Get-CrlFreshness -Urls $crlHttp
@@ -192,7 +214,7 @@ function Get-CaCertificateHints {
       $crlReason = 'CRL/CDP URLs extracted from CA certificate and registry; HTTP CRL fetch attempted when HTTP URLs were present.'
       if ($crlUrls.Count -eq 0) { $crlReason = 'No CRL/CDP URL was extracted from the CA certificate or registry.' }
       elseif ($crlHttp.Count -eq 0) { $crlReason = 'Only non-HTTP CRL/CDP URLs were found; LDAP reachability is recorded as not tested by this collector.' }
-      $hint.config.crl = @{ assessed = $true; configured = ($crlUrls.Count -gt 0); reachable = $crlFresh.reachable; urls = @($crlUrls); http_urls = @($crlHttp); ldap_urls = @($crlLdap); this_update = $crlFresh.this_update; next_update = $crlFresh.next_update; days_remaining = $crlFresh.days_remaining; tested_urls = @($crlFresh.tested_urls); errors = @($crlFresh.errors); source = 'ca certificate CDP extension and CA registry'; reason = $crlReason }
+      $hint.config.crl = @{ assessed = $true; configured = ($crlUrls.Count -gt 0); reachable = $crlFresh.reachable; urls = @($crlUrls); http_urls = @($crlHttp); ldap_urls = @($crlLdap); file_urls = @($crlFile); this_update = $crlFresh.this_update; next_update = $crlFresh.next_update; days_remaining = $crlFresh.days_remaining; tested_urls = @($crlFresh.tested_urls); errors = @($crlFresh.errors); source = 'ca certificate CDP extension and CA registry'; reason = $crlReason }
     }
     $aiaReachable = $null; $aiaTested = @(); $aiaErrors = @()
     foreach ($url in $aiaHttp) {
@@ -216,6 +238,7 @@ function Get-CaCertificateHints {
     $hint.config.key_protection = Get-KeyProtectionHint -ConfigString $ConfigString
   } catch {
     $hint.config.certificate_collection_reason = "CA certificate query failed: $_"
+    $hint.config.ca_certificate = @{ collected = $false; error = "CA certificate query failed: $_" }
   } finally {
     Remove-Item -Path $tmp -Force -ErrorAction SilentlyContinue
   }
@@ -261,6 +284,7 @@ function Get-CertificateAuthorities {
         $config['ca_roles_assessed'] = $false
         $config['published_templates'] = @($published)
         $config['config_string'] = $configString
+        $config['source_host'] = $env:COMPUTERNAME
         $cas += [pscustomobject]@{ name = $caName; dns_name = $dns; status = 'online'; config = $config }
       }
     }

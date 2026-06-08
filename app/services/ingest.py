@@ -83,7 +83,10 @@ class IngestService:
             certificates.append(cert_row)
 
         db.flush()
-        findings, coverage = evaluate_templates(templates, cas)
+        if payload.collector_type == "adcs":
+            findings, coverage = evaluate_templates(templates, cas)
+        else:
+            findings, coverage = [], {"adcs_vulnerability_assessment": "not_assessed"}
         severity_counter = Counter()
         esc_counter = Counter()
         for f in findings:
