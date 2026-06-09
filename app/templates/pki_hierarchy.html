@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% from 'macros/evidence.html' import status_badge, evidence_table, display_value %}
+{% macro url_list(urls) -%}
+  {%- if urls -%}<div class="pill-list">{%- for url in urls -%}<a class="evidence-pill" href="{{url}}" target="_blank" rel="noreferrer">{{url}}</a>{%- endfor -%}</div>{%- else -%}<span class="text-secondary">Not collected</span>{%- endif -%}
+{%- endmacro %}
+{% macro issue_list(items, empty_text) -%}
+  <ul class="compact-list">{% for item in items[:5] %}<li>{{item.category}}: {{item.title}} ({{item.status}})</li>{% else %}<li class="text-warning">{{empty_text}}</li>{% endfor %}</ul>
+{%- endmacro %}
+{% macro ca_node(node, depth=0) -%}
+<div class="ca-node depth-{{depth}} {{'unclassified-node' if not node.metadata_collected else ''}}">
+  {% if node.metadata_warning %}<div class="alert alert-warning compact-alert mb-2">{{node.metadata_warning}}</div>{% endif %}
+  {% if node.external_parent_reason %}<div class="alert alert-warning compact-alert mb-2">{{node.external_parent_reason}}</div>{% endif %}
+  <div class="ca-node-main">
+    <div>
+      <strong>{{node.name}}</strong>
+      <div class="small text-secondary">Role: {{node.role}} · Host: {{node.dns_name or 'No host collected'}} · Config: {{node.config_string or 'Not collected'}}</div>
+      <div class="small">Cert Expiry: <strong>{{node.not_after}}</strong> / {{node.days_remaining}} days · CRL: {{node.crl_status}} · AIA: {{node.aia_status}} · OCSP: {{node.ocsp_status}} · Key: {{node.key_protection.status}}</div>
+    </div>
+    <div class="ca-node-badges">{{status_badge(node.status|title)}} {{status_badge(node.crl_status)}} {{status_badge(node.aia_status)}} {{status_badge(node.ocsp_status)}} {{status_badge(node.key_protection.status)}} <span class="badge sev-{{'high' if node.risk_badge == 'High' else 'critical' if node.risk_badge == 'Critical' else 'medium' if node.risk_badge in ['Warning','Not Assessed'] else 'low'}}">{{node.risk_badge}}</span></div>
+  </div>
+  <details class="ca-details"><summary>Certificate, publication, key protection, and assessment evidence</summary>
+    <div class="row g-2 mt-2">
+      <div class="col-lg-6"><h3 class="mini-heading">Certificate</h3>{{ evidence_table({'subject': node.subject, 'issuer': node.issuer, 'serial_number': node.serial_number, 'thumbprint': node.thumbprint, 'valid_from': node.not_before, 'valid_to': node.not_after, 'days_remaining': node.days_remaining, 'signature_algorithm': node.signature_algorithm, 'public_key_algorithm': node.public_key_algorithm, 'key_size': node.key_size, 'subject_key_identifier': node.subject_key_identifier, 'authority_key_identifier': node.authority_key_identifier, 'self_signed': node.is_self_signed}) }}</div>
+      <div class="col-lg-6"><h3 class="mini-heading">Publication</h3><div class="evidence-table"><div class="evidence-row"><div class="evidence-label">CRL URLs</div><div class="evidence-value">{{url_list(node.crl_urls)}}</div></div><div class="evidence-row"><div class="evidence-label">AIA URLs</div><div class="evidence-value">{{url_list(node.aia_urls)}}</div></div><div class="evidence-row"><div class="evidence-label">OCSP URLs</div><div class="evidence-value">{{url_list(node.ocsp_urls)}}</div></div><div class="evidence-row"><div class="evidence-label">CRL Next Update</div><div class="evidence-value">{{node.crl_next_update}}</div></div><div class="evidence-row"><div class="evidence-label">CRL Reachability</div><div class="evidence-value">{{display_value(node.crl_reachable)}}</div></div></div></div>
+    </div>
+    <div class="row g-2 mt-2"><div class="col-lg-6"><h3 class="mini-heading">Key Protection</h3>{{ evidence_table(node.key_protection) }}</div><div class="col-lg-6"><h3 class="mini-heading">Published Templates / Profiles</h3>{{display_value(node.published_templates)}}</div></div>
+    <div class="row g-2 mt-2"><div class="col-lg-6"><h3 class="mini-heading">Health Issues</h3>{{ issue_list(node.health_issues, 'Health cannot be fully assessed because CA certificate/CDP/AIA evidence is missing or incomplete.') }}</div><div class="col-lg-6"><h3 class="mini-heading">Best-Practice Gaps</h3>{{ issue_list(node.best_practice_gaps, 'Best-practice posture is Not Assessed until collector evidence is available.') }}</div></div>
+  </details>
+  {% for child in node.children %}{{ ca_node(child, depth + 1) }}{% endfor %}
+</div>
+{%- endmacro %}
+{% block content %}
+<div class="page-title"><div><div class="eyebrow">PKI Environment</div><h1>PKI Hierarchy</h1><p>Certificate chain, CA publication paths, revocation status, and key protection.</p></div></div>
+{% if hierarchy.metadata_missing %}<div class="alert alert-warning compact-alert"><strong>Hierarchy incomplete:</strong> {{hierarchy.metadata_warning}} CAs without certificate metadata are listed as Unclassified, not as fake roots.</div>{% endif %}
+<div class="metric-grid mb-3"><div class="metric-card"><div class="metric-title">PKI Hierarchies</div><div class="metric-value">{{hierarchy.independent_hierarchies}}</div></div><div class="metric-card"><div class="metric-title">Root CAs</div><div class="metric-value">{{hierarchy.root_count}}</div></div><div class="metric-card"><div class="metric-title">Issuing CAs</div><div class="metric-value">{{hierarchy.issuing_count}}</div></div><div class="metric-card"><div class="metric-title">Unclassified CAs</div><div class="metric-value">{{hierarchy.unclassified_count}}</div></div><div class="metric-card"><div class="metric-title">CRL Issues</div><div class="metric-value">{{hierarchy.crl_issue_count}}</div></div><div class="metric-card"><div class="metric-title">Key Warnings</div><div class="metric-value">{{hierarchy.key_warning_count}}</div></div></div>
+{% for pki in hierarchy.hierarchies %}
+<div class="card card-panel mb-3"><div class="card-body compact-card"><div class="d-flex justify-content-between align-items-start"><h2 class="section-title">{{pki.name}} · {{pki.root.name}}{% if pki.external_root %} <span class="badge text-bg-warning">External / Uncollected Parent</span>{% endif %}</h2>{{status_badge(pki.health)}}</div>{{ ca_node(pki.root) }}</div></div>
+{% else %}{% if hierarchy.ca_count %}<div class="empty-state compact-card">No certificate-backed PKI hierarchy could be built from the latest scan.</div>{% endif %}{% endfor %}
+{% if hierarchy.unclassified %}<div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">Unclassified CAs - Insufficient Certificate Metadata</h2><p class="text-warning small">Cannot build PKI hierarchy because CA certificate Subject/Issuer was not collected for these CAs. Run the latest ADCS collector with CA certificate evidence enabled.</p>{% for node in hierarchy.unclassified %}{{ ca_node(node) }}{% endfor %}</div></div>{% endif %}
+{% if not hierarchy.hierarchies and not hierarchy.unclassified %}<div class="empty-state compact-card">No CAs collected yet.</div>{% endif %}
+{% endblock %}

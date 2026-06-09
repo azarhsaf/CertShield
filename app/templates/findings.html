@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% from 'macros/evidence.html' import evidence_table, status_badge %}
+{% block content %}
+<div class="page-title"><div><div class="eyebrow">ADCS Vulnerability Assessment</div><h1>Findings</h1><p>Can ADCS misconfiguration lead to certificate misuse or domain compromise?</p></div></div>
+{% if findings %}
+<div class="d-grid gap-2">
+{% for f in findings %}
+{% set evidence = f.evidence_json or {} %}
+<div class="card card-panel finding-card sev-border-{{f.severity|lower}}">
+  <div class="card-body compact-card">
+    <div class="finding-head">
+      <div><div class="small text-secondary">{{f.rule_id}}</div><h2>{{f.title}}</h2><div class="small">Affected: <strong>{{f.affected_object}}</strong></div></div>
+      <div class="finding-badges"><span class="risk-score">{{evidence.risk_score or 0}}</span><span class="badge sev-{{f.severity|lower}}">{{f.severity}}</span><span class="badge text-bg-dark">{{f.esc_category}}</span><span class="badge text-bg-secondary">{{f.confidence}}</span>{{status_badge(f.coverage_state|replace('_',' ')|title)}}{% if f.accepted_risk %}<span class="badge text-bg-info">Accepted Risk</span>{% endif %}</div>
+    </div>
+    <div class="row g-3 mt-1">
+      <div class="col-lg-7"><p class="mb-1"><strong>Trigger:</strong> {{f.trigger_conditions}}</p><p class="mb-1"><strong>Business impact:</strong> {{evidence.business_impact or f.rationale}}</p><p class="mb-1"><strong>Technical impact:</strong> {{evidence.technical_impact or f.trigger_conditions}}</p><p class="mb-1"><strong>Safe remediation guidance:</strong> {{f.remediation}}</p>{% if f.remediation_steps_json %}<ol class="compact-list">{% for s in f.remediation_steps_json %}<li>{{s}}</li>{% endfor %}</ol>{% endif %}</div>
+      <div class="col-lg-5"><div class="evidence-box"><strong>Evidence</strong>{{evidence_table(evidence)}}</div></div>
+    </div>
+    <div class="d-flex gap-2 flex-wrap mt-2"><a class="btn btn-sm btn-outline-primary" href="/findings/{{f.id}}/simulate">Validate Exposure (Safe)</a>{% if f.accepted_risk %}<form method="post" action="/acceptances/{{f.acceptance.id}}/revoke"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><button class="btn btn-sm btn-outline-danger" type="submit">Revoke Acceptance</button></form><span class="small text-secondary align-self-center">Accepted by {{f.acceptance.accepted_by}}{% if f.acceptance.expiry_date %} until {{f.acceptance.expiry_date}}{% endif %}</span>{% else %}<details class="accept-risk-box"><summary class="btn btn-sm btn-outline-secondary">Accept Risk</summary><form class="accept-risk-form mt-2" method="post" action="/findings/{{f.id}}/accept"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><label class="form-label small">Expiry date</label><input class="form-control form-control-sm" type="date" name="expiry_date"><label class="form-label small mt-1">Business justification</label><textarea class="form-control form-control-sm" name="business_justification" required></textarea><label class="form-label small mt-1">Compensating control</label><textarea class="form-control form-control-sm" name="compensating_control"></textarea><input type="hidden" name="scope" value="future_matching_fingerprint"><button class="btn btn-sm btn-primary mt-2" type="submit">Save Acceptance</button></form></details>{% endif %}</div>
+  </div>
+</div>
+{% endfor %}
+</div>
+{% else %}<div class="empty-state compact-card"><h2 class="h5">No findings in latest scan</h2></div>{% endif %}
+{% endblock %}
