@@ -1,0 +1,51 @@
+{% macro labelize(key) -%}
+  {{ key|string|replace('_', ' ')|replace('-', ' ')|title }}
+{%- endmacro %}
+
+{% macro display_value(val) -%}
+  {%- if val is none or val == '' -%}
+    <span class="text-secondary">Not collected</span>
+  {%- elif val is boolean -%}
+    <span class="badge {{ 'text-bg-success' if val else 'text-bg-secondary' }}">{{ 'Yes' if val else 'No' }}</span>
+  {%- elif val is mapping -%}
+    <div class="evidence-nested">
+      {%- for k, v in val.items() -%}
+        <div><span class="evidence-key">{{ labelize(k) }}:</span> {{ display_value(v) }}</div>
+      {%- endfor -%}
+    </div>
+  {%- elif val is sequence and val is not string -%}
+    {%- if val|length == 0 -%}
+      <span class="text-secondary">Not collected</span>
+    {%- else -%}
+      <div class="pill-list">
+      {%- for item in val -%}
+        {%- if item is mapping -%}
+          <span class="evidence-pill evidence-pill-block">{% for k, v in item.items() %}<strong>{{ labelize(k) }}:</strong> {{ display_value(v) }}{% if not loop.last %} · {% endif %}{% endfor %}</span>
+        {%- else -%}
+          <span class="evidence-pill">{{ item }}</span>
+        {%- endif -%}
+      {%- endfor -%}
+      </div>
+    {%- endif -%}
+  {%- else -%}
+    {{ val }}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro evidence_table(evidence) -%}
+  {%- if evidence -%}
+    <div class="evidence-table">
+      {%- for key, val in evidence.items() -%}
+        {%- if key not in ['risk_score', 'business_impact', 'technical_impact', 'score_breakdown'] -%}
+          <div class="evidence-row"><div class="evidence-label">{{ labelize(key) }}</div><div class="evidence-value">{{ display_value(val) }}</div></div>
+        {%- endif -%}
+      {%- endfor -%}
+    </div>
+  {%- else -%}
+    <span class="text-secondary">No evidence collected.</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro status_badge(status) -%}
+  <span class="badge status-{{ (status or 'unknown')|lower|replace(' ', '-')|replace('_', '-')|replace('/', '-') }}">{{ status or 'Unknown' }}</span>
+{%- endmacro %}
