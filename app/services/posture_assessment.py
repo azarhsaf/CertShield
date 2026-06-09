@@ -137,8 +137,8 @@ def assess_pki_posture(
         if accepted_findings:
             explanations.append(f"{len(accepted_findings)} risk(s) are accepted by customer policy and still visible in reports.")
         if severity_counts.get("Critical", 0):
-            adjusted_score = min(adjusted_score, 70)
-            explanations.append("Adjusted score capped at 70 because critical ADCS findings remain open.")
+            adjusted_score = min(adjusted_score, 69)
+            explanations.append("Adjusted score capped at 69 because critical ADCS findings remain open.")
         if severity_counts.get("Critical", 0) > 1:
             adjusted_score = min(adjusted_score, 55)
             explanations.append("Adjusted score capped at 55 because multiple critical ADCS findings remain open.")
