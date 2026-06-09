@@ -122,8 +122,11 @@ def key_protection(config: dict[str, Any]) -> dict[str, Any]:
     elif hsm_detected is False or storage == "software" or any(hint in provider_l for hint in SOFTWARE_HINTS):
         status = "Software Key"
         storage = "software"
+    elif provider:
+        status = "Unknown Provider"
+        storage = storage or "unknown"
     else:
-        status = "Unknown"
+        status = "Not Assessed"
         storage = storage or "unknown"
     return {
         "status": status,
@@ -326,7 +329,7 @@ def build_pki_hierarchy(cas: list[CertificateAuthority], health: dict | None = N
         "issuing_count": sum(1 for node in classified if node["role_key"] == "issuing"),
         "unclassified_count": len(unclassified),
         "crl_issue_count": sum(1 for node in all_nodes if node["crl_status"] in {"Critical", "Warning", "Not Assessed"}),
-        "key_warning_count": sum(1 for node in all_nodes if node["key_protection"]["status"] in {"Software Key", "Unknown"}),
+        "key_warning_count": sum(1 for node in all_nodes if node["key_protection"]["status"] in {"Software Key", "Unknown Provider", "Not Assessed"}),
         "metadata_missing": bool(unclassified),
         "metadata_warning": "Hierarchy could not be built for one or more CAs because CA certificate Subject/Issuer was not collected.",
     }

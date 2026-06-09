@@ -1,4 +1,3 @@
-import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -7,22 +6,6 @@ from app.models.entities import CertificateAuthority, CertificateTemplate
 
 @dataclass
 class RuleFinding:
-    @property
-    def evidence_json(self):
-        evidence = getattr(self, 'evidence', None)
-        if evidence is None:
-            evidence = getattr(self, 'evidence_data', None)
-        if evidence is None:
-            return {}
-        if isinstance(evidence, dict):
-            return evidence
-        if isinstance(evidence, str):
-            try:
-                return json.loads(evidence)
-            except Exception:
-                return {'raw': evidence}
-        return evidence
-
     rule_id: str
     esc_category: str
     title: str

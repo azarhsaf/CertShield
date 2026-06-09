@@ -105,3 +105,10 @@ body { background: var(--bg); color: var(--text); font-size: 14px; }
 @media (max-width: 640px) { .health-how-grid { grid-template-columns: 1fr; } }
 .unclassified-node .ca-node-main { background: #fffbeb; border-color: #f59e0b; }
 .accept-risk-box summary{list-style:none}.accept-risk-form{min-width:18rem;max-width:28rem;padding:.75rem;border:1px solid #d7dee8;border-radius:.75rem;background:#f8fafc}.risk-row .text-bg-info,.finding-badges .text-bg-info{background:#0ea5e9!important}.hierarchy-tree{font-family:Inter,system-ui,sans-serif}.ca-node{border-left:2px solid #cbd5e1;margin-left:.5rem;padding-left:.75rem}.ca-node::before{content:'↳ ';color:#64748b;font-weight:700}.ca-node.depth-0::before{content:''}
+.status-excellent, .status-good, .status-safe, .status-hsm-protected { background:#16a34a!important;color:white!important; }
+.status-needs-attention, .status-review-required, .status-unknown-provider { background:#ca8a04!important;color:white!important; }
+.status-high-risk, .status-software-key { background:#ea580c!important;color:white!important; }
+.status-accepted-risk, .status-accepted-by-policy { background:#0ea5e9!important;color:white!important; }
+.status-evidence-missing, .status-unknown---not-enough-data { background:#64748b!important;color:white!important; }
+.status-word { font-size:1.25rem; }
+.status-word-sm { font-size:1rem; }

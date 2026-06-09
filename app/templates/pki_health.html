@@ -5,9 +5,9 @@
 {% if health %}
 {% if health.limited_visibility %}<div class="alert alert-warning compact-alert"><strong>Limited Visibility:</strong> more than 40% of PKI health checks are Not Assessed, so the health score is capped. Run the latest collector without <code>-SkipHealth</code>, <code>-SkipCrl</code>, or <code>-SkipIssued</code> to collect CA certificate, CRL, AIA, OCSP, and issuance evidence.</div>{% endif %}
 <div class="metric-grid mb-3">
-  <div class="metric-card"><div class="metric-title">Health Score</div><div class="metric-value">{{health.score if health.score is not none else 'Unknown'}}</div><div>{{status_badge(health.status)}}</div></div>
+  <div class="metric-card"><div class="metric-title">Health Status</div><div class="metric-value status-word-sm">{{health.status}}</div><div class="small text-secondary">Supporting score: {{health.score if health.score is not none else 'Unknown'}}</div></div>
   <div class="metric-card"><div class="metric-title">Healthy</div><div class="metric-value">{{health.counts.Healthy or 0}}</div></div>
-  <div class="metric-card"><div class="metric-title">Warning</div><div class="metric-value">{{health.counts.Warning or 0}}</div></div>
+  <div class="metric-card"><div class="metric-title">Needs Attention</div><div class="metric-value">{{health.counts['Needs Attention'] or health.counts.Warning or 0}}</div></div>
   <div class="metric-card"><div class="metric-title">Critical</div><div class="metric-value">{{health.counts.Critical or 0}}</div></div>
   <div class="metric-card"><div class="metric-title">Not Assessed</div><div class="metric-value">{{health.counts['Not Assessed'] or 0}}</div></div>
 </div>
@@ -20,8 +20,8 @@
   </div>
   <div class="col-xl-4">
     <div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">Collector Coverage</h2><div class="kv"><span>Collector</span><strong>{{health.collector.version}}</strong></div><div class="kv"><span>Source Host</span><strong>{{health.collector.source_host}}</strong></div><div class="kv"><span>Last Successful Scan</span><strong>{{health.collector.last_successful_scan}}</strong></div><div class="kv"><span>Last Failed Scan</span><strong>{{health.collector.last_failed_scan or 'None recorded'}}</strong></div></div></div>
-    <div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">Score Explanation</h2><ul class="compact-list">{% for item in health.score_explanation %}<li>{{item}}</li>{% else %}<li>No health score penalties.</li>{% endfor %}</ul></div></div>
-    <div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">Expiry Risks</h2>{% for risk in health.expiry_risks %}<span class="badge text-bg-warning me-1 mb-1">{{risk.type}} · {{risk.ca}} · {{risk.status}}</span>{% else %}<p class="text-secondary mb-0">No expiry risks detected from collected data.</p>{% endfor %}</div></div>
+    <div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">Why this status?</h2><ul class="compact-list">{% for item in health.score_explanation %}<li>{{item}}</li>{% else %}<li>No additional health status reasons were produced.</li>{% endfor %}</ul></div></div>
+    <div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">Shared Evidence Coverage Gaps</h2><ul class="compact-list">{% for gap in registry.coverage_gaps[:5] %}<li>{{gap.category}} · {{gap.title}} · {{gap.object_name}}</li>{% else %}<li>No registry coverage gaps affecting health.</li>{% endfor %}</ul></div></div><div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">Expiry Risks</h2>{% for risk in health.expiry_risks %}<span class="badge text-bg-warning me-1 mb-1">{{risk.type}} · {{risk.ca}} · {{risk.status}}</span>{% else %}<p class="text-secondary mb-0">No expiry risks detected from collected data.</p>{% endfor %}</div></div>
     <div class="card card-panel"><div class="card-body compact-card"><h2 class="section-title">Recommendations</h2><ul class="compact-list">{% for rec in health.recommendations %}<li>{{rec}}</li>{% else %}<li>No active health recommendations.</li>{% endfor %}</ul></div></div>
   </div>
 </div>

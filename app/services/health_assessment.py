@@ -173,14 +173,10 @@ def _score(items: list[dict]) -> tuple[int | None, str, list[str], str, int, lis
         score = min(score, 74)
         explanations.append("Score capped below Good because less than half of weighted health evidence was collected.")
 
-    if score >= 90:
-        status = "Excellent"
-    elif score >= 75:
-        status = "Good"
-    elif score >= 60:
-        status = "Needs Attention"
+    if score >= 75:
+        status = "Healthy"
     elif score >= 40:
-        status = "Poor"
+        status = "Needs Attention"
     else:
         status = "Critical"
     return max(0, min(100, score)), status, explanations, confidence, coverage, top_factors[:8]
@@ -579,7 +575,7 @@ def assess_pki_health(
     limited_visibility = bool(items) and counts.get("Not Assessed", 0) / len(items) > 0.4
     return {
         "score": score,
-        "status": "Limited Visibility" if limited_visibility and status != "Unknown" else status,
+        "status": "Needs Attention" if limited_visibility and status == "Healthy" else status,
         "limited_visibility": limited_visibility,
         "grade": status,
         "confidence": confidence,

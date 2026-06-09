@@ -127,6 +127,8 @@ def assess_pki_posture(
     not_assessed_ratio = not_assessed / len(coverage) if coverage else 1
     coverage_quality = _coverage_quality(coverage)
     explanations: list[str] = []
+    registry = scan_summary.get("registry") if isinstance(scan_summary.get("registry"), dict) else {}
+    registry_assurance = registry.get("assurance", {}) if isinstance(registry, dict) else {}
 
     if health.get("score") is None and best_practices.get("score") is None and not findings:
         raw_score = adjusted_score = None
@@ -205,6 +207,10 @@ def assess_pki_posture(
         "Key protection collected": "Collected" if health_coverage.get("key_protection_collected") else missing,
     }
 
+    if registry_assurance:
+        raw_score = registry_assurance.get("score")
+        adjusted_score = registry_assurance.get("score")
+        explanations = registry_assurance.get("why", explanations)
     limited_visibility = bool(adjusted_score is not None and (health.get("limited_visibility") or not_assessed_ratio > 0.5))
     return {
         "product_label": "CertShield PKI Posture Management",
@@ -213,10 +219,12 @@ def assess_pki_posture(
         "raw_score": raw_score,
         "adjusted_score": adjusted_score,
         "accepted_risk_count": len(accepted_findings),
-        "status": _score_status(adjusted_score, limited_visibility),
-        "grade": _score_status(adjusted_score, limited_visibility),
+        "status": registry_assurance.get("assurance_level") or _score_status(adjusted_score, limited_visibility),
+        "assurance_level": registry_assurance.get("assurance_level") or _score_status(adjusted_score, limited_visibility),
+        "grade": registry_assurance.get("assurance_level") or _score_status(adjusted_score, limited_visibility),
         "confidence": health.get("confidence", "Low" if limited_visibility else "Medium"),
-        "coverage": coverage_quality,
+        "coverage": registry_assurance.get("coverage_score", coverage_quality),
+        "why": registry_assurance.get("why", explanations),
         "limited_visibility": limited_visibility,
         "score_explanation": explanations,
         "top_factors": [risk["title"] for risk in top_risks[:5]],

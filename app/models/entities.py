@@ -129,13 +129,14 @@ class RiskAcceptance(Base):
     object_name: Mapped[str] = mapped_column(String(255), nullable=False)
     category: Mapped[str] = mapped_column(String(100), nullable=False)
     risk_title: Mapped[str] = mapped_column(String(255), nullable=False)
+    severity: Mapped[str] = mapped_column(String(20), default="Medium")
     accepted_by: Mapped[str] = mapped_column(String(100), nullable=False)
     accepted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     expiry_date: Mapped[str] = mapped_column(String(50), default="")
     business_justification: Mapped[str] = mapped_column(Text, default="")
     compensating_control: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(30), default="active")
-    scope: Mapped[str] = mapped_column(String(50), default="specific")
+    scope: Mapped[str] = mapped_column(String(50), default="exact_fingerprint")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

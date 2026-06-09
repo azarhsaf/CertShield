@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm.attributes import flag_modified
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.core.config import get_settings
@@ -30,6 +31,7 @@ from app.models.entities import (
     User,
 )
 from app.schemas.collector import CollectorPayload
+from app.services.assessment_registry import build_assessment_registry
 from app.services.ingest import IngestService
 from app.services.pki_hierarchy import build_pki_hierarchy
 from app.services.posture_assessment import assess_pki_posture
@@ -107,18 +109,33 @@ def _refresh_posture_for_scan(db: Session, scan_id: int) -> None:
     if not scan:
         return
     findings = db.query(Finding).filter_by(scan_id=scan_id).all()
+    cas = db.query(CertificateAuthority).filter_by(scan_id=scan_id).all()
+    templates_data = db.query(CertificateTemplate).filter_by(scan_id=scan_id).all()
+    certificates = db.query(IssuedCertificate).filter_by(scan_id=scan_id).all()
     summary = scan.summary_json or {}
+    acceptances = active_acceptance_map(db)
+    registry = build_assessment_registry(
+        cas, templates_data, certificates, findings, summary.get("health", {}), summary.get("best_practices", {}), acceptances
+    )
     posture = assess_pki_posture(
         findings,
         summary.get("health", {}),
         summary.get("best_practices", {}),
         scan.coverage_json or {},
-        summary,
-        set(active_acceptance_map(db).keys()),
+        {**summary, "registry": registry},
+        set(acceptances.keys()),
     )
+    posture["assurance"] = registry["assurance"]
+    posture["score"] = registry["assurance"].get("score")
+    posture["status"] = registry["assurance"].get("assurance_level")
+    posture["assurance_level"] = registry["assurance"].get("assurance_level")
+    posture["coverage"] = registry["assurance"].get("coverage_score")
+    posture["why"] = registry["assurance"].get("why", [])
+    summary["registry"] = registry
     summary["posture"] = posture
     summary["remediation_priorities"] = posture.get("remediation_priorities", {})
     scan.summary_json = summary
+    flag_modified(scan, "summary_json")
 
 
 def _latest_scan(db: Session) -> Scan | None:
@@ -233,6 +250,8 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         )
     ctx = _nav_context(request)
     posture = _assessment(latest_scan, "posture", {})
+    registry = _assessment(latest_scan, "registry", {})
+    assurance = registry.get("assurance", posture.get("assurance", {})) if isinstance(registry, dict) else {}
     health_assessment = _assessment(latest_scan, "health", {})
     best_practices = _assessment(latest_scan, "best_practices", {})
     expiring = (health_assessment.get("items", [{}])[-2].get("evidence", {}) if health_assessment.get("items") else {})
@@ -245,6 +264,8 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             "coverage_counts": coverage_counts,
             "recent_certs": recent_certs,
             "posture": posture,
+            "registry": registry,
+            "assurance": assurance,
             "health": health_assessment,
             "best_practices": best_practices,
             "expiring_certificates": expiring.get("expiring_90", 0),
@@ -279,8 +300,14 @@ def pki_hierarchy_page(request: Request, db: Session = Depends(get_db)):
 def pki_posture_page(request: Request, db: Session = Depends(get_db)):
     ensure_authenticated(request)
     latest_scan = _latest_scan(db)
+    registry = _assessment(latest_scan, "registry", {})
     ctx = _nav_context(request)
-    ctx.update({"scan": latest_scan, "posture": _assessment(latest_scan, "posture", {})})
+    ctx.update({
+        "scan": latest_scan,
+        "posture": _assessment(latest_scan, "posture", {}),
+        "registry": registry,
+        "assurance": registry.get("assurance", {}) if isinstance(registry, dict) else {},
+    })
     return templates.TemplateResponse("pki_posture.html", ctx)
 
 
@@ -289,7 +316,7 @@ def pki_health_page(request: Request, db: Session = Depends(get_db)):
     ensure_authenticated(request)
     latest_scan = _latest_scan(db)
     ctx = _nav_context(request)
-    ctx.update({"scan": latest_scan, "health": _assessment(latest_scan, "health", {})})
+    ctx.update({"scan": latest_scan, "health": _assessment(latest_scan, "health", {}), "registry": _assessment(latest_scan, "registry", {})})
     return templates.TemplateResponse("pki_health.html", ctx)
 
 
@@ -305,6 +332,7 @@ def best_practices_page(request: Request, db: Session = Depends(get_db)):
     ctx.update({
         "scan": latest_scan,
         "best_practices": _assessment(latest_scan, "best_practices", {}),
+        "registry": _assessment(latest_scan, "registry", {}),
         "accepted_risk_count": accepted,
     })
     return templates.TemplateResponse("best_practices.html", ctx)
@@ -385,7 +413,7 @@ def accept_finding_risk(
     expiry_date: str = Form(""),
     business_justification: str = Form(...),
     compensating_control: str = Form(""),
-    scope: str = Form("specific"),
+    scope: str = Form("exact_fingerprint"),
     csrf_token: str = Form(...),
     db: Session = Depends(get_db),
 ):
@@ -409,6 +437,7 @@ def accept_finding_risk(
             object_name=finding.affected_object,
             category=finding.esc_category,
             risk_title=finding.title,
+            severity=finding.severity,
             accepted_by=request.session.get("user", "unknown"),
         )
         db.add(acceptance)
@@ -509,9 +538,21 @@ def export_json(scan_id: int, request: Request, db: Session = Depends(get_db)):
     acceptances = active_acceptance_map(db)
     findings = decorate_findings(findings, acceptances)
     summary = scan.summary_json or {}
+    current_registry = build_assessment_registry(
+        db.query(CertificateAuthority).filter_by(scan_id=scan.id).all(),
+        db.query(CertificateTemplate).filter_by(scan_id=scan.id).all(),
+        db.query(IssuedCertificate).filter_by(scan_id=scan.id).all(),
+        findings,
+        summary.get("health", {}),
+        summary.get("best_practices", {}),
+        acceptances,
+    )
+    summary["registry"] = current_registry
     payload = {
         "scan": summary,
         "executive_summary": {
+            "pki_assurance_level": summary.get("registry", {}).get("assurance", {}).get("assurance_level"),
+            "coverage_level": summary.get("registry", {}).get("assurance", {}).get("coverage_level"),
             "pki_posture_score": summary.get("posture", {}).get("score"),
             "pki_posture_status": summary.get("posture", {}).get("status"),
             "pki_health_score": summary.get("health", {}).get("score"),
@@ -536,6 +577,8 @@ def export_json(scan_id: int, request: Request, db: Session = Depends(get_db)):
         "collector_coverage": summary.get("posture", {}).get("data_coverage", {}),
         "remediation_priorities": summary.get("remediation_priorities", {}),
         "top_risks": summary.get("posture", {}).get("top_risks", []),
+        "evidence_summary": summary.get("registry", {}),
+        "open_risks": summary.get("registry", {}).get("open_risks", []),
         "health_issues": [
             item for item in summary.get("health", {}).get("items", [])
             if item.get("status") in {"Critical", "Warning", "Not Assessed"}
@@ -568,7 +611,7 @@ def export_json(scan_id: int, request: Request, db: Session = Depends(get_db)):
             }
             for f in findings
         ],
-        "accepted_risks": [
+        "accepted_risks": summary.get("registry", {}).get("accepted_risks", [
             {
                 "fingerprint": a.fingerprint,
                 "object_name": a.object_name,
@@ -579,7 +622,7 @@ def export_json(scan_id: int, request: Request, db: Session = Depends(get_db)):
                 "compensating_control": a.compensating_control,
             }
             for a in acceptances.values()
-        ],
+        ]),
     }
     return JSONResponse(payload)
 

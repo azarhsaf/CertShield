@@ -48,8 +48,11 @@ def test_risk_acceptance_reflects_across_pages_and_report():
         )
         assert accepted.status_code == 200
         assert 'Accepted Risk' in accepted.text
-        assert 'Accepted Risks' in client.get('/').text
+        dashboard = client.get('/')
+        assert 'PKI Assurance Level' in dashboard.text
+        assert 'Accepted Risks' in dashboard.text
         assert 'Customer Policy Exception' in client.get('/templates').text
+        assert 'Accepted Risk' in client.get('/best-practices').text
         posture = client.get('/pki-posture')
         assert 'Accepted Risk' in posture.text or 'Accepted' in posture.text
         report = client.get(f'/reports/{scan_id}.json').json()

@@ -3,8 +3,12 @@ from __future__ import annotations
 from collections import Counter
 
 from app.models.entities import CertificateAuthority, CertificateTemplate, IssuedCertificate
-from app.services.pki_hierarchy import key_protection
+from app.services.pki_hierarchy import ca_certificate, ca_role, key_protection
 from app.services.risk_engine import _has_any_purpose, _has_client_auth
+
+
+def _display_status(status: str) -> str:
+    return {"Fail": "High Risk", "Warning": "Needs Attention"}.get(status, status)
 
 
 def _bp(
@@ -25,6 +29,7 @@ def _bp(
         "category": category,
         "title": title,
         "status": status,
+        "display_status": _display_status(status),
         "severity": severity,
         "affected_object": affected,
         "evidence": evidence,
@@ -41,48 +46,35 @@ def _score(items: list[dict]) -> tuple[int | None, str, dict, list[str]]:
     if not items:
         return None, "Unknown", {}, ["No best-practice checks were produced from the latest scan."]
 
-    score = 100
-    explanations: list[str] = []
     counts = Counter(item["status"] for item in items)
-    critical_fails = sum(
-        1 for item in items if item["status"] == "Fail" and item["severity"] == "Critical"
-    )
+    score = 100
+    risk_values = {
+        ("Fail", "Critical"): 20,
+        ("Fail", "High"): 15,
+        ("Fail", "Medium"): 8,
+        ("Warning", "Critical"): 10,
+        ("Warning", "High"): 8,
+        ("Warning", "Medium"): 4,
+    }
     for item in items:
-        status = item["status"]
-        severity = item["severity"]
-        if status == "Fail":
-            penalty = {"Critical": 25, "High": 15, "Medium": 8}.get(severity, 4)
-            score -= penalty
-            explanations.append(f"-{penalty}: {item['title']} failed for {item['affected_object']}.")
-        elif status == "Warning":
-            penalty = {"Critical": 12, "High": 10, "Medium": 6}.get(severity, 3)
-            score -= penalty
-            explanations.append(f"-{penalty}: {item['title']} has a warning for {item['affected_object']}.")
-        elif status == "Not Assessed":
-            penalty = 7 if severity in {"Critical", "High"} else 4
-            score -= penalty
-            explanations.append(f"-{penalty}: {item['title']} was not assessed for {item['affected_object']}.")
-
-    not_assessed_ratio = counts.get("Not Assessed", 0) / len(items)
-    if not_assessed_ratio > 0.5:
-        score = min(score, 69)
-        explanations.append("Score capped at 69 because more than half of best-practice checks are Not Assessed.")
-    if critical_fails == 1:
-        score = min(score, 69)
-        explanations.append("Score capped at 69 because a Critical best-practice failure was detected.")
-    elif critical_fails > 1:
-        score = min(score, 49)
-        explanations.append("Score capped at 49 because multiple Critical best-practice failures were detected.")
-
-    score = max(0, min(score, 100))
+        score -= risk_values.get((item["status"], item["severity"]), 0)
+    if items and counts.get("Not Assessed", 0) / len(items) > 0.5:
+        score = min(score, 74)
+    score = max(0, min(100, score))
     if score >= 90:
-        status = "Strong"
-    elif score >= 70:
-        status = "Warning"
+        status = "Excellent"
+    elif score >= 75:
+        status = "Good"
+    elif score >= 60:
+        status = "Needs Attention"
     elif score >= 40:
-        status = "Weak"
+        status = "High Risk"
     else:
         status = "Critical"
+    explanations = [
+        "Best-practice assurance uses confirmed gaps and lowers coverage for Not Assessed controls.",
+        f"{counts.get('Not Assessed', 0)} controls are Not Assessed due to missing evidence.",
+    ]
     return score, status, dict(counts), explanations
 
 
@@ -102,10 +94,54 @@ def _config_bool(config: dict, key: str) -> bool | None:
 
 def _ca_practices(ca: CertificateAuthority) -> list[dict]:
     config = ca.config_json or {}
-    ca_type = str(config.get("ca_type", "issuing")).lower()
-    is_root = ca_type == "root"
-    category = "Root CA" if is_root else "Issuing CA"
+    cert = ca_certificate(config)
+    role = ca_role(ca)
+    is_root = role == "root"
+    category = "Root CA" if is_root else "Issuing CA" if role == "issuing" else "PKI Architecture"
     items: list[dict] = []
+    role_status = "Pass" if role in {"root", "issuing"} else "Not Assessed"
+    items.append(
+        _bp(
+            "PKI Architecture",
+            "CA role classified from certificate subject/issuer",
+            role_status,
+            "Low" if role_status == "Pass" else "Medium",
+            ca.name,
+            {
+                "role": role,
+                "subject": cert.get("subject"),
+                "issuer": cert.get("issuer"),
+                "evidence_source": "CA certificate subject/issuer",
+            },
+            "Clear CA role classification supports PKI ownership and prioritization.",
+            "Root and issuing CA controls depend on certificate chain evidence.",
+            "Collect CA certificate Subject/Issuer metadata for every CA.",
+            "high" if role_status == "Pass" else "low",
+            data_source="CA certificate subject/issuer",
+            not_assessed_reason="Collector did not provide CA certificate Subject/Issuer evidence." if role_status == "Not Assessed" else None,
+        )
+    )
+    if role in {"root", "issuing"}:
+        items.append(
+            _bp(
+                category,
+                "Root CA detected" if role == "root" else "Issuing CA detected",
+                "Pass",
+                "Low",
+                ca.name,
+                {
+                    "parent_ca": cert.get("issuer") if role == "issuing" else "Self-signed root",
+                    "subject": cert.get("subject"),
+                    "issuer": cert.get("issuer"),
+                    "evidence_source": "CA certificate subject/issuer",
+                },
+                "PKI role is known from certificate evidence.",
+                "Role-specific controls can be assessed against the correct CA tier.",
+                "Maintain chain documentation and continue collecting CA certificate metadata.",
+                "high",
+                data_source="CA certificate subject/issuer",
+            )
+        )
 
     if is_root:
         offline = _config_bool(config, "offline")
@@ -168,7 +204,7 @@ def _ca_practices(ca: CertificateAuthority) -> list[dict]:
             "Missing audit trails delay incident response and compliance review.",
             "Issuance and configuration changes may not be traceable.",
             "Enable CA auditing for issuance, revocation, and configuration changes.",
-            not_assessed_reason="Collector did not provide CA audit configuration." if audit is None else None,
+            not_assessed_reason="Not Assessed - collector did not collect CA AuditFilter yet." if audit is None else None,
         )
     )
 
@@ -192,8 +228,10 @@ def _ca_practices(ca: CertificateAuthority) -> list[dict]:
 
 def _key_protection_practice(ca: CertificateAuthority) -> dict:
     config = ca.config_json or {}
-    ca_type = str(config.get("ca_type", "issuing")).lower()
-    role = "Root CA" if ca_type == "root" else "Issuing CA"
+    role_key = ca_role(ca)
+    if role_key == "unknown":
+        role_key = str(config.get("ca_type", "issuing")).lower()
+    role = "Root CA" if role_key == "root" else "Issuing CA" if role_key == "issuing" else "Unclassified CA"
     kp = key_protection(config)
     if kp["status"] == "HSM Protected":
         status = "Pass"
@@ -205,9 +243,14 @@ def _key_protection_practice(ca: CertificateAuthority) -> dict:
         severity = "Critical" if role == "Root CA" else "High"
         recommendation = "Move high-value CA keys to HSM/external KMS where feasible and document compensating controls."
         reason = None
+    elif kp["status"] == "Unknown Provider":
+        status = "Warning"
+        severity = "Medium"
+        recommendation = "Review the collected CA crypto provider and classify whether it is HSM, external KMS, or software-backed."
+        reason = None
     else:
         status = "Not Assessed"
-        severity = "High"
+        severity = "Medium"
         recommendation = "Collect CA crypto provider / key storage evidence and classify key protection."
         reason = "Collector did not provide CA key protection evidence."
     return _bp(

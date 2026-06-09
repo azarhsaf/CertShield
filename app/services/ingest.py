@@ -2,6 +2,7 @@ from collections import Counter
 from datetime import datetime
 
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.models.entities import (
     AuditLog,
@@ -13,9 +14,11 @@ from app.models.entities import (
     TemplatePermission,
 )
 from app.schemas.collector import CollectorPayload
+from app.services.assessment_registry import build_assessment_registry
 from app.services.best_practices import assess_best_practices
 from app.services.health_assessment import assess_pki_health
 from app.services.posture_assessment import assess_pki_posture
+from app.services.risk_acceptance import active_acceptance_map
 from app.services.risk_engine import evaluate_templates
 
 
@@ -89,29 +92,30 @@ class IngestService:
             findings, coverage = [], {"adcs_vulnerability_assessment": "not_assessed"}
         severity_counter = Counter()
         esc_counter = Counter()
+        persisted_findings = []
         for f in findings:
             severity_counter[f.severity] += 1
             esc_counter[f.esc_category] += 1
-            db.add(
-                Finding(
-                    scan_id=scan.id,
-                    rule_id=f.rule_id,
-                    esc_category=f.esc_category,
-                    severity=f.severity,
-                    confidence=f.confidence,
-                    coverage_state=f.coverage_state,
-                    title=f.title,
-                    affected_object=f.affected_object,
-                    trigger_conditions=f.trigger_conditions,
-                    rationale=f.rationale,
-                    evidence_json=f.evidence,
-                    remediation=f.remediation,
-                    remediation_steps_json=f.remediation_steps,
-                    simulation_summary=f.simulation_summary,
-                    simulation_json=f.simulation,
-                    reference=f.reference,
-                )
+            finding_row = Finding(
+                scan_id=scan.id,
+                rule_id=f.rule_id,
+                esc_category=f.esc_category,
+                severity=f.severity,
+                confidence=f.confidence,
+                coverage_state=f.coverage_state,
+                title=f.title,
+                affected_object=f.affected_object,
+                trigger_conditions=f.trigger_conditions,
+                rationale=f.rationale,
+                evidence_json=f.evidence,
+                remediation=f.remediation,
+                remediation_steps_json=f.remediation_steps,
+                simulation_summary=f.simulation_summary,
+                simulation_json=f.simulation,
+                reference=f.reference,
             )
+            db.add(finding_row)
+            persisted_findings.append(finding_row)
 
         scan.completed_at = datetime.utcnow()
         scan.coverage_json = coverage
@@ -127,25 +131,39 @@ class IngestService:
             "schema_version": payload.schema_version,
             "health_coverage": payload.health_coverage,
         }
+        db.flush()
         health = assess_pki_health(
             cas,
             templates,
             certificates,
-            findings,
+            persisted_findings,
             scan.completed_at,
             payload.collector_version,
             payload.source_host,
             payload.health_coverage,
         )
-        best_practices = assess_best_practices(cas, templates, certificates, findings)
-        posture = assess_pki_posture(findings, health, best_practices, coverage, base_summary)
+        best_practices = assess_best_practices(cas, templates, certificates, persisted_findings)
+        registry = build_assessment_registry(
+            cas, templates, certificates, persisted_findings, health, best_practices, active_acceptance_map(db)
+        )
+        posture = assess_pki_posture(
+            persisted_findings, health, best_practices, coverage, {**base_summary, "registry": registry}, set()
+        )
+        posture["assurance"] = registry["assurance"]
+        posture["score"] = registry["assurance"].get("score")
+        posture["status"] = registry["assurance"].get("assurance_level")
+        posture["assurance_level"] = registry["assurance"].get("assurance_level")
+        posture["coverage"] = registry["assurance"].get("coverage_score")
+        posture["why"] = registry["assurance"].get("why", [])
         scan.summary_json = {
             **base_summary,
             "health": health,
             "best_practices": best_practices,
             "posture": posture,
+            "registry": registry,
             "remediation_priorities": posture.get("remediation_priorities", {}),
         }
+        flag_modified(scan, "summary_json")
 
         db.add(
             AuditLog(

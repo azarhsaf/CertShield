@@ -31,15 +31,19 @@ def run_ddl_migrations(db: Session) -> None:
         "object_name VARCHAR(255) NOT NULL, "
         "category VARCHAR(100) NOT NULL, "
         "risk_title VARCHAR(255) NOT NULL, "
+        "severity VARCHAR(20) DEFAULT 'Medium', "
         "accepted_by VARCHAR(100) NOT NULL, "
         "accepted_at DATETIME, "
         "expiry_date VARCHAR(50) DEFAULT '', "
         "business_justification TEXT DEFAULT '', "
         "compensating_control TEXT DEFAULT '', "
         "status VARCHAR(30) DEFAULT 'active', "
-        "scope VARCHAR(50) DEFAULT 'specific', "
+        "scope VARCHAR(50) DEFAULT 'exact_fingerprint', "
         "created_at DATETIME"
         ")"
     ))
+    acceptance_columns = {row[1] for row in db.execute(text("PRAGMA table_info(risk_acceptances)")).fetchall()}
+    if "severity" not in acceptance_columns:
+        db.execute(text("ALTER TABLE risk_acceptances ADD COLUMN severity VARCHAR(20) DEFAULT 'Medium'"))
 
     db.commit()

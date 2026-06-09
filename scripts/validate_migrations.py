@@ -22,7 +22,7 @@ for col in ['esc_category','confidence','coverage_state','trigger_conditions','r
 
 cur.execute("PRAGMA table_info(risk_acceptances)")
 risk_acceptance_cols = {r[1] for r in cur.fetchall()}
-for col in ['fingerprint','object_type','object_name','category','risk_title','accepted_by','expiry_date','business_justification','compensating_control','status','scope']:
+for col in ['fingerprint','object_type','object_name','category','risk_title','severity','accepted_by','expiry_date','business_justification','compensating_control','status','scope']:
     assert col in risk_acceptance_cols, f'risk_acceptances.{col} missing'
 
 print('schema validation ok')
