@@ -20,11 +20,14 @@ param(
   [string]$OutputJson,
   [switch]$SkipHealth,
   [switch]$SkipAcl,
-  [switch]$SkipCrl
+  [switch]$SkipCrl,
+  [string[]]$ManualCaConfig,
+  [string]$ExtraCaCertPath,
+  [string]$ExtraCaCertFolder
 )
 
 $ErrorActionPreference = 'Stop'
-$CollectorVersion = 'collector-ps51-1.5'
+$CollectorVersion = 'collector-ps51-1.7'
 
 function Write-Step { param([string]$Message) Write-Host "[CertShield] $Message" }
 function Empty-List { return @() }
@@ -90,6 +93,72 @@ function Convert-CertDateText {
   try { return ([datetime]$Value).ToString('yyyy-MM-ddTHH:mm:ss') } catch { return $Value }
 }
 
+function Test-TruncatedConfigString {
+  param([string]$ConfigString)
+  return ($ConfigString -match '\.\.\.')
+}
+
+function New-CertificateFromBytes {
+  param([byte[]]$Bytes)
+  if (-not $Bytes) { return $null }
+  try { return New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(,$Bytes) } catch { return $null }
+}
+
+function New-CertificateFromPath {
+  param([string]$Path)
+  if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return $null }
+  try { return New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($Path) } catch { return $null }
+}
+
+function Find-LocalCaCertificate {
+  param([string]$CaName, [string]$DnsName)
+  $stores = @('Cert:\LocalMachine\CA','Cert:\LocalMachine\Root','Cert:\LocalMachine\My')
+  foreach ($store in $stores) {
+    try {
+      foreach ($cert in Get-ChildItem -Path $store -ErrorAction SilentlyContinue) {
+        if (($CaName -and $cert.Subject -like "*$CaName*") -or ($DnsName -and $cert.Subject -like "*$DnsName*")) { return $cert }
+      }
+    } catch { }
+  }
+  return $null
+}
+
+function Get-EnrollmentServiceRecords {
+  $records = @()
+  if (-not (Test-ADModule)) { return @($records) }
+  try {
+    $root = Get-ADRootDSE
+    $base = "CN=Enrollment Services,CN=Public Key Services,CN=Services,$($root.configurationNamingContext)"
+    $props = 'certificateTemplates','dNSHostName','cACertificate','cn'
+    $services = Get-ADObject -Filter * -SearchBase $base -Properties $props
+    foreach ($svc in $services) {
+      $templates = @(); if ($svc.certificateTemplates) { $templates = @($svc.certificateTemplates) }
+      $certBytes = $null
+      if ($svc.cACertificate) {
+        if ($svc.cACertificate -is [byte[]]) { $certBytes = [byte[]]$svc.cACertificate }
+        elseif ($svc.cACertificate[0] -is [byte[]]) { $certBytes = [byte[]]$svc.cACertificate[0] }
+        else { try { $certBytes = [byte[]]$svc.cACertificate } catch { $certBytes = $null } }
+      }
+      if ($svc.Name -eq 'Enrollment Services' -and -not $certBytes) {
+        Write-Warning 'Skipping Enrollment Services container noise because it has no CA certificate.'
+        continue
+      }
+      $dns = [string]$svc.dNSHostName
+      $configString = $null
+      if ($dns -and $svc.Name) { $configString = "$dns\$($svc.Name)" }
+      $records += [pscustomobject]@{
+        name = [string]$svc.Name
+        dns_name = $dns
+        config_string = $configString
+        published_templates = @($templates)
+        ca_certificate_der = $certBytes
+        discovery_source = 'AD Enrollment Services'
+      }
+    }
+  } catch { Write-Warning "AD Enrollment Services discovery unavailable: $_" }
+  return @($records)
+}
+
 function Get-DaysRemaining {
   param([string]$Value)
   if (-not $Value) { return $null }
@@ -148,8 +217,25 @@ function Get-KeyProtectionHint {
   return @{ provider = $provider; crypto_provider = $provider; key_storage_provider = $provider; provider_type = $storage; key_container = $null; storage = $storage; hsm_detected = $hsm; evidence = @($evidence) }
 }
 
-function Get-CaCertificateHints {
+function Get-AuditHint {
   param([string]$ConfigString)
+  $evidence = @(); $auditFilter = $null
+  if (-not $ConfigString) { return @{ auditing_enabled = $null; audit_filter = $null; evidence = @('CA config string not available') } }
+  try {
+    $lines = certutil -config $ConfigString -getreg CA\AuditFilter 2>$null
+    foreach ($line in $lines) {
+      $evidence += [string]$line
+      if ($line -match 'AuditFilter\s*=\s*(\d+)') { $auditFilter = [int]$matches[1] }
+      elseif ($line -match 'AuditFilter.*REG_DWORD\s*=\s*(\d+)') { $auditFilter = [int]$matches[1] }
+    }
+  } catch { $evidence += "AuditFilter query failed: $_" }
+  $enabled = $null
+  if ($auditFilter -ne $null) { $enabled = ($auditFilter -ne 0) }
+  return @{ auditing_enabled = $enabled; audit_filter = $auditFilter; evidence = @($evidence) }
+}
+
+function Get-CaCertificateHints {
+  param([string]$ConfigString, [byte[]]$AdCaCertificate, [string]$CaName, [string]$DnsName, [string]$ExtraCaCertPath, [string]$ExtraCaCertFolder)
   $hint = @{
     ca_certificate_collected = $false
     config = @{
@@ -164,8 +250,20 @@ function Get-CaCertificateHints {
   if ($SkipHealth) { return $hint }
   $tmp = [System.IO.Path]::GetTempFileName()
   try {
-    certutil -config $ConfigString -ca.cert $tmp 2>$null | Out-Null
-    $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($tmp)
+    $cert = $null
+    if ($ConfigString -and -not (Test-TruncatedConfigString -ConfigString $ConfigString)) {
+      try { certutil -config $ConfigString -ca.cert $tmp 2>$null | Out-Null; $cert = New-CertificateFromPath -Path $tmp } catch { }
+    } elseif ($ConfigString) { Write-Warning "Rejected truncated CA config string: $ConfigString" }
+    if (-not $cert -and $AdCaCertificate) { $cert = New-CertificateFromBytes -Bytes $AdCaCertificate }
+    if (-not $cert) { $cert = Find-LocalCaCertificate -CaName $CaName -DnsName $DnsName }
+    if (-not $cert -and $ExtraCaCertPath) { $cert = New-CertificateFromPath -Path $ExtraCaCertPath }
+    if (-not $cert -and $ExtraCaCertFolder -and (Test-Path -LiteralPath $ExtraCaCertFolder)) {
+      foreach ($candidate in Get-ChildItem -Path $ExtraCaCertFolder -File -ErrorAction SilentlyContinue) {
+        $cert = New-CertificateFromPath -Path $candidate.FullName
+        if ($cert) { break }
+      }
+    }
+    if (-not $cert) { throw 'CA certificate could not be collected via certutil, AD cACertificate, local stores, or extra certificate path.' }
     $hint.ca_certificate_collected = $true
     $hint.config.certificate_collected = $true
     $subjectKeyIdentifier = $null
@@ -236,9 +334,12 @@ function Get-CaCertificateHints {
     if ($ocspUrls.Count -gt 0) { $ocspReason = 'OCSP URLs extracted from AIA; HTTP endpoint reachability was probed without sending OCSP requests.' }
     $hint.config.ocsp = @{ assessed = $true; configured = ($ocspUrls.Count -gt 0); reachable = $ocspReachable; urls = @($ocspUrls); tested_urls = @($ocspTested); status = 'not_tested'; errors = @($ocspErrors); reason = $ocspReason; source = 'ca certificate AIA extension' }
     $hint.config.key_protection = Get-KeyProtectionHint -ConfigString $ConfigString
+    $auditHint = Get-AuditHint -ConfigString $ConfigString
+    $hint.config.auditing_enabled = $auditHint.auditing_enabled
+    $hint.config.audit = $auditHint
   } catch {
-    $hint.config.certificate_collection_reason = "CA certificate query failed: $_"
-    $hint.config.ca_certificate = @{ collected = $false; error = "CA certificate query failed: $_" }
+    $hint.config.certificate_collection_reason = "CA certificate collection failed: $_"
+    $hint.config.ca_certificate = @{ collected = $false; error = "CA certificate collection failed: $_" }
   } finally {
     Remove-Item -Path $tmp -Force -ErrorAction SilentlyContinue
   }
@@ -246,49 +347,63 @@ function Get-CaCertificateHints {
 }
 
 function Get-PublishedTemplateMap {
+  param([object[]]$EnrollmentServices)
   $map = @{}
-  if (-not (Test-ADModule)) { return $map }
-  try {
-    $root = Get-ADRootDSE
-    $base = "CN=Enrollment Services,CN=Public Key Services,CN=Services,$($root.configurationNamingContext)"
-    $services = Get-ADObject -Filter * -SearchBase $base -Properties certificateTemplates,dNSHostName
-    foreach ($svc in $services) {
-      $templates = @()
-      if ($svc.certificateTemplates) { $templates = @($svc.certificateTemplates) }
-      $map[[string]$svc.Name] = @($templates)
-    }
-  } catch { Write-Warning "Published template mapping unavailable: $_" }
+  foreach ($svc in @($EnrollmentServices)) { $map[[string]$svc.name] = @($svc.published_templates) }
   return $map
 }
 
 function Get-CertificateAuthorities {
-  param([hashtable]$PublishedMap, [hashtable]$HealthCoverage)
+  param([hashtable]$PublishedMap, [hashtable]$HealthCoverage, [object[]]$EnrollmentServices)
   $cas = @()
-  try {
-    $lines = certutil -config - -ping 2>$null
-    foreach ($line in $lines) {
-      if ($line -match '^Connecting to (.+)\\(.+)$') {
-        $dns = $matches[1]
-        $caName = $matches[2]
-        $published = @()
-        if ($PublishedMap -and $PublishedMap.ContainsKey($caName)) { $published = @($PublishedMap[$caName]) }
-        $configString = "$dns\$caName"
-        $certHint = Get-CaCertificateHints -ConfigString $configString
-        if ($certHint.ca_certificate_collected) { $HealthCoverage['ca_certificate_collected'] = $true }
-        if (($certHint.config.crl.urls).Count -gt 0) { $HealthCoverage['crl_collected'] = $true }
-        if (($certHint.config.aia.urls).Count -gt 0) { $HealthCoverage['aia_collected'] = $true }
-        if (($certHint.config.ocsp.urls).Count -gt 0) { $HealthCoverage['ocsp_collected'] = $true }
-        $config = $certHint.config
-        $config['web_enrollment_assessed'] = (-not $SkipHealth)
-        $config['ca_policy_flags_assessed'] = (-not $SkipHealth)
-        $config['ca_roles_assessed'] = $false
-        $config['published_templates'] = @($published)
-        $config['config_string'] = $configString
-        $config['source_host'] = $env:COMPUTERNAME
-        $cas += [pscustomobject]@{ name = $caName; dns_name = $dns; status = 'online'; config = $config }
-      }
+  $records = @($EnrollmentServices)
+  foreach ($manual in @($ManualCaConfig)) {
+    if (-not $manual) { continue }
+    if (Test-TruncatedConfigString -ConfigString $manual) { Write-Warning "Rejected truncated manual CA config string: $manual"; continue }
+    $parts = $manual -split '\\',2
+    if ($parts.Count -eq 2) {
+      $records += [pscustomobject]@{ name=$parts[1]; dns_name=$parts[0]; config_string=$manual; published_templates=@(); ca_certificate_der=$null; discovery_source='ManualCaConfig' }
     }
-  } catch { Write-Warning "CA discovery failed via certutil: $_" }
+  }
+  if ($records.Count -eq 0) {
+    try {
+      $lines = certutil -config - -ping 2>$null
+      foreach ($line in $lines) {
+        if ($line -match '^Connecting to (.+)\\(.+)$') {
+          $configString = "$($matches[1])\$($matches[2])"
+          if (Test-TruncatedConfigString -ConfigString $configString) { Write-Warning "Rejected truncated certutil discovery config: $configString"; continue }
+          $records += [pscustomobject]@{ name=$matches[2]; dns_name=$matches[1]; config_string=$configString; published_templates=@(); ca_certificate_der=$null; discovery_source='certutil fallback' }
+        }
+      }
+    } catch { Write-Warning "CA discovery failed via certutil fallback: $_" }
+  }
+  foreach ($record in @($records)) {
+    $caName = [string]$record.name
+    $dns = [string]$record.dns_name
+    $configString = [string]$record.config_string
+    if (-not $caName -or ($caName -eq 'Enrollment Services' -and -not $record.ca_certificate_der)) { continue }
+    if ($configString -and (Test-TruncatedConfigString -ConfigString $configString)) { Write-Warning "Rejected truncated CA config string: $configString"; continue }
+    $published = @($record.published_templates)
+    if (-not $published -and $PublishedMap -and $PublishedMap.ContainsKey($caName)) { $published = @($PublishedMap[$caName]) }
+    $certHint = Get-CaCertificateHints -ConfigString $configString -AdCaCertificate $record.ca_certificate_der -CaName $caName -DnsName $dns -ExtraCaCertPath $ExtraCaCertPath -ExtraCaCertFolder $ExtraCaCertFolder
+    if (-not $certHint.ca_certificate_collected -and $record.discovery_source -eq 'AD Enrollment Services' -and $caName -eq 'Enrollment Services') { continue }
+    if ($certHint.ca_certificate_collected) { $HealthCoverage['ca_certificate_collected'] = $true }
+    if (-not $SkipHealth -and $configString) { $HealthCoverage['ca_registry_collected'] = $true }
+    if (($certHint.config.crl.urls).Count -gt 0) { $HealthCoverage['crl_collected'] = $true }
+    if (($certHint.config.aia.urls).Count -gt 0) { $HealthCoverage['aia_collected'] = $true }
+    if (($certHint.config.ocsp.urls).Count -gt 0) { $HealthCoverage['ocsp_collected'] = $true }
+    if ($certHint.config.key_protection.provider) { $HealthCoverage['key_protection_collected'] = $true }
+    $config = $certHint.config
+    $config['web_enrollment_assessed'] = (-not $SkipHealth)
+    $config['ca_policy_flags_assessed'] = (-not $SkipHealth)
+    $config['ca_roles_assessed'] = $false
+    $config['published_templates'] = @($published)
+    $config['config_string'] = $configString
+    $config['source_host'] = $env:COMPUTERNAME
+    $config['discovery_source'] = [string]$record.discovery_source
+    $status = 'online'; if (-not $configString) { $status = 'not_assessed' }
+    $cas += [pscustomobject]@{ name = $caName; dns_name = $dns; status = $status; config = $config }
+  }
   return @($cas)
 }
 
@@ -381,15 +496,16 @@ function Get-IssuedCertificates {
 
 if (-not $DomainName) { $DomainName = 'unknown.local' }
 $assessmentHints = @{ esc6_ca_policy = 'not_assessed'; esc7_ca_roles = 'not_assessed'; esc8_web_enrollment = 'insufficient_data'; esc4_template_acl = 'insufficient_data' }
-$healthCoverage = @{ ca_certificate_collected = $false; crl_collected = $false; aia_collected = $false; ocsp_collected = $false; issued_certificates_collected = $false; template_acl_collected = $false; ca_registry_collected = $false }
-$publishedMap = Get-PublishedTemplateMap
-$cas = @(Get-CertificateAuthorities -PublishedMap $publishedMap -HealthCoverage $healthCoverage)
+$healthCoverage = @{ ca_certificate_collected = $false; crl_collected = $false; aia_collected = $false; ocsp_collected = $false; issued_certificates_collected = $false; template_acl_collected = $false; ca_registry_collected = $false; key_protection_collected = $false }
+$enrollmentServices = @(Get-EnrollmentServiceRecords)
+$publishedMap = Get-PublishedTemplateMap -EnrollmentServices $enrollmentServices
+$cas = @(Get-CertificateAuthorities -PublishedMap $publishedMap -HealthCoverage $healthCoverage -EnrollmentServices $enrollmentServices)
 $templates = @(Get-Templates -PublishedMap $publishedMap -HealthCoverage $healthCoverage)
 $issued = @(Get-IssuedCertificates -HealthCoverage $healthCoverage -Cas $cas)
 
 $payload = [ordered]@{
   collector_type = 'adcs'
-  schema_version = '1.1'
+  schema_version = '1.2'
   domain_name = $DomainName
   source_host = $env:COMPUTERNAME
   collector_version = $CollectorVersion

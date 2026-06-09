@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS certificate_templates (id INTEGER PRIMARY KEY, scan_i
 CREATE TABLE IF NOT EXISTS template_permissions (id INTEGER PRIMARY KEY, template_id INTEGER NOT NULL, principal TEXT, can_enroll INTEGER, can_autoenroll INTEGER);
 CREATE TABLE IF NOT EXISTS issued_certificates (id INTEGER PRIMARY KEY, scan_id INTEGER NOT NULL, request_id TEXT, requester TEXT, template_name TEXT, subject TEXT, san TEXT, issued_at TEXT, expires_at TEXT, status TEXT);
 CREATE TABLE IF NOT EXISTS findings (id INTEGER PRIMARY KEY, scan_id INTEGER NOT NULL, rule_id TEXT, esc_category TEXT, severity TEXT, confidence TEXT, coverage_state TEXT, title TEXT, affected_object TEXT, trigger_conditions TEXT, rationale TEXT, evidence_json TEXT, remediation TEXT, remediation_steps_json TEXT, simulation_summary TEXT, simulation_json TEXT, reference TEXT);
+CREATE TABLE IF NOT EXISTS risk_acceptances (id INTEGER PRIMARY KEY, finding_id INTEGER, fingerprint TEXT NOT NULL, object_type TEXT NOT NULL, object_name TEXT NOT NULL, category TEXT NOT NULL, risk_title TEXT NOT NULL, accepted_by TEXT NOT NULL, accepted_at TEXT, expiry_date TEXT, business_justification TEXT, compensating_control TEXT, status TEXT, scope TEXT, created_at TEXT);
 CREATE TABLE IF NOT EXISTS audit_logs (id INTEGER PRIMARY KEY, actor TEXT, action TEXT, occurred_at TEXT, details_json TEXT);
 CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY);
 INSERT OR IGNORE INTO schema_migrations(version) VALUES ('001_init');

@@ -3,7 +3,7 @@
 <h1 class="h3 mb-3">Certificate Template Inventory</h1>
 <div class="card card-panel"><div class="card-body"><div class="table-responsive">
 <table class="table modern-table align-middle">
-  <thead><tr><th>Template</th><th>EKU Signals</th><th>Identity Control</th><th>Approval</th><th>Permissions</th></tr></thead>
+  <thead><tr><th>Template</th><th>EKU Signals</th><th>Identity Control</th><th>Approval</th><th>Risk Summary</th><th>Permissions</th></tr></thead>
   <tbody>
   {% for t in templates_data %}
   {% set eku = (t.eku|join(' ')|lower) %}
@@ -17,10 +17,12 @@
     </td>
     <td><span class="badge {{ 'text-bg-warning' if t.enrollee_supplies_subject else 'text-bg-secondary' }}">{{ 'Enrollee supplies subject' if t.enrollee_supplies_subject else 'Server-defined subject' }}</span></td>
     <td><span class="badge {{ 'text-bg-success' if t.manager_approval else 'text-bg-danger' }}">{{ 'Manager approval' if t.manager_approval else 'No manager approval' }}</span><div class="small">Signatures: {{t.authorized_signatures}}</div></td>
+    {% set risk = template_risks.get(t.name) or template_risks.get(t.display_name) or {} %}
+    <td>{% if risk.open %}<span class="badge text-bg-danger">Open risks: {{risk.open}}</span>{% endif %}{% if risk.accepted %}<span class="badge text-bg-info">Customer Policy Exception: {{risk.accepted}}</span>{% endif %}{% if not risk.open and not risk.accepted %}<span class="badge text-bg-success">No open template findings</span>{% endif %}{% for issue in risk.issues[:3] %}<div class="small text-secondary">{{issue.severity}} · {{issue.title}}{% if issue.accepted %} · Accepted{% endif %}</div>{% endfor %}<div class="small"><a href="/findings">Accept Risk / View Evidence</a></div></td>
     <td>{% for p in t.permissions %}<div class="small"><strong>{{p.principal}}</strong> {% if p.can_enroll %}<span class="badge text-bg-danger">Enroll</span>{% endif %}{% if p.can_autoenroll %}<span class="badge text-bg-warning">AutoEnroll</span>{% endif %}</div>{% else %}-{% endfor %}</td>
   </tr>
   {% else %}
-  <tr><td colspan="5" class="text-secondary">No templates in latest scan.</td></tr>
+  <tr><td colspan="6" class="text-secondary">No templates in latest scan.</td></tr>
   {% endfor %}
   </tbody>
 </table>

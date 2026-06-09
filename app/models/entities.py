@@ -119,6 +119,26 @@ class Finding(Base):
     scan: Mapped[Scan] = relationship(back_populates="findings")
 
 
+class RiskAcceptance(Base):
+    __tablename__ = "risk_acceptances"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    finding_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fingerprint: Mapped[str] = mapped_column(String(128), nullable=False)
+    object_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    object_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    category: Mapped[str] = mapped_column(String(100), nullable=False)
+    risk_title: Mapped[str] = mapped_column(String(255), nullable=False)
+    accepted_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    accepted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expiry_date: Mapped[str] = mapped_column(String(50), default="")
+    business_justification: Mapped[str] = mapped_column(Text, default="")
+    compensating_control: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(30), default="active")
+    scope: Mapped[str] = mapped_column(String(50), default="specific")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 

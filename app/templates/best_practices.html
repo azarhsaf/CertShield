@@ -4,7 +4,7 @@
 <div class="page-title"><div><div class="eyebrow">Governance and Architecture</div><h1>PKI Best Practices</h1><p>High-level PKI design and operations gaps. Detailed template evidence remains in Templates and Findings.</p></div></div>
 {% if best_practices %}
 {% if best_practices.limited_visibility %}<div class="alert alert-warning compact-alert">Limited Visibility: more than half of best-practice checks are Not Assessed, so the score is capped.</div>{% endif %}
-<div class="metric-grid mb-3">
+<div class="alert alert-info compact-alert">Accepted Risk Count: {{accepted_risk_count or 0}} · Accepted customer policy exceptions remain visible and reduce active-risk score impact but do not disappear from governance reporting.</div><div class="metric-grid mb-3">
   <div class="metric-card"><div class="metric-title">Best Practice Score</div><div class="metric-value">{{best_practices.score if best_practices.score is not none else 'Unknown'}}</div><div>{{status_badge(best_practices.status)}}</div></div>
   <div class="metric-card"><div class="metric-title">Passed</div><div class="metric-value">{{best_practices.counts.Pass or 0}}</div></div>
   <div class="metric-card"><div class="metric-title">Failed</div><div class="metric-value">{{best_practices.counts.Fail or 0}}</div></div>

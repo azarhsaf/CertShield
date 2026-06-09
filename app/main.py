@@ -25,12 +25,20 @@ from app.models.entities import (
     CertificateTemplate,
     Finding,
     IssuedCertificate,
+    RiskAcceptance,
     Scan,
     User,
 )
 from app.schemas.collector import CollectorPayload
 from app.services.ingest import IngestService
 from app.services.pki_hierarchy import build_pki_hierarchy
+from app.services.posture_assessment import assess_pki_posture
+from app.services.risk_acceptance import (
+    accepted_counts,
+    active_acceptance_map,
+    decorate_findings,
+    finding_fingerprint,
+)
 
 SEVERITY_ORDER = ["Critical", "High", "Medium", "Low"]
 
@@ -93,6 +101,26 @@ def _assessment(scan: Scan | None, key: str, default):
     return (scan.summary_json or {}).get(key, default)
 
 
+
+def _refresh_posture_for_scan(db: Session, scan_id: int) -> None:
+    scan = db.query(Scan).filter_by(id=scan_id).first()
+    if not scan:
+        return
+    findings = db.query(Finding).filter_by(scan_id=scan_id).all()
+    summary = scan.summary_json or {}
+    posture = assess_pki_posture(
+        findings,
+        summary.get("health", {}),
+        summary.get("best_practices", {}),
+        scan.coverage_json or {},
+        summary,
+        set(active_acceptance_map(db).keys()),
+    )
+    summary["posture"] = posture
+    summary["remediation_priorities"] = posture.get("remediation_priorities", {})
+    scan.summary_json = summary
+
+
 def _latest_scan(db: Session) -> Scan | None:
     return db.query(Scan).order_by(Scan.id.desc()).first()
 
@@ -131,7 +159,14 @@ def startup():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "app": settings.app_name, "environment": settings.app_env}
+    return {
+        "status": "ok",
+        "app": settings.app_name,
+        "environment": settings.app_env,
+        "version": settings.app_version,
+        "build_name": settings.build_name,
+        "build_label": settings.build_label,
+    }
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -176,10 +211,19 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     by_category = {}
     coverage_counts = {}
     recent_certs: list[IssuedCertificate] = []
+    risk_acceptance_counts = {
+        "accepted_total": 0,
+        "accepted_critical": 0,
+        "accepted_high": 0,
+        "open_critical": 0,
+        "open_high": 0,
+    }
     if latest_scan:
         severity = _severity_counts(db, latest_scan.id)
         by_category = _category_counts(db, latest_scan.id)
         coverage_counts = _coverage_counts(db, latest_scan.id)
+        scan_findings = db.query(Finding).filter_by(scan_id=latest_scan.id).all()
+        risk_acceptance_counts = accepted_counts(scan_findings, active_acceptance_map(db))
         recent_certs = (
             db.query(IssuedCertificate)
             .filter_by(scan_id=latest_scan.id)
@@ -204,6 +248,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             "health": health_assessment,
             "best_practices": best_practices,
             "expiring_certificates": expiring.get("expiring_90", 0),
+            "risk_acceptance_counts": risk_acceptance_counts,
         }
     )
     return templates.TemplateResponse("dashboard.html", ctx)
@@ -252,8 +297,16 @@ def pki_health_page(request: Request, db: Session = Depends(get_db)):
 def best_practices_page(request: Request, db: Session = Depends(get_db)):
     ensure_authenticated(request)
     latest_scan = _latest_scan(db)
+    accepted = 0
+    if latest_scan:
+        scan_findings = db.query(Finding).filter_by(scan_id=latest_scan.id).all()
+        accepted = accepted_counts(scan_findings, active_acceptance_map(db))["accepted_total"]
     ctx = _nav_context(request)
-    ctx.update({"scan": latest_scan, "best_practices": _assessment(latest_scan, "best_practices", {})})
+    ctx.update({
+        "scan": latest_scan,
+        "best_practices": _assessment(latest_scan, "best_practices", {}),
+        "accepted_risk_count": accepted,
+    })
     return templates.TemplateResponse("best_practices.html", ctx)
 
 
@@ -283,8 +336,27 @@ def template_page(request: Request, db: Session = Depends(get_db)):
         if latest_scan
         else []
     )
+    template_risks = {}
+    if latest_scan:
+        findings = db.query(Finding).filter_by(scan_id=latest_scan.id).all()
+        acceptances = active_acceptance_map(db)
+        for finding in findings:
+            accepted = finding_fingerprint(finding) in acceptances
+            risk = template_risks.setdefault(
+                finding.affected_object,
+                {"open": 0, "accepted": 0, "critical": 0, "high": 0, "issues": []},
+            )
+            if accepted:
+                risk["accepted"] += 1
+            else:
+                risk["open"] += 1
+                if finding.severity == "Critical":
+                    risk["critical"] += 1
+                elif finding.severity == "High":
+                    risk["high"] += 1
+            risk["issues"].append({"title": finding.title, "severity": finding.severity, "accepted": accepted})
     ctx = _nav_context(request)
-    ctx.update({"templates_data": records, "scan": latest_scan})
+    ctx.update({"templates_data": records, "scan": latest_scan, "template_risks": template_risks})
     return templates.TemplateResponse("templates.html", ctx)
 
 
@@ -300,9 +372,77 @@ def findings_page(request: Request, db: Session = Depends(get_db)):
         if latest_scan
         else []
     )
+    records = decorate_findings(records, active_acceptance_map(db))
     ctx = _nav_context(request)
-    ctx.update({"findings": records, "scan": latest_scan})
+    ctx.update({"findings": records, "scan": latest_scan, "csrf_token": issue_csrf_token(request)})
     return templates.TemplateResponse("findings.html", ctx)
+
+
+@app.post("/findings/{finding_id}/accept")
+def accept_finding_risk(
+    finding_id: int,
+    request: Request,
+    expiry_date: str = Form(""),
+    business_justification: str = Form(...),
+    compensating_control: str = Form(""),
+    scope: str = Form("specific"),
+    csrf_token: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    ensure_authenticated(request)
+    validate_csrf(request, csrf_token)
+    finding = db.query(Finding).filter_by(id=finding_id).first()
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    fingerprint = finding_fingerprint(finding)
+    acceptance = (
+        db.query(RiskAcceptance)
+        .filter_by(fingerprint=fingerprint, status="active")
+        .order_by(RiskAcceptance.id.desc())
+        .first()
+    )
+    if not acceptance:
+        acceptance = RiskAcceptance(
+            finding_id=finding.id,
+            fingerprint=fingerprint,
+            object_type="template",
+            object_name=finding.affected_object,
+            category=finding.esc_category,
+            risk_title=finding.title,
+            accepted_by=request.session.get("user", "unknown"),
+        )
+        db.add(acceptance)
+    acceptance.expiry_date = expiry_date
+    acceptance.business_justification = business_justification
+    acceptance.compensating_control = compensating_control
+    acceptance.scope = scope
+    acceptance.status = "active"
+    db.add(AuditLog(actor=request.session.get("user", "unknown"), action="risk_accepted", details_json={"finding_id": finding.id, "fingerprint": fingerprint}))
+    _refresh_posture_for_scan(db, finding.scan_id)
+    db.commit()
+    return RedirectResponse("/findings", status_code=303)
+
+
+@app.post("/acceptances/{acceptance_id}/revoke")
+def revoke_acceptance(
+    acceptance_id: int,
+    request: Request,
+    csrf_token: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    ensure_authenticated(request)
+    validate_csrf(request, csrf_token)
+    acceptance = db.query(RiskAcceptance).filter_by(id=acceptance_id).first()
+    if not acceptance:
+        raise HTTPException(status_code=404, detail="Risk acceptance not found")
+    acceptance.status = "revoked"
+    db.add(AuditLog(actor=request.session.get("user", "unknown"), action="risk_acceptance_revoked", details_json={"acceptance_id": acceptance.id, "fingerprint": acceptance.fingerprint}))
+    if acceptance.finding_id:
+        finding = db.query(Finding).filter_by(id=acceptance.finding_id).first()
+        if finding:
+            _refresh_posture_for_scan(db, finding.scan_id)
+    db.commit()
+    return RedirectResponse("/findings", status_code=303)
 
 
 @app.get("/findings/{finding_id}/simulate", response_class=HTMLResponse)
@@ -366,6 +506,8 @@ def export_json(scan_id: int, request: Request, db: Session = Depends(get_db)):
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
     findings = db.query(Finding).filter_by(scan_id=scan.id).all()
+    acceptances = active_acceptance_map(db)
+    findings = decorate_findings(findings, acceptances)
     summary = scan.summary_json or {}
     payload = {
         "scan": summary,
@@ -416,6 +558,8 @@ def export_json(scan_id: int, request: Request, db: Session = Depends(get_db)):
                 "technical_impact": (f.evidence_json or {}).get("technical_impact"),
                 "score_breakdown": (f.evidence_json or {}).get("score_breakdown"),
                 "remediation": f.remediation,
+                "accepted_risk": getattr(f, "accepted_risk", False),
+                "acceptance_id": getattr(getattr(f, "acceptance", None), "id", None),
                 "structured_evidence": {
                     key: value
                     for key, value in (f.evidence_json or {}).items()
@@ -423,6 +567,18 @@ def export_json(scan_id: int, request: Request, db: Session = Depends(get_db)):
                 },
             }
             for f in findings
+        ],
+        "accepted_risks": [
+            {
+                "fingerprint": a.fingerprint,
+                "object_name": a.object_name,
+                "risk_title": a.risk_title,
+                "accepted_by": a.accepted_by,
+                "expiry_date": a.expiry_date,
+                "business_justification": a.business_justification,
+                "compensating_control": a.compensating_control,
+            }
+            for a in acceptances.values()
         ],
     }
     return JSONResponse(payload)

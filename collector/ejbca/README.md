@@ -12,5 +12,5 @@ Expected read-only sources:
 - Issued certificate counts, failed/pending request counts, and expiring
   certificate inventory where available.
 
-The EJBCA collector should emit CertShield `schema_version=1.1` normalized PKI
+The EJBCA collector should emit CertShield `schema_version=1.2` normalized PKI
 inventory with `collector_type=ejbca`.

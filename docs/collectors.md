@@ -10,7 +10,7 @@ contract.
 ```json
 {
   "collector_type": "adcs | ejbca | generic | tls",
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "collector_version": "collector-specific-version",
   "source_host": "collector-hostname",
   "domain_name": "environment-name",

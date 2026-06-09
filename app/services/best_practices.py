@@ -417,10 +417,16 @@ def assess_best_practices(
         )
     top_gaps = [item for item in items if item["status"] in {"Fail", "Warning"}]
     top_gaps.sort(key=lambda item: {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}.get(item["severity"], 4))
+    coverage = round((len(items) - counts.get("Not Assessed", 0)) * 100 / len(items)) if items else 0
+    confidence = "High" if coverage >= 80 else "Medium" if coverage >= 50 else "Low"
     return {
         "score": score,
         "status": status,
+        "grade": status,
+        "confidence": confidence,
+        "coverage": coverage,
         "score_explanation": explanations,
+        "top_factors": [item["title"] for item in top_gaps[:5]],
         "limited_visibility": bool(items) and counts.get("Not Assessed", 0) / len(items) > 0.5,
         "counts": counts,
         "items": items,

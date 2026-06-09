@@ -101,101 +101,89 @@ def _item(
     }
 
 
-def _score(items: list[dict]) -> tuple[int | None, str, list[str]]:
+def _score(items: list[dict]) -> tuple[int | None, str, list[str], str, int, list[str]]:
     if not items:
-        return None, "Unknown", ["No health checks were produced from the latest scan."]
+        return None, "Unknown", ["No health checks were produced from the latest scan."], "Unknown", 0, []
 
-    score = 100
+    category_weights = {
+        "CA Service Health": 15,
+        "CA Certificate Health": 20,
+        "CRL Health": 25,
+        "AIA Health": 15,
+        "OCSP Health": 5,
+        "Certificate Issuance Health": 10,
+        "Template Health": 5,
+        "Collector Coverage": 5,
+    }
+    status_points = {
+        "Healthy": 100,
+        "Present / Not Tested": 70,
+        "Not Configured": 65,
+        "Warning": 55,
+        "Degraded": 40,
+        "Critical": 0,
+        "Not Assessed": None,
+        "Unknown": None,
+    }
     explanations: list[str] = []
-    assessed = [item for item in items if item["status"] not in {"Not Assessed", "Unknown"}]
-    not_assessed = [item for item in items if item["status"] in {"Not Assessed", "Unknown"}]
-    if not assessed:
-        return None, "Unknown", ["Insufficient collected data to calculate PKI health."]
+    top_factors: list[str] = []
+    assessed_weight = 0
+    weighted_points = 0
+    total_weight = sum(category_weights.values())
+    category_scores: dict[str, list[int]] = {}
 
     for item in items:
-        status = item["status"]
         category = item["category"]
-        title = item["title"]
-        if category == "CA Service Health" and status == "Critical":
-            score -= 40
-            explanations.append(f"-40: {title} is critical for {item['affected_object']}.")
-        elif category == "CA Certificate Health" and status == "Critical":
-            score -= 50
-            explanations.append(f"-50: CA certificate is expired or expires within 30 days for {item['affected_object']}.")
-        elif category == "CA Certificate Health" and status == "Warning":
-            score -= 20
-            explanations.append(f"-20: CA certificate expires within 90 days for {item['affected_object']}.")
-        elif category == "CA Certificate Health" and status == "Not Assessed":
-            score -= 15
-            explanations.append(f"-15: CA certificate expiry was not assessed for {item['affected_object']}.")
-        elif category == "CRL Health" and status == "Critical":
-            score -= 50
-            explanations.append(f"-50: CRL is expired or unreachable for {item['affected_object']}.")
-        elif category == "CRL Health" and status == "Warning":
-            score -= 25
-            explanations.append(f"-25: CRL publication has a warning for {item['affected_object']}.")
-        elif category == "CRL Health" and status == "Present / Not Tested":
-            score -= 8
-            explanations.append(f"-8: CRL path is present but reachability was not tested for {item['affected_object']}.")
-        elif category == "CRL Health" and status == "Not Assessed":
-            score -= 20
-            explanations.append(f"-20: CRL/CDP freshness was not assessed for {item['affected_object']}.")
-        elif category == "AIA Health" and status == "Critical":
-            score -= 25
-            explanations.append(f"-25: AIA retrieval appears unavailable for {item['affected_object']}.")
-        elif category == "AIA Health" and status == "Warning":
-            score -= 15
-            explanations.append(f"-15: AIA configuration warning for {item['affected_object']}.")
-        elif category == "AIA Health" and status == "Present / Not Tested":
-            score -= 3
-            explanations.append(f"-3: AIA URL is present but reachability was not tested for {item['affected_object']}.")
-        elif category == "AIA Health" and status == "Not Assessed":
-            score -= 10
-            explanations.append(f"-10: AIA chain retrieval was not assessed for {item['affected_object']}.")
-        elif category == "OCSP Health" and status == "Critical":
-            score -= 20
-            explanations.append(f"-20: OCSP responder has a critical status for {item['affected_object']}.")
-        elif category == "OCSP Health" and status == "Warning":
-            score -= 10
-            explanations.append(f"-10: OCSP responder warning for {item['affected_object']}.")
-        elif category == "OCSP Health" and status == "Not Assessed":
-            score -= 5
-            explanations.append(f"-5: OCSP posture was not assessed for {item['affected_object']}.")
-        elif category == "Certificate Issuance Health" and status == "Warning":
-            score -= 10
-            explanations.append("-10: Issued certificate/request data was not collected or is empty.")
-        elif category == "Template Health" and status == "Warning":
-            score -= 10
-            explanations.append("-10: Some template assessment coverage is incomplete.")
+        weight = category_weights.get(category, 5)
+        points = status_points.get(item["status"], 50)
+        if points is None:
+            top_factors.append(f"{category} for {item['affected_object']} is Not Assessed.")
+            continue
+        assessed_weight += weight
+        weighted_points += weight * points
+        category_scores.setdefault(category, []).append(points)
+        if points < 70:
+            top_factors.append(f"{category} for {item['affected_object']} is {item['status']}.")
 
-    not_assessed_ratio = len(not_assessed) / len(items)
-    critical_not_assessed = [item for item in not_assessed if item["category"] in CRITICAL_HEALTH_CATEGORIES]
-    if critical_not_assessed:
-        penalty = min(25, 10 + (len(critical_not_assessed) * 5))
-        score -= penalty
-        explanations.append(f"-{penalty}: Critical health checks were not assessed.")
-    limited_visibility = not_assessed_ratio > 0.5
-    if limited_visibility or not_assessed_ratio > 0.4:
-        score = min(score, 69)
-        explanations.append("Score capped at 69 because more than 40% of health checks are Not Assessed.")
-    if any(item["category"] == "CA Certificate Health" and item["status"] == "Not Assessed" for item in items):
-        score = min(score, 79)
-        explanations.append("Score capped at 79 because CA certificate expiry is Not Assessed.")
-    if any(item["category"] == "CRL Health" and item["status"] == "Not Assessed" for item in items):
-        score = min(score, 79)
-        explanations.append("Score capped at 79 because CRL health is Not Assessed.")
+    if assessed_weight == 0:
+        return None, "Unknown", ["No meaningful CA certificate, CRL, AIA, OCSP, or issuance evidence was collected."], "Unknown", 0, top_factors[:8]
+
+    score = round(weighted_points / assessed_weight)
+    coverage = round(assessed_weight * 100 / total_weight)
+    confidence = "High" if coverage >= 80 else "Medium" if coverage >= 50 else "Low"
+    explanations.append(
+        f"Weighted health score uses collected categories only; scan coverage is {coverage}% with {confidence} confidence."
+    )
+
+    ca_cert_items = [item for item in items if item["category"] == "CA Certificate Health"]
+    crl_items = [item for item in items if item["category"] == "CRL Health"]
+    if ca_cert_items and sum(1 for item in ca_cert_items if item["status"] == "Not Assessed") / len(ca_cert_items) > 0.5:
+        score = min(score, 60)
+        explanations.append("Score capped at 60 because CA certificate metadata is missing for most CAs.")
+    if crl_items and sum(1 for item in crl_items if item["status"] == "Not Assessed") / len(crl_items) > 0.5:
+        score = min(score, 70)
+        explanations.append("Score capped at 70 because CRL evidence is missing for most CAs.")
     if any(item["category"] == "CRL Health" and item["status"] == "Critical" for item in items):
-        score = min(score, 39)
-        explanations.append("Score capped at 39 because CRL health is Critical.")
+        score = min(score, 40)
+        explanations.append("Score capped at 40 because a CRL is expired or unreachable.")
+    if any(item["category"] == "CA Certificate Health" and item["status"] == "Critical" for item in items):
+        score = min(score, 30)
+        explanations.append("Score capped at 30 because a CA certificate is expired or near expiry.")
+    if coverage < 50:
+        score = min(score, 74)
+        explanations.append("Score capped below Good because less than half of weighted health evidence was collected.")
 
-    score = max(0, min(100, score))
-    if score >= 90 and not limited_visibility:
-        return score, "Healthy", explanations
-    if score >= 70:
-        return score, "Warning", explanations
-    if score >= 40:
-        return score, "Degraded", explanations
-    return score, "Critical", explanations
+    if score >= 90:
+        status = "Excellent"
+    elif score >= 75:
+        status = "Good"
+    elif score >= 60:
+        status = "Needs Attention"
+    elif score >= 40:
+        status = "Poor"
+    else:
+        status = "Critical"
+    return max(0, min(100, score)), status, explanations, confidence, coverage, top_factors[:8]
 
 
 def _ca_certificate_item(ca: CertificateAuthority, config: dict) -> tuple[dict, dict | None]:
@@ -586,14 +574,19 @@ def assess_pki_health(
         )
     )
 
-    score, status, explanations = _score(items)
+    score, status, explanations, confidence, coverage_score, top_factors = _score(items)
     counts = Counter(item["status"] for item in items)
     limited_visibility = bool(items) and counts.get("Not Assessed", 0) / len(items) > 0.4
     return {
         "score": score,
         "status": "Limited Visibility" if limited_visibility and status != "Unknown" else status,
         "limited_visibility": limited_visibility,
+        "grade": status,
+        "confidence": confidence,
+        "coverage": coverage_score,
         "score_explanation": explanations,
+        "top_factors": top_factors,
+        "why": "Operational health is weighted across CA availability, certificate validity, CRL freshness, AIA chain publication, OCSP, issuance data, and collector coverage.",
         "counts": dict(counts),
         "collector": {
             "version": collector_version,

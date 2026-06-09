@@ -228,14 +228,35 @@ The PKI Health page now shows exactly where each health signal came from:
 - **Certificate issuance health** is collected per CA with `certutil -config <CAHost\CAName> -view -restrict "Disposition=20"`. The collector account must be allowed to read CA database/request rows. If the page shows zero rows, check the displayed collection reason and confirm the command works manually on the collector host.
 
 
-## Version 0.3.1 Release Notes
+## Version 0.4.0 Release Notes
 
 Release date: 2026-06-08
-Build: **Phase 1.2 Hierarchy and Evidence Stabilization**
+Build: **Phase 2 - Scoring, Hierarchy, Collector Wiring, Risk Acceptance**
 
 What changed:
 - PKI Hierarchy no longer creates a fake root when CA certificate metadata is missing; affected CAs are shown as Unclassified with collection guidance.
 - Hierarchy grouping now uses CA certificate Subject/Issuer plus SKI/AKI when available, and creates an External / Uncollected Parent CA only when child issuer evidence exists.
 - ADCS collector emits richer CA certificate metadata including public key algorithm, SKI, AKI, self-signed status, role hint, CRL file URLs, and expanded key provider evidence.
 - Health and hierarchy pages show CRL/AIA/OCSP publication evidence and collection reasons instead of placeholder “Not collected” trees.
-- Footer and Settings identify Version 0.3.1 / Phase 1.2.
+- Footer and Settings identify Version 0.4.0 / Phase 2.
+- Official Windows collector is now `collector-ps51-1.7` with schema `1.2`, AD Enrollment Services primary discovery, truncated certutil config rejection, AD `cACertificate` fallback, optional manual/extra CA certificate inputs, and multi-CA evidence preservation.
+- Dashboard scoring uses weighted evidence-based Health, Posture, Best Practice, and Coverage signals with grade/confidence/top-factor explanations instead of penalty-only zero-heavy scoring.
+- Added customer risk acceptance for template findings with accepted/open risk separation across dashboard, findings, templates, posture, and JSON reports.
+- Added issued certificate collection reasons so a successful zero-row CA database query is visible instead of a misleading empty inventory.
+
+Normal upgrade:
+
+```bash
+sudo bash scripts/upgrade_linux.sh
+```
+
+Fresh lab reinstall only (destroys the existing lab directory):
+
+```bash
+sudo bash scripts/fresh_install_linux.sh
+```
+
+Known limitations for Phase 2:
+- Risk acceptance is intentionally auditable and visible; accepted risks remain in reports and do not disappear from findings.
+- EJBCA and TLS collectors remain documented future connectors; the backend collector contract is CA-agnostic, but this release only ships the ADCS collector.
+- CA audit and backup checks are best-effort and remain Not Assessed unless the collector can read the relevant evidence.

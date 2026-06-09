@@ -22,4 +22,24 @@ def run_ddl_migrations(db: Session) -> None:
         if col not in finding_columns:
             db.execute(text(stmt))
 
+    db.execute(text(
+        "CREATE TABLE IF NOT EXISTS risk_acceptances ("
+        "id INTEGER PRIMARY KEY, "
+        "finding_id INTEGER, "
+        "fingerprint VARCHAR(128) NOT NULL, "
+        "object_type VARCHAR(50) NOT NULL, "
+        "object_name VARCHAR(255) NOT NULL, "
+        "category VARCHAR(100) NOT NULL, "
+        "risk_title VARCHAR(255) NOT NULL, "
+        "accepted_by VARCHAR(100) NOT NULL, "
+        "accepted_at DATETIME, "
+        "expiry_date VARCHAR(50) DEFAULT '', "
+        "business_justification TEXT DEFAULT '', "
+        "compensating_control TEXT DEFAULT '', "
+        "status VARCHAR(30) DEFAULT 'active', "
+        "scope VARCHAR(50) DEFAULT 'specific', "
+        "created_at DATETIME"
+        ")"
+    ))
+
     db.commit()
