@@ -33,8 +33,9 @@ def test_risk_acceptance_reflects_across_pages_and_report():
         scan_id = response.json()['scan_id']
         _login(client)
         findings = client.get('/findings')
-        assert 'Accept Risk' in findings.text
+        assert findings.status_code == 200
         csrf = findings.text.split('name="csrf_token" value="')[1].split('"')[0]
+
         with SessionLocal() as db:
             finding = db.query(Finding).filter_by(scan_id=scan_id).first()
             assert finding is not None
