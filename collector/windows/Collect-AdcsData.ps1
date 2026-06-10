@@ -33,7 +33,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$CollectorVersion = 'collector-ps51-1.8'
+$CollectorVersion = 'collector-ps51-1.8.1'
 
 function Write-Step { param([string]$Message) Write-Host "[CertShield] $Message" }
 function Empty-List { return @() }
