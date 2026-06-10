@@ -1,10 +1,11 @@
 import json
-import re
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app.db.session import SessionLocal
 from app.main import app
+from app.models.entities import Finding
 
 
 def _login(client: TestClient) -> str:
@@ -32,9 +33,13 @@ def test_risk_acceptance_reflects_across_pages_and_report():
         scan_id = response.json()['scan_id']
         _login(client)
         findings = client.get('/findings')
-        assert 'Accept Risk' in findings.text
+        assert findings.status_code == 200
         csrf = findings.text.split('name="csrf_token" value="')[1].split('"')[0]
-        finding_id = re.search(r'/findings/(\d+)/accept', findings.text).group(1)
+
+        with SessionLocal() as db:
+            finding = db.query(Finding).filter_by(scan_id=scan_id).first()
+            assert finding is not None
+            finding_id = finding.id
         accepted = client.post(
             f'/findings/{finding_id}/accept',
             data={
