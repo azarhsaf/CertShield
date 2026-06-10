@@ -44,8 +44,8 @@ ensure_env() {
   fi
 }
 ensure_env APP_VERSION "0.4.0"
-ensure_env BUILD_NAME "Phase 2 - Scoring, Hierarchy, Collector Wiring, Risk Acceptance"
-ensure_env BUILD_LABEL "Phase 2"
+ensure_env BUILD_NAME "Collector v1.8.1 - Template Fallback, Provider Parser, Risk Rendering Fix"
+ensure_env BUILD_LABEL "Collector v1.8.1"
 ensure_env COLLECTOR_API_TOKEN "$(openssl rand -hex 24 2>/dev/null || date +%s%N)"
 ensure_env BOOTSTRAP_ADMIN_USER "admin"
 ensure_env BOOTSTRAP_ADMIN_PASSWORD "ChangeMeNow!"

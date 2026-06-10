@@ -10,8 +10,8 @@ class Settings(BaseSettings):
     app_name: str = "CertShield"
     app_env: str = "development"
     app_version: str = "0.4.0"
-    build_name: str = "Phase 2 - Scoring, Hierarchy, Collector Wiring, Risk Acceptance"
-    build_label: str = "Phase 2"
+    build_name: str = "Collector v1.8.1 - Template Fallback, Provider Parser, Risk Rendering Fix"
+    build_label: str = "Collector v1.8.1"
     secret_key: str = Field(default="change-me-in-production")
     session_cookie_name: str = "certshield_session"
     session_https_only: bool = False
