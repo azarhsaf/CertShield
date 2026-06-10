@@ -17,6 +17,32 @@ CATEGORY_CAPS = {
     "Coverage Gaps": 20,
 }
 
+COVERAGE_GAP_STATUSES = {
+    "Not Assessed",
+    "Unknown",
+    "Evidence Missing",
+    "Present / Not Tested",
+}
+
+CONFIRMED_RISK_STATUSES = {
+    "Critical",
+    "High Risk",
+    "Fail",
+    "Warning",
+    "Needs Attention",
+}
+
+
+def _is_coverage_gap(record: dict[str, Any]) -> bool:
+    return record.get("original_status") in COVERAGE_GAP_STATUSES
+
+
+def _is_confirmed_risk(record: dict[str, Any]) -> bool:
+    return (
+        record.get("severity") in {"Critical", "High"}
+        and record.get("original_status") in CONFIRMED_RISK_STATUSES
+    )
+
 
 def registry_fingerprint(category: str, object_type: str, object_name: str, title: str) -> str:
     normalized = "|".join(
@@ -122,14 +148,18 @@ def _assurance(records: list[dict[str, Any]], hierarchy: dict[str, Any]) -> dict
         severity = record["severity"]
         if severity not in OPEN_DEDUCTIONS:
             continue
-        if record["accepted_risk"]:
+        if record["accepted_risk"] and _is_confirmed_risk(record):
             accepted_counts[severity] += 1
             caps[record["category"]] += ACCEPTED_DEDUCTIONS[severity]
-            accepted_reasons.append(f"{severity} accepted by policy: {record['title']} ({record['object_name']}).")
-        elif record["original_status"] in {"Critical", "High Risk", "Fail", "Warning", "Needs Attention", "Not Assessed"}:
+            accepted_reasons.append(
+                f"{severity} accepted by policy: {record['title']} ({record['object_name']})."
+            )
+        elif _is_confirmed_risk(record):
             open_counts[severity] += 1
             caps[record["category"]] += OPEN_DEDUCTIONS[severity]
-            open_reasons.append(f"{severity} open: {record['title']} ({record['object_name']}).")
+            open_reasons.append(
+                f"{severity} confirmed: {record['title']} ({record['object_name']})."
+            )
 
     category_deduction = 0
     for category, amount in caps.items():
@@ -160,9 +190,15 @@ def _assurance(records: list[dict[str, Any]], hierarchy: dict[str, Any]) -> dict
         if r["category"] == "Key Protection" and r["original_status"] in {"Not Assessed", "Unknown Provider"}
     )
     key_reason = f"Key protection unknown for {key_unknown} CA(s)." if key_unknown else "Key protection evidence is available where collected."
-    why = (open_reasons[:5] or ["No confirmed open critical/high risk currently drives the assurance level."])
-    why.extend(accepted_reasons[:5])
-    why.extend(coverage_gaps[:5])
+    why = open_reasons[:3] or [
+        "No confirmed Critical or High risk currently drives the PKI status."
+    ]
+    why.extend(accepted_reasons[:2])
+    if coverage_gaps:
+        why.append(
+            f"{len(coverage_gaps)} assessment item(s) need additional evidence. "
+            "These are coverage gaps and are not counted as confirmed risks."
+        )
     why.extend([key_reason, hierarchy_reason])
     return {
         "score": score,
@@ -281,7 +317,22 @@ def _health_records(health: dict[str, Any], acceptances: dict[str, RiskAcceptanc
 
 def _best_practice_records(best_practices: dict[str, Any], acceptances: dict[str, RiskAcceptance]) -> list[dict[str, Any]]:
     records = []
+    duplicate_ca_registry_titles = {
+        "CA auditing should be enabled",
+        "Root CA key protection should be known and appropriate",
+        "Issuing CA key protection should be known and appropriate",
+        "Unclassified CA key protection should be known and appropriate",
+    }
+
     for item in best_practices.get("items", []):
+        # These controls already have canonical CA registry records:
+        # - CA auditing evidence
+        # - CA key protection status
+        # Keep the detailed checks on the Best Practices page, but do
+        # not duplicate them in Posture, Evidence Gaps, or Reports.
+        if item.get("title") in duplicate_ca_registry_titles:
+            continue
+
         status = item.get("status", "Not Assessed")
         normalized = item.get("display_status") or ({"Fail": "High Risk", "Warning": "Needs Attention"}.get(status, status))
         records.append(_record(
@@ -345,6 +396,42 @@ def build_assessment_registry(
     for record in records:
         grouped[record["object_type"]].append(record)
     assurance = _assurance(records, hierarchy)
+
+    confirmed_risks = [
+        record
+        for record in records
+        if not record["accepted_risk"] and _is_confirmed_risk(record)
+    ]
+    confirmed_risks = sorted(
+        confirmed_risks,
+        key=lambda record: (
+            0 if record["severity"] == "Critical" else 1,
+            record["category"],
+            record["object_name"],
+        ),
+    )
+
+    accepted_risks = [
+        record
+        for record in records
+        if record["accepted_risk"] and _is_confirmed_risk(record)
+    ]
+
+    coverage_gaps = [
+        record
+        for record in records
+        if _is_coverage_gap(record)
+    ]
+
+    potential_risks = [
+        record
+        for record in records
+        if (
+            not record["accepted_risk"]
+            and record["original_status"] in {"Present / Not Tested"}
+        )
+    ]
+
     return {
         "records": records,
         "by_object_type": dict(grouped),
@@ -355,7 +442,11 @@ def build_assessment_registry(
             "issuing": hierarchy.get("issuing_count", 0),
             "unclassified": hierarchy.get("unclassified_count", 0),
         },
-        "open_risks": [r for r in records if not r["accepted_risk"] and r["severity"] in {"Critical", "High"} and r["original_status"] not in {"Pass", "Healthy"}],
-        "accepted_risks": [r for r in records if r["accepted_risk"]],
-        "coverage_gaps": [r for r in records if r["original_status"] in {"Not Assessed", "Unknown", "Evidence Missing"}],
+        "confirmed_risks": confirmed_risks,
+        "open_risks": confirmed_risks,
+        "confirmed_risk_count": len(confirmed_risks),
+        "accepted_risks": accepted_risks,
+        "coverage_gaps": coverage_gaps,
+        "coverage_gap_count": len(coverage_gaps),
+        "potential_risks": potential_risks,
     }
