@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% from 'macros/evidence.html' import status_badge %}
+{% block content %}
+<div class="page-title"><div><div class="eyebrow">Inventory</div><h1>Enterprise CA Inventory</h1><p>Certificate Authority role, publication, validation, and assessment coverage.</p></div></div>
+<div class="card card-panel"><div class="card-body compact-card"><div class="table-responsive">
+<table class="table modern-table table-sm align-middle"><thead><tr><th>CA Name</th><th>DNS</th><th>Status</th><th>Role</th><th>Published Templates</th><th>CRL</th><th>AIA</th><th>OCSP</th><th>Assessment Coverage</th></tr></thead><tbody>
+{% for c in cas %}
+{% set cfg = c.config_json or {} %}
+<tr>
+  <td class="fw-semibold text-wrap-sm">{{c.name}}</td><td class="text-wrap-sm">{{c.dns_name or '-'}}</td><td>{{status_badge(c.status|title if c.status else 'Unknown')}}</td><td>{{cfg.ca_type|default('issuing')|title}}</td><td>{{(cfg.published_templates or [])|length}}</td>
+  <td>{{status_badge('Assessed' if (cfg.crl.assessed if cfg.crl else cfg.crl_assessed) else 'Not Assessed')}}</td>
+  <td>{{status_badge('Assessed' if (cfg.aia.assessed if cfg.aia else cfg.aia_assessed) else 'Not Assessed')}}</td>
+  <td>{{status_badge('Assessed' if (cfg.ocsp.assessed if cfg.ocsp else cfg.ocsp_assessed) else 'Not Assessed')}}</td>
+  <td class="coverage-pills">
+    <span class="badge {{'text-bg-success' if (cfg.crl.assessed if cfg.crl else cfg.crl_assessed) else 'text-bg-secondary'}}">CRL {{'Assessed' if (cfg.crl.assessed if cfg.crl else cfg.crl_assessed) else 'Not Assessed'}}</span>
+    <span class="badge {{'text-bg-success' if (cfg.aia.assessed if cfg.aia else cfg.aia_assessed) else 'text-bg-secondary'}}">AIA {{'Assessed' if (cfg.aia.assessed if cfg.aia else cfg.aia_assessed) else 'Not Assessed'}}</span>
+    <span class="badge {{'text-bg-success' if cfg.web_enrollment_assessed else 'text-bg-secondary'}}">Web Enrollment {{'Assessed' if cfg.web_enrollment_assessed else 'Not Assessed'}}</span>
+    <span class="badge {{'text-bg-success' if cfg.ca_policy_flags_assessed else 'text-bg-secondary'}}">CA Policy Flags {{'Assessed' if cfg.ca_policy_flags_assessed else 'Not Assessed'}}</span>
+    <span class="badge {{'text-bg-success' if cfg.ca_roles_assessed else 'text-bg-secondary'}}">CA Roles {{'Assessed' if cfg.ca_roles_assessed else 'Not Assessed'}}</span>
+  </td>
+</tr>
+{% else %}
+<tr><td colspan="9" class="text-secondary">No CAs found.</td></tr>
+{% endfor %}
+</tbody></table>
+</div></div></div>
+{% endblock %}
