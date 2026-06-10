@@ -1,19 +1,265 @@
 {% extends 'base.html' %}
-{% from 'macros/evidence.html' import status_badge, evidence_table %}
 {% block content %}
-<div class="hero-panel compact-hero mb-3"><div><div class="eyebrow">CertShield PKI Posture Management</div><h1>PKI Posture</h1><p>Status-first assurance view. Overall Posture Score is a supporting indicator; detailed score evidence is available in “Why this status?”.</p></div></div>
+
+<div class="hero-panel compact-hero mb-3">
+  <div>
+    <div class="eyebrow">CertShield PKI Posture Management</div>
+    <h1>PKI Posture</h1>
+    <p>Prioritized, evidence-backed risks affecting your PKI environment.</p>
+  </div>
+</div>
+
 {% if posture %}
-<div class="metric-grid mb-3">
-  <div class="metric-card score-card"><div class="metric-title">Assurance Level</div><div class="metric-value status-word">{{assurance.assurance_level or posture.assurance_level or posture.status}}</div><div class="small text-secondary">Supporting score: {{assurance.score if assurance.score is not none else 'Not enough data'}}</div></div>
-  <div class="metric-card"><div class="metric-title">Open Risks</div><div class="metric-value">{{assurance.open_risk_count or 0}}</div><div class="small text-secondary">Critical {{assurance.open_critical or 0}} · High {{assurance.open_high or 0}}</div></div>
-  <div class="metric-card"><div class="metric-title">Accepted Risks</div><div class="metric-value">{{assurance.accepted_risk_count or 0}}</div><div class="small text-secondary">Still visible in reports</div></div>
-  <div class="metric-card"><div class="metric-title">Coverage Level</div><div class="metric-value status-word-sm">{{assurance.coverage_level or 'Unknown'}}</div><div class="small text-secondary">{{assurance.coverage_score or 0}}%</div></div>
-</div>
+{% set confirmed_risks = registry.get('confirmed_risks', registry.get('open_risks', [])) if registry else [] %}
+{% set accepted_risks = registry.get('accepted_risks', []) if registry else [] %}
+{% set coverage_gaps = registry.get('coverage_gaps', []) if registry else [] %}
+{% set confirmed_risk_count = registry.get('confirmed_risk_count', confirmed_risks|length) if registry else 0 %}
+{% set coverage_gap_count = registry.get('coverage_gap_count', coverage_gaps|length) if registry else 0 %}
+
 <div class="row g-3 mb-3">
-  <div class="col-lg-7"><div class="card card-panel"><div class="card-body compact-card"><h2 class="section-title">Why this status?</h2><ul class="compact-list">{% for reason in assurance.why %}<li>{{reason}}</li>{% else %}<li>No status explanation available.</li>{% endfor %}</ul></div></div></div>
-  <div class="col-lg-5"><div class="card card-panel"><div class="card-body compact-card"><h2 class="section-title">Coverage Gaps</h2><ul class="compact-list">{% for gap in registry.coverage_gaps[:8] %}<li>{{gap.category}} · {{gap.title}} · {{gap.object_name}}</li>{% else %}<li>No major coverage gaps in shared registry.</li>{% endfor %}</ul></div></div></div>
+
+  <div class="col-12 col-md-6 col-xl-3">
+    <div class="metric-card h-100">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="metric-title">PKI Status</div>
+          <div class="metric-value status-word">
+            {{ assurance.assurance_level or posture.assurance_level or posture.status }}
+          </div>
+          <button
+            class="btn btn-link btn-sm p-0 mt-2 text-decoration-none"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#postureStatusExplanation"
+            aria-expanded="false"
+            aria-controls="postureStatusExplanation"
+          >
+            Explain status
+          </button>
+        </div>
+
+        <button
+          class="btn btn-sm btn-outline-secondary rounded-circle"
+          type="button"
+          data-bs-toggle="collapse"
+          data-bs-target="#postureStatusExplanation"
+          aria-label="Explain PKI status"
+          style="width:38px;height:38px"
+        >
+          ?
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-md-6 col-xl-3">
+    <a
+      class="metric-card h-100 d-block text-decoration-none text-reset"
+      href="#confirmed-findings"
+    >
+      <div class="metric-title">Confirmed Critical/High Findings</div>
+      <div class="metric-value">{{ confirmed_risk_count }}</div>
+      <div class="small text-secondary">
+        Critical {{ assurance.open_critical or 0 }}
+        · High {{ assurance.open_high or 0 }}
+      </div>
+      <div class="small text-primary mt-2">View immediate actions ↓</div>
+    </a>
+  </div>
+
+  <div class="col-12 col-md-6 col-xl-3">
+    <a
+      class="metric-card h-100 d-block text-decoration-none text-reset"
+      href="#accepted-risks"
+    >
+      <div class="metric-title">Accepted Risks</div>
+      <div class="metric-value">{{ accepted_risks|length }}</div>
+      <div class="small text-secondary">
+        Approved policy exceptions
+      </div>
+      <div class="small text-primary mt-2">View accepted risks ↓</div>
+    </a>
+  </div>
+
+  <div class="col-12 col-md-6 col-xl-3">
+    <a
+      class="metric-card h-100 d-block text-decoration-none text-reset"
+      href="/evidence-gaps"
+    >
+      <div class="metric-title">Assessment Coverage</div>
+      <div class="metric-value">{{ assurance.coverage_score or 0 }}%</div>
+      <div class="small text-secondary">
+        {{ coverage_gap_count }} evidence gap(s)
+      </div>
+      <div class="small text-primary mt-2">View all evidence gaps →</div>
+    </a>
+  </div>
+
 </div>
-<div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">Open Risks</h2>{% for risk in registry.open_risks %}<div class="risk-row compact-risk"><span class="badge sev-{{risk.severity|lower}}">{{risk.severity}}</span><div><strong>{{risk.title}}</strong><div class="small text-secondary">{{risk.category}} · {{risk.object_name}} · Source: {{risk.source}}</div></div></div>{% else %}<p class="text-secondary mb-0">No open critical/high risks in the shared registry.</p>{% endfor %}</div></div>
-<div class="card card-panel"><div class="card-body compact-card"><h2 class="section-title">Accepted Risks</h2>{% for risk in registry.accepted_risks %}<div class="risk-row compact-risk"><span class="badge text-bg-info">Accepted Risk</span><div><strong>{{risk.title}}</strong><div class="small text-secondary">{{risk.severity}} · {{risk.object_name}} · Fingerprint {{risk.fingerprint[:12]}}</div></div></div>{% else %}<p class="text-secondary mb-0">No active accepted risks.</p>{% endfor %}</div></div>
-{% else %}<div class="empty-state compact-card">No posture assessment available yet.</div>{% endif %}
+
+<div class="collapse mb-3" id="postureStatusExplanation">
+  <div class="card card-panel">
+    <div class="card-body compact-card">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h2 class="section-title mb-0">Why this PKI status?</h2>
+
+        <button
+          class="btn-close"
+          type="button"
+          data-bs-toggle="collapse"
+          data-bs-target="#postureStatusExplanation"
+          aria-label="Close"
+        ></button>
+      </div>
+
+      <ul class="compact-list mb-2">
+        {% for reason in assurance.why %}
+          <li>{{reason}}</li>
+        {% else %}
+          <li>No status explanation is available.</li>
+        {% endfor %}
+      </ul>
+
+      <div class="small text-secondary">
+        Evidence gaps are shown separately and are not counted as confirmed risks.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-xl-8" id="confirmed-findings">
+    <div class="card card-panel h-100">
+      <div class="card-body compact-card">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <h2 class="section-title mb-1">Immediate Actions</h2>
+            <div class="small text-secondary">
+              Highest-priority confirmed risks backed by collected evidence.
+            </div>
+          </div>
+
+          <a class="btn btn-sm btn-outline-primary" href="/findings">
+            View all findings
+          </a>
+        </div>
+
+        {% for risk in confirmed_risks[:5] %}
+          <div class="risk-row compact-risk">
+            <span class="badge sev-{{risk.severity|lower}}">
+              {{risk.severity}}
+            </span>
+
+            <div class="flex-grow-1">
+              <strong>{{risk.title}}</strong>
+
+              <div class="small text-secondary">
+                {{risk.category}} · {{risk.object_name}}
+              </div>
+
+              <div class="small mt-1">
+                <strong>Evidence source:</strong> {{risk.source}}
+                · <strong>Confidence:</strong> {{risk.confidence|title}}
+              </div>
+
+              {% if risk.recommendation %}
+                <div class="small mt-1">
+                  <strong>Recommended action:</strong> {{risk.recommendation}}
+                </div>
+              {% endif %}
+
+              <div class="small mt-2">
+                {% if risk.related_template %}
+                  <a href="/templates">Open template evidence</a>
+                {% elif risk.related_ca %}
+                  <a href="/pki-hierarchy">Open CA in hierarchy</a>
+                {% endif %}
+
+                {% if risk.related_template or risk.related_ca %}
+                  ·
+                {% endif %}
+
+                <a href="/findings">Review / Accept Risk</a>
+              </div>
+            </div>
+          </div>
+        {% else %}
+          <div class="alert alert-success mb-0">
+            No confirmed Critical or High risks were found in the latest assessment.
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-xl-4" id="coverage-gaps">
+    <div class="card card-panel h-100">
+      <div class="card-body compact-card">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h2 class="section-title mb-0">Evidence Gaps</h2>
+          <a class="btn btn-sm btn-outline-primary" href="/evidence-gaps">
+            View all
+          </a>
+        </div>
+
+        <p class="small text-secondary">
+          Missing or unreachable evidence. These items are not counted as confirmed risks.
+        </p>
+
+        <div class="metric-value mb-2">
+          {{ coverage_gap_count }}
+        </div>
+
+        <ul class="compact-list">
+          {% for gap in coverage_gaps[:5] %}
+            <li>
+              <strong>{{gap.object_name}}</strong><br>
+              <span class="small text-secondary">
+                {{gap.title}}
+              </span>
+            </li>
+          {% else %}
+            <li>No major assessment gaps.</li>
+          {% endfor %}
+        </ul>
+
+        {% if coverage_gap_count > 5 %}
+          <div class="small text-secondary mt-2">
+            Plus {{coverage_gap_count - 5}} additional evidence gap(s).
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card card-panel mb-3" id="accepted-risks">
+  <div class="card-body compact-card">
+    <h2 class="section-title">Accepted by Policy</h2>
+
+    {% for risk in accepted_risks[:5] %}
+      <div class="risk-row compact-risk">
+        <span class="badge text-bg-info">Accepted</span>
+
+        <div>
+          <strong>{{risk.title}}</strong>
+          <div class="small text-secondary">
+            {{risk.severity}} · {{risk.object_name}}
+          </div>
+        </div>
+      </div>
+    {% else %}
+      <p class="text-secondary mb-0">
+        No active policy exceptions.
+      </p>
+    {% endfor %}
+  </div>
+</div>
+
+{% else %}
+<div class="empty-state compact-card">
+  No posture assessment is available yet.
+</div>
+{% endif %}
+
 {% endblock %}

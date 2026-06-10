@@ -62,10 +62,12 @@ def ca_certificate(config: dict[str, Any]) -> dict[str, Any]:
     subject = cert.get("subject") or config.get("certificate_subject") or config.get("subject")
     issuer = cert.get("issuer") or config.get("certificate_issuer") or config.get("issuer")
     not_after = cert.get("not_after") or config.get("certificate_expires_at") or config.get("ca_certificate_expires_at")
+    collected = cert.get("collected") if "collected" in cert else bool(subject and issuer)
+    collection_error = None if collected else (cert.get("error") or config.get("certificate_collection_reason"))
     return {
         **cert,
-        "collected": cert.get("collected") if "collected" in cert else bool(subject and issuer),
-        "error": cert.get("error") or config.get("certificate_collection_reason"),
+        "collected": collected,
+        "error": collection_error,
         "subject": subject,
         "issuer": issuer,
         "serial_number": cert.get("serial_number") or config.get("serial_number"),
@@ -103,40 +105,86 @@ def ca_role(ca: CertificateAuthority) -> str:
 
 def key_protection(config: dict[str, Any]) -> dict[str, Any]:
     raw = config.get("key_protection") if isinstance(config.get("key_protection"), dict) else {}
+
     provider = str(
         raw.get("provider")
         or raw.get("key_storage_provider")
+        or raw.get("crypto_provider")
         or config.get("crypto_provider")
         or config.get("key_storage_provider")
         or config.get("provider")
         or ""
     ).strip()
-    provider_type = raw.get("provider_type") or config.get("provider_type") or "Not collected"
-    key_container = raw.get("key_container") or config.get("key_container") or "Not collected"
+
+    provider_type = raw.get("provider_type") or config.get("provider_type")
+    key_container = raw.get("key_container") or config.get("key_container")
     storage = str(raw.get("storage") or config.get("key_storage") or "").lower().strip()
     hsm_detected = raw.get("hsm_detected")
+
+    evidence = raw.get("evidence") or config.get("key_protection_evidence") or []
+    if isinstance(evidence, str):
+        evidence = [evidence]
+    else:
+        evidence = list(evidence)
+
+    evidence_text = " ".join(str(item) for item in evidence).lower()
     provider_l = provider.lower()
-    if hsm_detected is True or storage == "hsm" or any(hint in provider_l for hint in HSM_HINTS):
+    reason = None
+
+    if hsm_detected is True or storage == "hsm" or any(
+        hint in provider_l for hint in HSM_HINTS
+    ):
         status = "HSM Protected"
         storage = "hsm"
-    elif hsm_detected is False or storage == "software" or any(hint in provider_l for hint in SOFTWARE_HINTS):
+        reason = "Hardware or external key provider evidence was collected."
+
+    elif hsm_detected is False or storage == "software" or any(
+        hint in provider_l for hint in SOFTWARE_HINTS
+    ):
         status = "Software Key"
         storage = "software"
+        reason = "Microsoft software cryptographic provider evidence was collected."
+
     elif provider:
         status = "Unknown Provider"
         storage = storage or "unknown"
+        reason = f"Provider was collected but is not mapped: {provider}"
+
+    elif (
+        "0x80070035" in evidence_text
+        or "error_bad_netpath" in evidence_text
+        or "network path was not found" in evidence_text
+    ):
+        status = "Collection Failed"
+        storage = "unknown"
+        reason = "CA host or remote registry path was unreachable (0x80070035)."
+
+    elif "access is denied" in evidence_text or "0x80070005" in evidence_text:
+        status = "Collection Failed"
+        storage = "unknown"
+        reason = "Collector account was denied access to CA key-provider registry evidence."
+
+    elif any("failed" in str(item).lower() for item in evidence):
+        status = "Collection Failed"
+        storage = "unknown"
+        reason = "Key-provider collection failed. Review the collected command evidence."
+
     else:
         status = "Not Assessed"
         storage = storage or "unknown"
+        reason = "No key-provider evidence was returned by the collector."
+
     return {
         "status": status,
-        "provider": provider or raw.get("provider") or "Not collected",
-        "provider_type": provider_type,
-        "key_container": key_container,
+        "provider": provider or "Not collected",
+        "provider_type": provider_type or "Not collected",
+        "key_container": key_container or "Not collected",
         "storage": storage,
         "hsm_detected": hsm_detected if hsm_detected is not None else "unknown",
-        "evidence": raw.get("evidence") or config.get("key_protection_evidence") or "Not collected",
+        "reason": reason,
+        "evidence": evidence or ["No key-provider evidence collected"],
     }
+
 
 
 def _section_status(config: dict[str, Any], name: str) -> str:
@@ -159,16 +207,32 @@ def _section_status(config: dict[str, Any], name: str) -> str:
     return "Not Assessed"
 
 
-def _risk_badge(role: str, key_status: str, crl_status: str, cert_collected: bool) -> str:
+def _risk_badge(
+    role: str,
+    key_status: str,
+    crl_status: str,
+    cert_collected: bool,
+) -> str:
     if not cert_collected:
         return "Not Assessed"
+
+    if key_status in {"Not Assessed", "Collection Failed"}:
+        return "Not Assessed"
+
     if role == "root" and key_status == "Software Key":
         return "High"
+
     if crl_status in {"Critical", "Expired"}:
         return "Critical"
-    if key_status == "Software Key" or crl_status in {"Warning", "Not Assessed"}:
+
+    if key_status in {"Software Key", "Unknown Provider"}:
         return "Warning"
+
+    if crl_status in {"Warning", "Not Assessed"}:
+        return "Warning"
+
     return "Normal"
+
 
 
 def _node(ca: CertificateAuthority, health_by_ca: dict[str, list[dict]], gaps_by_ca: dict[str, list[dict]]) -> dict[str, Any]:
@@ -185,7 +249,7 @@ def _node(ca: CertificateAuthority, health_by_ca: dict[str, list[dict]], gaps_by
     cert_warning = None
     if not cert_collected:
         cert_warning = "CA certificate details were not collected. Run the latest ADCS collector with CA certificate evidence enabled."
-    elif cert.get("error"):
+    elif cert.get("error") and not cert.get("collected"):
         cert_warning = cert.get("error")
     return {
         "id": config.get("ca_id") or f"{ca.name}|{ca.dns_name}|{config.get('config_string', '')}|{cert.get('thumbprint') or cert.get('subject') or ''}",

@@ -283,7 +283,6 @@ def _template_practices(template: CertificateTemplate) -> list[dict]:
     }
     broad_principals = "authenticated users" in principals or "domain users" in principals
     auth_capable = _has_client_auth(template.eku)
-    owner = raw.get("business_owner")
     if not permission_data_available:
         broad_status = "Not Assessed"
         broad_severity = "High"
@@ -356,19 +355,6 @@ def _template_practices(template: CertificateTemplate) -> list[dict]:
             "Reduce validity to the organization baseline for the certificate purpose.",
             "high",
         ),
-        _bp(
-            "Templates",
-            "Important templates should have a business owner",
-            "Pass" if owner else "Not Assessed",
-            "Medium",
-            template.name,
-            {"business_owner": owner or "Not collected"},
-            "Unowned templates complicate risk acceptance and remediation.",
-            "Template changes may lack accountable review.",
-            "Assign and document template owners for important templates.",
-            "medium" if owner else "low",
-            not_assessed_reason="Collector did not provide business owner metadata." if not owner else None,
-        ),
     ]
 
 
@@ -385,7 +371,85 @@ def assess_best_practices(
     for template in templates:
         items.extend(_template_practices(template))
 
-    privileged_seen = any("admin" in (cert.requester or "").lower() for cert in certificates)
+    # Business ownership is manual governance metadata, not an ADCS
+    # collector field. Remove the per-template repeated check and
+    # represent it once for the published-template population.
+    items = [
+        item
+        for item in items
+        if item.get("title")
+        != "Important templates should have a business owner"
+    ]
+
+    published_templates = [
+        template
+        for template in templates
+        if template.published_to
+    ]
+
+    templates_without_owner = [
+        template
+        for template in published_templates
+        if not (template.raw_json or {}).get("business_owner")
+    ]
+
+    if published_templates:
+        items.append(
+            _bp(
+                "Template Governance",
+                "Published certificate template ownership",
+                (
+                    "Pass"
+                    if not templates_without_owner
+                    else "Not Assessed"
+                ),
+                "Medium",
+                "Published templates",
+                {
+                    "published_template_count": len(
+                        published_templates
+                    ),
+                    "templates_without_owner_count": len(
+                        templates_without_owner
+                    ),
+                    "templates_without_owner": [
+                        template.name
+                        for template in templates_without_owner
+                    ],
+                },
+                (
+                    "Published templates should have accountable "
+                    "business and technical owners."
+                ),
+                (
+                    "Ownership is governance metadata and is not "
+                    "stored natively in ADCS."
+                ),
+                (
+                    "Assign owners to published templates through "
+                    "CertShield governance metadata."
+                ),
+                (
+                    "high"
+                    if not templates_without_owner
+                    else "low"
+                ),
+                data_source="operator evidence",
+                not_assessed_reason=(
+                    None
+                    if not templates_without_owner
+                    else (
+                        "Template ownership requires manual "
+                        "governance input."
+                    )
+                ),
+            )
+        )
+
+    privileged_seen = any(
+        "admin" in (cert.requester or "").lower()
+        for cert in certificates
+    )
     items.extend(
         [
             _bp(

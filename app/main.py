@@ -32,6 +32,7 @@ from app.models.entities import (
 )
 from app.schemas.collector import CollectorPayload
 from app.services.assessment_registry import build_assessment_registry
+from app.services.best_practices import assess_best_practices
 from app.services.ingest import IngestService
 from app.services.pki_hierarchy import build_pki_hierarchy
 from app.services.posture_assessment import assess_pki_posture
@@ -114,13 +115,28 @@ def _refresh_posture_for_scan(db: Session, scan_id: int) -> None:
     certificates = db.query(IssuedCertificate).filter_by(scan_id=scan_id).all()
     summary = scan.summary_json or {}
     acceptances = active_acceptance_map(db)
+
+    best_practices = assess_best_practices(
+        cas,
+        templates_data,
+        certificates,
+        findings,
+    )
+    summary["best_practices"] = best_practices
+
     registry = build_assessment_registry(
-        cas, templates_data, certificates, findings, summary.get("health", {}), summary.get("best_practices", {}), acceptances
+        cas,
+        templates_data,
+        certificates,
+        findings,
+        summary.get("health", {}),
+        best_practices,
+        acceptances,
     )
     posture = assess_pki_posture(
         findings,
         summary.get("health", {}),
-        summary.get("best_practices", {}),
+        best_practices,
         scan.coverage_json or {},
         {**summary, "registry": registry},
         set(acceptances.keys()),
@@ -300,6 +316,14 @@ def pki_hierarchy_page(request: Request, db: Session = Depends(get_db)):
 def pki_posture_page(request: Request, db: Session = Depends(get_db)):
     ensure_authenticated(request)
     latest_scan = _latest_scan(db)
+
+    if latest_scan:
+        stored_registry = _assessment(latest_scan, "registry", {})
+        if not isinstance(stored_registry, dict) or "confirmed_risks" not in stored_registry:
+            _refresh_posture_for_scan(db, latest_scan.id)
+            db.commit()
+            db.refresh(latest_scan)
+
     registry = _assessment(latest_scan, "registry", {})
     ctx = _nav_context(request)
     ctx.update({
@@ -650,3 +674,214 @@ def collector_ingest(
         raise HTTPException(status_code=401, detail="Invalid collector token")
     scan = IngestService.ingest(db, payload, actor="collector")
     return {"status": "ok", "scan_id": scan.id}
+
+
+@app.get("/evidence-gaps", response_class=HTMLResponse)
+def evidence_gaps_page(request: Request, db: Session = Depends(get_db)):
+    ensure_authenticated(request)
+    latest_scan = _latest_scan(db)
+    registry = _assessment(latest_scan, "registry", {})
+
+    gaps = []
+    if isinstance(registry, dict):
+        gaps = registry.get("coverage_gaps", []) or []
+
+    def normalize(value) -> str:
+        return str(value or "").strip().casefold()
+
+    template_aliases: dict[str, str] = {}
+    ca_aliases: dict[str, str] = {}
+
+    if latest_scan:
+        template_rows = (
+            db.query(CertificateTemplate)
+            .filter_by(scan_id=latest_scan.id)
+            .all()
+        )
+
+        for template in template_rows:
+            canonical_name = (
+                template.display_name
+                or template.name
+                or "Unknown template"
+            )
+
+            for candidate in (
+                template.name,
+                template.display_name,
+            ):
+                key = normalize(candidate)
+                if key:
+                    template_aliases[key] = canonical_name
+
+        ca_rows = (
+            db.query(CertificateAuthority)
+            .filter_by(scan_id=latest_scan.id)
+            .all()
+        )
+
+        for ca in ca_rows:
+            canonical_name = ca.name or ca.dns_name or "Unknown CA"
+
+            for candidate in (
+                ca.name,
+                ca.dns_name,
+            ):
+                key = normalize(candidate)
+                if key:
+                    ca_aliases[key] = canonical_name
+
+    buckets: dict[str, dict[str, list[dict]]] = {
+        "templates": {},
+        "cas": {},
+        "other": {},
+    }
+
+    for gap in gaps:
+        object_type = normalize(gap.get("object_type"))
+        object_name = str(
+            gap.get("object_name") or "Unknown object"
+        ).strip()
+
+        related_template = str(
+            gap.get("related_template") or ""
+        ).strip()
+
+        related_ca = str(
+            gap.get("related_ca") or ""
+        ).strip()
+
+        category = str(
+            gap.get("category") or "Other"
+        ).strip()
+
+        object_key = normalize(object_name)
+        related_template_key = normalize(related_template)
+        related_ca_key = normalize(related_ca)
+
+        # Use the actual latest-scan inventories first.
+        # Do not classify "finding" or "health_check" directly,
+        # because those are record types rather than asset types.
+        if object_key in template_aliases:
+            bucket_name = "templates"
+            asset_name = template_aliases[object_key]
+
+        elif object_key in ca_aliases:
+            bucket_name = "cas"
+            asset_name = ca_aliases[object_key]
+
+        elif related_template_key in template_aliases:
+            bucket_name = "templates"
+            asset_name = template_aliases[related_template_key]
+
+        elif related_ca_key in ca_aliases:
+            bucket_name = "cas"
+            asset_name = ca_aliases[related_ca_key]
+
+        elif object_type in {
+            "template",
+            "certificate_template",
+        }:
+            bucket_name = "templates"
+            asset_name = related_template or object_name
+
+        elif object_type in {
+            "ca",
+            "certificate_authority",
+        }:
+            bucket_name = "cas"
+            asset_name = related_ca or object_name
+
+        else:
+            bucket_name = "other"
+            asset_name = (
+                f"{category} — {object_name}"
+                if object_name and object_name != category
+                else category
+            )
+
+        buckets[bucket_name].setdefault(
+            asset_name,
+            [],
+        ).append(gap)
+
+    group_definitions = [
+        (
+            "templates",
+            "Certificate Templates",
+            "Template ACL, EKU, enrolment, validity, and identity-control evidence.",
+        ),
+        (
+            "cas",
+            "Certificate Authorities",
+            "CA certificate, CRL, AIA, auditing, key protection, and service evidence.",
+        ),
+        (
+            "other",
+            "Other Controls",
+            "Environment-wide evidence that is not linked to one CA or certificate template.",
+        ),
+    ]
+
+    evidence_gap_groups = []
+
+    for key, title, description in group_definitions:
+        assets = []
+
+        for asset_name, asset_gaps in sorted(
+            buckets[key].items(),
+            key=lambda item: item[0].casefold(),
+        ):
+            sorted_gaps = sorted(
+                asset_gaps,
+                key=lambda gap: (
+                    str(gap.get("category") or ""),
+                    str(gap.get("title") or ""),
+                ),
+            )
+
+            assets.append(
+                {
+                    "name": asset_name,
+                    "gap_count": len(sorted_gaps),
+                    "gaps": sorted_gaps,
+                }
+            )
+
+        if assets:
+            evidence_gap_groups.append(
+                {
+                    "key": key,
+                    "title": title,
+                    "description": description,
+                    "asset_count": len(assets),
+                    "gap_count": sum(
+                        asset["gap_count"]
+                        for asset in assets
+                    ),
+                    "assets": assets,
+                }
+            )
+
+    ctx = _nav_context(request)
+    ctx.update(
+        {
+            "scan": latest_scan,
+            "evidence_gap_count": len(gaps),
+            "evidence_gap_groups": evidence_gap_groups,
+            "template_gap_assets": len(
+                buckets["templates"]
+            ),
+            "ca_gap_assets": len(
+                buckets["cas"]
+            ),
+            "other_gap_assets": len(
+                buckets["other"]
+            ),
+        }
+    )
+
+    return templates.TemplateResponse(
+        "evidence_gaps.html",
+        ctx,
+    )

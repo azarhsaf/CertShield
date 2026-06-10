@@ -31,7 +31,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$CollectorVersion = 'collector-ps51-1.8.1'
+$CollectorVersion = 'collector-ps51-1.8.5'
 
 function Write-Step { param([string]$Message) Write-Host "[CertShield] $Message" }
 function Empty-List { return @() }
@@ -201,51 +201,301 @@ function Get-CrlFreshness {
   return @{ reachable = $reachable; tested_urls = @($tested); errors = @($errors); this_update = $thisUpdate; next_update = $nextUpdate; days_remaining = (Get-DaysRemaining -Value $nextUpdate) }
 }
 
+function Convert-RegistryNumber {
+  param([string]$Value)
+
+  if (-not $Value) {
+    return $null
+  }
+
+  $text = $Value.Trim()
+
+  # certutil commonly returns:
+  # 7f (127)
+  # 0x7f
+  # 127
+  if ($text -match '\((\d+)\)\s*$') {
+    return [int64]$matches[1]
+  }
+
+  if ($text -match '0x([0-9a-fA-F]+)') {
+    return [Convert]::ToInt64($matches[1], 16)
+  }
+
+  if ($text -match '^([0-9a-fA-F]+)\s*$') {
+    $number = $matches[1]
+
+    if ($number -match '[a-fA-F]') {
+      return [Convert]::ToInt64($number, 16)
+    }
+
+    return [int64]$number
+  }
+
+  if ($text -match '(\d+)') {
+    return [int64]$matches[1]
+  }
+
+  return $null
+}
+
+
+function Invoke-CaRegistryQuery {
+  param(
+    [string]$ConfigString,
+    [string]$RegistryPath
+  )
+
+  $evidence = @()
+  $errorText = $null
+  $success = $false
+  $exitCode = $null
+
+  if (-not $ConfigString) {
+    return @{
+      success = $false
+      exit_code = $null
+      evidence = @('CA config string not available')
+      error = 'CA config string not available'
+    }
+  }
+
+  try {
+    $lines = @(
+      & certutil.exe `
+        -config $ConfigString `
+        -getreg $RegistryPath 2>&1
+    )
+
+    $exitCode = $LASTEXITCODE
+
+    foreach ($line in $lines) {
+      $evidence += [string]$line
+    }
+
+    if ($exitCode -eq 0) {
+      $success = $true
+    } else {
+      $errorText = (
+        "certutil registry query failed with exit code " +
+        "$exitCode for $RegistryPath"
+      )
+    }
+  } catch {
+    $errorText = $_.Exception.Message
+    $evidence += (
+      "Registry query exception for " +
+      "$RegistryPath`: $errorText"
+    )
+  }
+
+  return @{
+    success = $success
+    exit_code = $exitCode
+    evidence = @($evidence)
+    error = $errorText
+  }
+}
+
+
 function Get-KeyProtectionHint {
   param([string]$ConfigString)
-  $provider = $null; $providerType = $null; $keyContainer = $null; $evidence = @()
-  if (-not $ConfigString) {
-    return @{ provider = $null; crypto_provider = $null; provider_type = 'not_assessed'; key_storage_provider = $null; key_container = $null; storage = 'not_assessed'; hsm_detected = 'unknown'; evidence = @('CA config string not available') }
-  }
-  try {
-    $lines = certutil -config $ConfigString -getreg CA\CSP 2>$null
-    foreach ($line in $lines) {
-      $evidence += [string]$line
-      if ($line -match 'ProviderType\s*=\s*(.+)$') { $providerType = $matches[1].Trim() }
-      elseif ($line -match 'Provider Type\s*=\s*(.+)$') { $providerType = $matches[1].Trim() }
-      elseif ($line -match 'ProviderName(?:\s+REG_(?:SZ|EXPAND_SZ|MULTI_SZ|DWORD))?\s*=\s*(.+)$') { $provider = $matches[1].Trim() }
-      elseif ($line -match 'Provider(?:\s+REG_(?:SZ|EXPAND_SZ|MULTI_SZ|DWORD))?\s*=\s*(.+)$') { $provider = $matches[1].Trim() }
-      elseif ($line -match 'KeyContainer\s*=\s*(.+)$') { $keyContainer = $matches[1].Trim() }
-      elseif ($line -match 'Key Container\s*=\s*(.+)$') { $keyContainer = $matches[1].Trim() }
+
+  $provider = $null
+  $providerType = $null
+  $keyContainer = $null
+
+  $query = Invoke-CaRegistryQuery `
+    -ConfigString $ConfigString `
+    -RegistryPath 'CA\CSP'
+
+  foreach ($line in @($query.evidence)) {
+    $text = [string]$line
+
+    if (
+      $text -match
+      '^\s*ProviderType(?:\s+REG_\w+)?\s*=\s*(.+)$'
+    ) {
+      $providerType = Convert-RegistryNumber `
+        -Value $matches[1]
+    } elseif (
+      $text -match
+      '^\s*Provider\s+Type(?:\s+REG_\w+)?\s*=\s*(.+)$'
+    ) {
+      $providerType = Convert-RegistryNumber `
+        -Value $matches[1]
+    } elseif (
+      $text -match
+      '^\s*ProviderName(?:\s+REG_\w+)?\s*=\s*(.+)$'
+    ) {
+      $provider = $matches[1].Trim()
+    } elseif (
+      $text -match
+      '^\s*Provider(?:\s+REG_\w+)?\s*=\s*(.+)$'
+    ) {
+      $provider = $matches[1].Trim()
+    } elseif (
+      $text -match
+      '^\s*KeyContainer(?:\s+REG_\w+)?\s*=\s*(.+)$'
+    ) {
+      $keyContainer = $matches[1].Trim()
+    } elseif (
+      $text -match
+      '^\s*Key\s+Container(?:\s+REG_\w+)?\s*=\s*(.+)$'
+    ) {
+      $keyContainer = $matches[1].Trim()
     }
-  } catch { $evidence += "CSP query failed: $_" }
-  $storage = 'not_assessed'; $hsm = 'unknown'
-  if ($provider) {
-    $p = $provider.ToLowerInvariant()
-    if ($p -match 'thales|safenet|luna|ncipher|nshield|entrust|utimaco|fortanix|azure key vault|keycontrol|aws cloudhsm|google cloud kms|hsm') { $storage = 'hsm'; $hsm = $true }
-    elseif ($p -match 'microsoft software|microsoft enhanced|microsoft strong|software') { $storage = 'software'; $hsm = $false }
-    else { $storage = 'unknown_provider'; $hsm = 'unknown' }
   }
-  $resolvedProviderType = $storage
-  if ($storage -eq 'not_assessed' -and $providerType) { $resolvedProviderType = $providerType }
-  return @{ provider = $provider; crypto_provider = $provider; key_storage_provider = $provider; provider_type = $resolvedProviderType; key_container = $keyContainer; storage = $storage; hsm_detected = $hsm; evidence = @($evidence) }
+
+  $storage = 'not_assessed'
+  $hsmDetected = 'unknown'
+
+  if ($provider) {
+    $providerLower = $provider.ToLowerInvariant()
+
+    if (
+      $providerLower -match
+      'thales|safenet|luna|ncipher|nshield|entrust|' +
+      'utimaco|cryptoserver|fortanix|azure key vault|' +
+      'aws cloudhsm|google cloud kms|hsm'
+    ) {
+      $storage = 'hsm'
+      $hsmDetected = $true
+    } elseif (
+      $providerLower -match
+      'microsoft software|microsoft enhanced|' +
+      'microsoft strong|software key storage'
+    ) {
+      $storage = 'software'
+      $hsmDetected = $false
+    } else {
+      $storage = 'unknown_provider'
+      $hsmDetected = 'unknown'
+    }
+  }
+
+  $reason = $null
+
+  if ($provider) {
+    $reason = (
+      "CA crypto provider collected and classified as $storage."
+    )
+  } elseif ($query.error) {
+    $reason = $query.error
+  } else {
+    $reason = (
+      'CA CSP registry query completed but no provider was parsed.'
+    )
+  }
+
+  return @{
+    collected = [bool]$provider
+    assessed = [bool]$provider
+    provider = $provider
+    crypto_provider = $provider
+    key_storage_provider = $provider
+    provider_type = $storage
+    csp_provider_type = $providerType
+    key_container = $keyContainer
+    storage = $storage
+    hsm_detected = $hsmDetected
+    source = 'certutil CA\CSP'
+    reason = $reason
+    error = $query.error
+    query_exit_code = $query.exit_code
+    evidence = @($query.evidence)
+  }
 }
+
+
 function Get-AuditHint {
   param([string]$ConfigString)
-  $evidence = @(); $auditFilter = $null
-  if (-not $ConfigString) { return @{ auditing_enabled = $null; audit_filter = $null; evidence = @('CA config string not available') } }
-  try {
-    $lines = certutil -config $ConfigString -getreg CA\AuditFilter 2>$null
-    foreach ($line in $lines) {
-      $evidence += [string]$line
-      if ($line -match 'AuditFilter\s*=\s*(\d+)') { $auditFilter = [int]$matches[1] }
-      elseif ($line -match 'AuditFilter.*REG_DWORD\s*=\s*(\d+)') { $auditFilter = [int]$matches[1] }
+
+  $auditFilter = $null
+  $missingValue = $false
+
+  $query = Invoke-CaRegistryQuery `
+    -ConfigString $ConfigString `
+    -RegistryPath 'CA\AuditFilter'
+
+  foreach ($line in @($query.evidence)) {
+    $text = [string]$line
+
+    if (
+      $text -match
+      '^\s*AuditFilter(?:\s+REG_DWORD)?\s*=\s*(.+)$'
+    ) {
+      $auditFilter = Convert-RegistryNumber `
+        -Value $matches[1]
     }
-  } catch { $evidence += "AuditFilter query failed: $_" }
+
+    if (
+      $text -match
+      '0x80070002|ERROR_FILE_NOT_FOUND|cannot find the file specified'
+    ) {
+      $missingValue = $true
+    }
+  }
+
+  $assessed = $false
+  $collected = $false
   $enabled = $null
-  if ($auditFilter -ne $null) { $enabled = ($auditFilter -ne 0) }
-  return @{ auditing_enabled = $enabled; audit_filter = $auditFilter; evidence = @($evidence) }
+  $state = 'not_assessed'
+  $reason = $null
+  $reportedError = $query.error
+
+  if ($null -ne $auditFilter) {
+    $assessed = $true
+    $collected = $true
+    $enabled = ($auditFilter -ne 0)
+    $state = if ($enabled) {
+      'enabled'
+    } else {
+      'disabled'
+    }
+
+    $reason = (
+      "CA AuditFilter collected successfully. Value: " +
+      "$auditFilter."
+    )
+  } elseif ($missingValue) {
+    # The CA registry was reached successfully, but AuditFilter
+    # does not exist. This is evidence that CA auditing has not
+    # been configured, rather than missing collector evidence.
+    $auditFilter = 0
+    $assessed = $true
+    $collected = $true
+    $enabled = $false
+    $state = 'not_configured'
+    $reportedError = $null
+
+    $reason = (
+      'CA registry was reached, but the AuditFilter value does ' +
+      'not exist. CA auditing is treated as not configured.'
+    )
+  } elseif ($query.error) {
+    $reason = $query.error
+  } else {
+    $reason = (
+      'CA AuditFilter query completed but no value was parsed.'
+    )
+  }
+
+  return @{
+    assessed = $assessed
+    collected = $collected
+    auditing_enabled = $enabled
+    audit_filter = $auditFilter
+    state = $state
+    source = 'certutil CA\AuditFilter'
+    reason = $reason
+    error = $reportedError
+    query_error = $query.error
+    query_exit_code = $query.exit_code
+    evidence = @($query.evidence)
+  }
 }
+
 
 function Get-CaCertificateHints {
   param([string]$ConfigString, [byte[]]$AdCaCertificate, [string]$CaName, [string]$DnsName, [string]$ExtraCaCertPath, [string]$ExtraCaCertFolder)
@@ -279,6 +529,7 @@ function Get-CaCertificateHints {
     if (-not $cert) { throw 'CA certificate could not be collected via certutil, AD cACertificate, local stores, or extra certificate path.' }
     $hint.ca_certificate_collected = $true
     $hint.config.certificate_collected = $true
+    $hint.config.certificate_collection_reason = $null
     $subjectKeyIdentifier = $null
     $authorityKeyIdentifier = $null
     $publicKeyAlgorithm = $cert.PublicKey.Oid.FriendlyName
@@ -545,49 +796,300 @@ function Get-CertificateAuthorities {
 }
 
 function Get-Templates {
-  param([hashtable]$PublishedMap, [hashtable]$HealthCoverage)
+  param(
+    [hashtable]$PublishedMap,
+    [hashtable]$HealthCoverage
+  )
+
   $templates = @()
-  if (-not (Test-ADModule)) { return @($templates) }
-  try {
-    $root = Get-ADRootDSE
-    $base = "CN=Certificate Templates,CN=Public Key Services,CN=Services,$($root.configurationNamingContext)"
-    $props = @(
-      'displayName','pKIExtendedKeyUsage','msPKI-Certificate-Application-Policy','msPKI-Certificate-Name-Flag',
-      'msPKI-Enrollment-Flag','msPKI-Private-Key-Flag','msPKI-RA-Signature','msPKI-RA-Application-Policies',
-      'msPKI-RA-Policies','msPKI-Template-Schema-Version','pKIExpirationPeriod','pKIOverlapPeriod','flags',
-      'revision','whenChanged','nTSecurityDescriptor'
+  $searcher = $null
+  $results = $null
+  $searchRoot = $null
+
+  function Get-ResultFirstValue {
+    param(
+      $SearchResult,
+      [string]$PropertyName
     )
-    $objs = Get-ADObject -Filter * -SearchBase $base -Properties $props -SecurityMask Dacl,Owner
+
+    $key = $PropertyName.ToLowerInvariant()
+    $values = $SearchResult.Properties[$key]
+
+    if ($null -ne $values -and $values.Count -gt 0) {
+      return ,$values[0]
+    }
+
+    return $null
+  }
+
+  function Get-ResultStringValues {
+    param(
+      $SearchResult,
+      [string]$PropertyName
+    )
+
+    $output = @()
+    $key = $PropertyName.ToLowerInvariant()
+    $values = $SearchResult.Properties[$key]
+
+    if ($null -ne $values) {
+      foreach ($value in $values) {
+        if ($null -ne $value -and [string]$value) {
+          $output += [string]$value
+        }
+      }
+    }
+
+    return @($output)
+  }
+
+  try {
+    $rootDse = [ADSI]'LDAP://RootDSE'
+    $configurationNamingContext = [string]$rootDse.configurationNamingContext
+
+    if (-not $configurationNamingContext) {
+      throw 'Active Directory configurationNamingContext was not returned.'
+    }
+
+    $base = (
+      "CN=Certificate Templates," +
+      "CN=Public Key Services," +
+      "CN=Services," +
+      $configurationNamingContext
+    )
+
+    $searchRoot = [ADSI]("LDAP://$base")
+
+    $searcher = New-Object System.DirectoryServices.DirectorySearcher
+    $searcher.SearchRoot = $searchRoot
+    $searcher.Filter = '(objectClass=pKICertificateTemplate)'
+    $searcher.SearchScope = [System.DirectoryServices.SearchScope]::OneLevel
+    $searcher.PageSize = 1000
+    $searcher.CacheResults = $false
+
+    if (-not (Test-SkipTemplateAcl)) {
+      $searcher.SecurityMasks = (
+        [System.DirectoryServices.SecurityMasks]::Dacl -bor
+        [System.DirectoryServices.SecurityMasks]::Owner
+      )
+    }
+
+    $properties = @(
+      'cn',
+      'displayName',
+      'pKIExtendedKeyUsage',
+      'msPKI-Certificate-Application-Policy',
+      'msPKI-Certificate-Name-Flag',
+      'msPKI-Enrollment-Flag',
+      'msPKI-Private-Key-Flag',
+      'msPKI-RA-Signature',
+      'msPKI-RA-Application-Policies',
+      'msPKI-RA-Policies',
+      'msPKI-Template-Schema-Version',
+      'pKIExpirationPeriod',
+      'pKIOverlapPeriod',
+      'flags',
+      'revision',
+      'whenChanged',
+      'nTSecurityDescriptor'
+    )
+
+    foreach ($property in $properties) {
+      [void]$searcher.PropertiesToLoad.Add($property)
+    }
+
+    $results = $searcher.FindAll()
     $aclCollected = $false
-    foreach ($o in $objs) {
-      $nameFlag = 0; if ($o.'msPKI-Certificate-Name-Flag') { $nameFlag = [int]$o.'msPKI-Certificate-Name-Flag' }
-      $enrollFlag = 0; if ($o.'msPKI-Enrollment-Flag') { $enrollFlag = [int]$o.'msPKI-Enrollment-Flag' }
-      $privateKeyFlag = 0; if ($o.'msPKI-Private-Key-Flag') { $privateKeyFlag = [int]$o.'msPKI-Private-Key-Flag' }
-      $authSig = 0; if ($o.'msPKI-RA-Signature') { $authSig = [int]$o.'msPKI-RA-Signature' }
+
+    foreach ($result in $results) {
+      $name = [string](
+        Get-ResultFirstValue `
+          -SearchResult $result `
+          -PropertyName 'cn'
+      )
+
+      if (-not $name) {
+        continue
+      }
+
+      $displayName = [string](
+        Get-ResultFirstValue `
+          -SearchResult $result `
+          -PropertyName 'displayName'
+      )
+
+      if (-not $displayName) {
+        $displayName = $name
+      }
+
+      $nameFlag = 0
+      $nameFlagValue = Get-ResultFirstValue `
+        -SearchResult $result `
+        -PropertyName 'msPKI-Certificate-Name-Flag'
+
+      if ($null -ne $nameFlagValue) {
+        $nameFlag = [int]$nameFlagValue
+      }
+
+      $enrollmentFlag = 0
+      $enrollmentFlagValue = Get-ResultFirstValue `
+        -SearchResult $result `
+        -PropertyName 'msPKI-Enrollment-Flag'
+
+      if ($null -ne $enrollmentFlagValue) {
+        $enrollmentFlag = [int]$enrollmentFlagValue
+      }
+
+      $privateKeyFlag = 0
+      $privateKeyFlagValue = Get-ResultFirstValue `
+        -SearchResult $result `
+        -PropertyName 'msPKI-Private-Key-Flag'
+
+      if ($null -ne $privateKeyFlagValue) {
+        $privateKeyFlag = [int]$privateKeyFlagValue
+      }
+
+      $authorizedSignatures = 0
+      $signatureValue = Get-ResultFirstValue `
+        -SearchResult $result `
+        -PropertyName 'msPKI-RA-Signature'
+
+      if ($null -ne $signatureValue) {
+        $authorizedSignatures = [int]$signatureValue
+      }
+
       $ekuOids = @()
-      if ($o.'pKIExtendedKeyUsage') { $ekuOids += @($o.'pKIExtendedKeyUsage') }
-      if ($o.'msPKI-Certificate-Application-Policy') { $ekuOids += @($o.'msPKI-Certificate-Application-Policy') }
-      $ekuOids = @($ekuOids | Where-Object { $_ } | Select-Object -Unique)
-      $eku = @(); foreach ($oid in $ekuOids) { $eku += Convert-EkuOidToName -Oid ([string]$oid) }
-      $display = $o.Name; if ($o.displayName) { $display = [string]$o.displayName }
+
+      $ekuOids += @(
+        Get-ResultStringValues `
+          -SearchResult $result `
+          -PropertyName 'pKIExtendedKeyUsage'
+      )
+
+      $ekuOids += @(
+        Get-ResultStringValues `
+          -SearchResult $result `
+          -PropertyName 'msPKI-Certificate-Application-Policy'
+      )
+
+      $ekuOids = @(
+        $ekuOids |
+          Where-Object { $_ } |
+          Select-Object -Unique
+      )
+
+      $ekuNames = @()
+
+      foreach ($oid in $ekuOids) {
+        $ekuNames += Convert-EkuOidToName -Oid ([string]$oid)
+      }
+
+      $expirationPeriod = Get-ResultFirstValue `
+        -SearchResult $result `
+        -PropertyName 'pKIExpirationPeriod'
+
+      $overlapPeriod = Get-ResultFirstValue `
+        -SearchResult $result `
+        -PropertyName 'pKIOverlapPeriod'
+
+      $validityDays = Convert-ADIntervalToDays `
+        -Value $expirationPeriod
+
+      $renewalDays = Convert-ADIntervalToDays `
+        -Value $overlapPeriod
+
       $publishedTo = @()
-      if ($PublishedMap) { foreach ($caName in $PublishedMap.Keys) { if (@($PublishedMap[$caName]) -contains $o.Name) { $publishedTo += [string]$caName } } }
-      $validityDays = Convert-ADIntervalToDays -Value $o.'pKIExpirationPeriod'
-      $renewalDays = Convert-ADIntervalToDays -Value $o.'pKIOverlapPeriod'
-      $acl = @{ permissions_assessed = $false; acl_collection_reason = 'Template ACL collection skipped'; permissions = @(); acl_details = @(); owner = $null }
-      if (-not (Test-SkipTemplateAcl)) { $acl = Convert-TemplateAcl -SecurityDescriptor $o.nTSecurityDescriptor -TemplateName $o.Name }
-      if ($acl.permissions_assessed) { $aclCollected = $true }
-      $validityOut = 0; if ($validityDays -ne $null) { $validityOut = $validityDays }
-      $renewalOut = 0; if ($renewalDays -ne $null) { $renewalOut = $renewalDays }
+
+      if ($PublishedMap) {
+        foreach ($caName in $PublishedMap.Keys) {
+          if (@($PublishedMap[$caName]) -contains $name) {
+            $publishedTo += [string]$caName
+          }
+        }
+      }
+
+      $acl = @{
+        permissions_assessed = $false
+        acl_collection_reason = 'Template ACL collection skipped'
+        permissions = @()
+        acl_details = @()
+        owner = $null
+      }
+
+      if (-not (Test-SkipTemplateAcl)) {
+        try {
+          $securityDescriptorValue = Get-ResultFirstValue `
+            -SearchResult $result `
+            -PropertyName 'nTSecurityDescriptor'
+
+          if ($null -eq $securityDescriptorValue) {
+            throw 'nTSecurityDescriptor was not returned by DirectorySearcher.'
+          }
+
+          if ($securityDescriptorValue -is [byte[]]) {
+            $securityDescriptor = New-Object `
+              System.DirectoryServices.ActiveDirectorySecurity
+
+            $securityDescriptor.SetSecurityDescriptorBinaryForm(
+              [byte[]]$securityDescriptorValue
+            )
+          } elseif (
+            $securityDescriptorValue -is
+            [System.DirectoryServices.ActiveDirectorySecurity]
+          ) {
+            $securityDescriptor = $securityDescriptorValue
+          } else {
+            throw (
+              "Unsupported nTSecurityDescriptor value type: " +
+              $securityDescriptorValue.GetType().FullName
+            )
+          }
+
+          $acl = Convert-TemplateAcl `
+            -SecurityDescriptor $securityDescriptor `
+            -TemplateName $name
+        } catch {
+          $acl = @{
+            permissions_assessed = $false
+            acl_collection_reason = (
+              "Template ACL collection failed for " +
+              "$name`: $($_.Exception.Message)"
+            )
+            permissions = @()
+            acl_details = @()
+            owner = $null
+          }
+        }
+      }
+
+      if ($acl.permissions_assessed) {
+        $aclCollected = $true
+      }
+
+      $validityOutput = 0
+
+      if ($null -ne $validityDays) {
+        $validityOutput = $validityDays
+      }
+
+      $renewalOutput = 0
+
+      if ($null -ne $renewalDays) {
+        $renewalOutput = $renewalDays
+      }
+
       $templates += [pscustomobject]@{
-        name = [string]$o.Name
-        display_name = $display
-        eku = @($eku)
-        enrollee_supplies_subject = (($nameFlag -band 1) -ne 0 -or ($nameFlag -band 65536) -ne 0)
-        manager_approval = (($enrollFlag -band 2) -ne 0)
-        authorized_signatures = $authSig
-        validity_days = $validityOut
-        renewal_days = $renewalOut
+        name = $name
+        display_name = $displayName
+        eku = @($ekuNames)
+        enrollee_supplies_subject = (
+          (($nameFlag -band 1) -ne 0) -or
+          (($nameFlag -band 65536) -ne 0)
+        )
+        manager_approval = (($enrollmentFlag -band 2) -ne 0)
+        authorized_signatures = $authorizedSignatures
+        validity_days = $validityOutput
+        renewal_days = $renewalOutput
         published_to = @($publishedTo)
         permissions = @($acl.permissions)
         raw = @{
@@ -596,33 +1098,122 @@ function Get-Templates {
           acl_collection_reason = $acl.acl_collection_reason
           acl_details = @($acl.acl_details)
           owner = $acl.owner
-          validity_days_assessed = ($validityDays -ne $null)
-          renewal_days_assessed = ($renewalDays -ne $null)
-          pKIExpirationPeriod = $o.'pKIExpirationPeriod'
-          pKIOverlapPeriod = $o.'pKIOverlapPeriod'
+          validity_days_assessed = ($null -ne $validityDays)
+          renewal_days_assessed = ($null -ne $renewalDays)
+          pKIExpirationPeriod = $expirationPeriod
+          pKIOverlapPeriod = $overlapPeriod
           eku_oids = @($ekuOids)
           name_flags = $nameFlag
-          enrollment_flags = $enrollFlag
+          enrollment_flags = $enrollmentFlag
           private_key_flags = $privateKeyFlag
-          private_key_exportable = (($privateKeyFlag -band 16) -ne 0)
-          ra_signature = $authSig
-          ra_application_policies = @($o.'msPKI-RA-Application-Policies')
-          ra_policies = @($o.'msPKI-RA-Policies')
-          template_schema_version = $o.'msPKI-Template-Schema-Version'
-          flags = $o.flags
-          revision = $o.revision
-          when_changed = $o.whenChanged
-          client_authentication = ((@($eku) -join ' ') -match 'Client Authentication|Smart Card Logon')
-          any_purpose = ((@($eku) -join ' ') -match 'Any Purpose')
+          private_key_exportable = (
+            ($privateKeyFlag -band 16) -ne 0
+          )
+          ra_signature = $authorizedSignatures
+          ra_application_policies = @(
+            Get-ResultStringValues `
+              -SearchResult $result `
+              -PropertyName 'msPKI-RA-Application-Policies'
+          )
+          ra_policies = @(
+            Get-ResultStringValues `
+              -SearchResult $result `
+              -PropertyName 'msPKI-RA-Policies'
+          )
+          template_schema_version = (
+            Get-ResultFirstValue `
+              -SearchResult $result `
+              -PropertyName 'msPKI-Template-Schema-Version'
+          )
+          flags = (
+            Get-ResultFirstValue `
+              -SearchResult $result `
+              -PropertyName 'flags'
+          )
+          revision = (
+            Get-ResultFirstValue `
+              -SearchResult $result `
+              -PropertyName 'revision'
+          )
+          when_changed = (
+            Get-ResultFirstValue `
+              -SearchResult $result `
+              -PropertyName 'whenChanged'
+          )
+          client_authentication = (
+            ((@($ekuNames) -join ' ') -match
+              'Client Authentication|Smart Card Logon')
+          )
+          any_purpose = (
+            ((@($ekuNames) -join ' ') -match 'Any Purpose')
+          )
+          template_collection_fallback = $false
+          collection_source = 'AD DirectorySearcher'
         }
       }
     }
+
+    $HealthCoverage['template_collected'] = (
+      @($templates).Count -gt 0
+    )
+
+    $HealthCoverage['template_count'] = @($templates).Count
     $HealthCoverage['template_acl_collected'] = [bool]$aclCollected
-    if ((Test-SkipTemplateAcl)) { $HealthCoverage['template_acl_reason'] = 'collector ran with SkipAcl or SkipTemplateAcl' }
-    elseif (-not $aclCollected) { $HealthCoverage['template_acl_reason'] = 'No template ACLs were readable from Active Directory' }
-  } catch { Write-Warning "Template enumeration failed: $_" }
+
+    if (@($templates).Count -gt 0) {
+      $HealthCoverage['template_collection_reason'] = (
+        "Collected $(@($templates).Count) full template objects " +
+        "from the AD Configuration partition using DirectorySearcher."
+      )
+    } else {
+      $HealthCoverage['template_collection_reason'] = (
+        'DirectorySearcher returned zero certificate template objects.'
+      )
+    }
+
+    if (Test-SkipTemplateAcl) {
+      $HealthCoverage['template_acl_reason'] = (
+        'Collector ran with SkipAcl or SkipTemplateAcl.'
+      )
+    } elseif ($aclCollected) {
+      $HealthCoverage['template_acl_reason'] = (
+        'Template DACL and owner evidence collected from Active Directory.'
+      )
+    } else {
+      $HealthCoverage['template_acl_reason'] = (
+        'Template objects were collected but no template ACL was readable.'
+      )
+    }
+  } catch {
+    $HealthCoverage['template_collected'] = $false
+    $HealthCoverage['template_count'] = 0
+    $HealthCoverage['template_acl_collected'] = $false
+
+    $HealthCoverage['template_collection_reason'] = (
+      "DirectorySearcher template enumeration failed: " +
+      "$($_.Exception.Message)"
+    )
+
+    Write-Warning (
+      "Template enumeration failed: $($_.Exception.Message)"
+    )
+  } finally {
+    if ($null -ne $results) {
+      $results.Dispose()
+    }
+
+    if ($null -ne $searcher) {
+      $searcher.Dispose()
+    }
+
+    if ($null -ne $searchRoot) {
+      $searchRoot.Dispose()
+    }
+  }
+
   return @($templates)
 }
+
 function Add-TemplateFallbackFromPublishedTemplates {
   param([object[]]$Templates, [hashtable]$PublishedMap, [hashtable]$HealthCoverage)
   if (@($Templates).Count -gt 0) { return @($Templates) }

@@ -38,7 +38,8 @@ def test_ingest_and_dashboard_flow():
 
         pages = (
             ('/pki-hierarchy', 'PKI Hierarchy'),
-            ('/pki-posture', 'Overall Posture Score'),
+            ('/pki-posture', 'Confirmed Critical/High Findings'),
+                ('/evidence-gaps', 'Evidence Gaps'),
             ('/pki-health', 'PKI Health'),
             ('/best-practices', 'Best Practice Score'),
             ('/reports', 'Reports'),

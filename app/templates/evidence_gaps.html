@@ -1,0 +1,207 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<div class="hero-panel compact-hero mb-3">
+  <div>
+    <div class="eyebrow">Assessment Coverage</div>
+    <h1>Evidence Gaps</h1>
+    <p>
+      Missing, unreachable, or incomplete evidence grouped by affected
+      certificate template and certificate authority.
+    </p>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-12 col-md-6 col-xl-3">
+    <div class="metric-card h-100">
+      <div class="metric-title">Total Evidence Gaps</div>
+      <div class="metric-value">{{ evidence_gap_count }}</div>
+      <div class="small text-secondary">
+        Not counted as confirmed risks
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-md-6 col-xl-3">
+    <div class="metric-card h-100">
+      <div class="metric-title">Templates Affected</div>
+      <div class="metric-value">{{ template_gap_assets }}</div>
+      <div class="small text-secondary">
+        Templates requiring more evidence
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-md-6 col-xl-3">
+    <div class="metric-card h-100">
+      <div class="metric-title">CAs Affected</div>
+      <div class="metric-value">{{ ca_gap_assets }}</div>
+      <div class="small text-secondary">
+        CAs requiring more evidence
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-md-6 col-xl-3">
+    <div class="metric-card h-100">
+      <div class="metric-title">Latest Scan</div>
+      <div class="metric-value status-word-sm">
+        {% if scan %}#{{ scan.id }}{% else %}None{% endif %}
+      </div>
+      <div class="small text-secondary">
+        {% if scan %}{{ scan.domain_name }}{% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% for group in evidence_gap_groups %}
+{% set group_index = loop.index %}
+
+<div class="card card-panel mb-3">
+  <div class="card-body compact-card">
+
+    <div class="d-flex justify-content-between align-items-start mb-3">
+      <div>
+        <h2 class="section-title mb-1">{{ group.title }}</h2>
+        <div class="small text-secondary">
+          {{ group.description }}
+        </div>
+      </div>
+
+      <div class="text-end">
+        <span class="badge text-bg-primary">
+          {{ group.asset_count }} asset(s)
+        </span>
+        <span class="badge text-bg-secondary">
+          {{ group.gap_count }} gap(s)
+        </span>
+      </div>
+    </div>
+
+    <div class="accordion" id="gapGroup{{ group_index }}">
+
+      {% for asset in group.assets %}
+      {% set asset_index = loop.index %}
+      {% set collapse_id = 'gap-' ~ group_index ~ '-' ~ asset_index %}
+
+      <div class="accordion-item">
+
+        <h3 class="accordion-header">
+          <button
+            class="accordion-button collapsed"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#{{ collapse_id }}"
+            aria-expanded="false"
+            aria-controls="{{ collapse_id }}"
+          >
+            <div class="d-flex justify-content-between align-items-center w-100 me-3">
+              <div>
+                <strong>{{ asset.name }}</strong>
+
+                <div class="small text-secondary">
+                  {% if group.key == 'templates' %}
+                    Certificate template
+                  {% elif group.key == 'cas' %}
+                    Certificate authority
+                  {% else %}
+                    Assessment control
+                  {% endif %}
+                </div>
+              </div>
+
+              <span class="badge text-bg-secondary">
+                {{ asset.gap_count }} issue(s)
+              </span>
+            </div>
+          </button>
+        </h3>
+
+        <div
+          id="{{ collapse_id }}"
+          class="accordion-collapse collapse"
+          data-bs-parent="#gapGroup{{ group_index }}"
+        >
+          <div class="accordion-body p-0">
+
+            {% for gap in asset.gaps %}
+            <div class="p-3 border-bottom">
+
+              <div class="d-flex justify-content-between align-items-start gap-3">
+                <div>
+                  <div class="mb-1">
+                    <span class="badge text-bg-secondary">
+                      {{ gap.category }}
+                    </span>
+
+                    <span class="badge text-bg-light border text-dark">
+                      {{ gap.original_status }}
+                    </span>
+                  </div>
+
+                  <h4 class="h6 mb-1">{{ gap.title }}</h4>
+
+                  <div class="small text-secondary">
+                    Confidence:
+                    {{ gap.confidence|default('low')|title }}
+                    · Source:
+                    {{ gap.source or 'Collector coverage' }}
+                  </div>
+                </div>
+
+                {% if gap.related_ca %}
+                  <a
+                    class="btn btn-sm btn-outline-primary"
+                    href="/pki-hierarchy"
+                  >
+                    Open CA
+                  </a>
+                {% elif gap.related_template %}
+                  <a
+                    class="btn btn-sm btn-outline-primary"
+                    href="/templates"
+                  >
+                    Open Template
+                  </a>
+                {% endif %}
+              </div>
+
+              {% if gap.recommendation %}
+              <div class="mt-2 small">
+                <strong>How to collect or resolve:</strong>
+                {{ gap.recommendation }}
+              </div>
+              {% endif %}
+
+              {% if gap.evidence %}
+              <details class="mt-2">
+                <summary class="small text-primary">
+                  View collected evidence
+                </summary>
+
+                <pre class="small bg-light border rounded p-2 mt-2 mb-0"
+                     style="white-space:pre-wrap">{{ gap.evidence }}</pre>
+              </details>
+              {% endif %}
+
+            </div>
+            {% endfor %}
+
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+
+    </div>
+  </div>
+</div>
+
+{% else %}
+<div class="alert alert-success">
+  No evidence gaps were found in the latest assessment.
+</div>
+{% endfor %}
+
+{% endblock %}

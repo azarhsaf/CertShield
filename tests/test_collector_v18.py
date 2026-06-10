@@ -29,13 +29,15 @@ def _login(client: TestClient) -> None:
 
 
 def test_collector_v18_contract_and_no_hardcoded_template_risk_defaults():
-    assert "collector-ps51-1.8.1" in COLLECTOR
+    assert "collector-ps51-1.8.5" in COLLECTOR
     assert 'OfflineCaMetadataPath' in COLLECTOR
     assert 'MaxIssuedCertificates' in COLLECTOR
     assert 'IncludeRevoked' in COLLECTOR
     assert 'SkipTemplateAcl' in COLLECTOR
     assert 'nTSecurityDescriptor' in COLLECTOR
     assert 'Convert-TemplateAcl' in COLLECTOR
+    assert 'SetSecurityDescriptorBinaryForm' in COLLECTOR
+    assert '.Options.SecurityMasks' not in COLLECTOR
     assert 'Convert-ADIntervalToDays' in COLLECTOR
     assert "validity_days = 365" not in COLLECTOR
     assert "principal = 'Authenticated Users'" not in COLLECTOR
@@ -43,7 +45,10 @@ def test_collector_v18_contract_and_no_hardcoded_template_risk_defaults():
     assert 'acl_collection_reason' in COLLECTOR
     assert 'Add-TemplateFallbackFromPublishedTemplates' in COLLECTOR
     assert COLLECTOR.index('Get-Templates -PublishedMap') < COLLECTOR.index('Add-TemplateFallbackFromPublishedTemplates -Templates')
-    assert 'Provider(?:\\s+REG_(?:SZ|EXPAND_SZ|MULTI_SZ|DWORD))?' in COLLECTOR
+    assert 'Provider(?:\\s+REG_\\w+)?' in COLLECTOR
+    assert 'AuditFilter(?:\\s+REG_DWORD)?' in COLLECTOR
+    assert 'Convert-RegistryNumber' in COLLECTOR
+    assert 'Invoke-CaRegistryQuery' in COLLECTOR
     assert 'Microsoft Software Key Storage Provider' not in COLLECTOR or 'software' in COLLECTOR
 
 
