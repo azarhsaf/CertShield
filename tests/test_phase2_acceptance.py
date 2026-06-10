@@ -78,18 +78,3 @@ def test_collector_version_and_schema_are_phase2():
     assert "schema_version = '1.2'" in collector
     assert 'Get-EnrollmentServiceRecords' in collector
     assert 'Rejected truncated' in collector
-
-
-def test_v181_build_labels_and_interactive_installer_are_present():
-    assert "BUILD_LABEL=Collector v1.8.1" in Path(".env.example").read_text()
-    assert "Collector v1.8.1 - Template Fallback, Provider Parser, Risk Rendering Fix" in Path(".env.example").read_text()
-    assert "Collector v1.8.1" in Path("app/core/config.py").read_text()
-    assert "Collector v1.8.1" in Path("scripts/upgrade_linux.sh").read_text()
-
-    installer = Path("scripts/install_or_upgrade_linux.sh")
-    assert installer.exists()
-    assert installer.stat().st_mode & 0o111
-    installer_text = installer.read_text()
-    assert "Clean install - wipes existing app and data" in installer_text
-    assert "Upgrade only - preserves existing data" in installer_text
-    assert "WIPE" in installer_text

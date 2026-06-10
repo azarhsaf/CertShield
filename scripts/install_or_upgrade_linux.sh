@@ -1,84 +1,96 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
-APP_DIR="/opt/certshield"
+APP_DIR="${APP_DIR:-/opt/certshield}"
 REPO_URL="${REPO_URL:-https://github.com/azarhsaf/CertShield.git}"
 SERVICE_NAME="${SERVICE_NAME:-certshield}"
 BUILD_NAME_VALUE="Collector v1.8.1 - Template Fallback, Provider Parser, Risk Rendering Fix"
 BUILD_LABEL_VALUE="Collector v1.8.1"
 
-update_env_value() {
-  local key="$1"
-  local value="$2"
-  local env_file="$APP_DIR/.env"
-
-  touch "$env_file"
-  if grep -q "^${key}=" "$env_file"; then
-    sed -i "s|^${key}=.*|${key}=${value}|" "$env_file"
+set_env_value() {
+  local file="$1" key="$2" value="$3"
+  touch "${file}"
+  if grep -q "^${key}=" "${file}"; then
+    sed -i "s|^${key}=.*|${key}=${value}|" "${file}"
   else
-    echo "${key}=${value}" >> "$env_file"
+    printf '\n%s=%s\n' "${key}" "${value}" >> "${file}"
   fi
 }
 
-install_deps() {
-  cd "$APP_DIR"
-  if [ ! -d ".venv" ]; then
-    python3.12 -m venv .venv || python3 -m venv .venv
-  fi
-  source .venv/bin/activate
-  python -m pip install --upgrade pip
-  if [ -f "pyproject.toml" ]; then
-    pip install -e ".[dev]" || pip install -e .
-  else
-    pip install fastapi uvicorn jinja2 python-multipart itsdangerous sqlalchemy pydantic pytest httpx ruff
+stop_service() {
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl stop "${SERVICE_NAME}" || true
   fi
 }
 
 restart_service() {
-  chown -R certshield:certshield "$APP_DIR" 2>/dev/null || true
-  systemctl restart "$SERVICE_NAME" 2>/dev/null || true
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl restart "${SERVICE_NAME}" || true
+  fi
 }
 
-run_upgrade() {
-  echo "[CertShield] Upgrade only selected. Existing data will be preserved."
-  cd "$APP_DIR"
-  git fetch origin
-  git pull --rebase origin main
-  update_env_value "BUILD_NAME" "$BUILD_NAME_VALUE"
-  update_env_value "BUILD_LABEL" "$BUILD_LABEL_VALUE"
-  install_deps
+install_deps_and_validate() {
+  cd "${APP_DIR}"
+  if [ ! -d .venv ]; then
+    python3 -m venv .venv
+  fi
+  # shellcheck disable=SC1091
+  source .venv/bin/activate
+  python -m pip install --upgrade pip
+  python -m pip install -e '.[dev]'
+  python scripts/validate_migrations.py
+  pytest -q
+  python -m ruff check app tests
+}
+
+clean_install() {
+  echo "WARNING: clean install will delete ${APP_DIR}, including certshield.db and local data."
+  read -r -p "Type WIPE to continue: " confirmation
+  if [ "${confirmation}" != "WIPE" ]; then
+    echo "Clean install cancelled."
+    exit 0
+  fi
+  stop_service
+  rm -rf "${APP_DIR}"
+  git clone "${REPO_URL}" "${APP_DIR}"
+  cd "${APP_DIR}"
+  cp .env.example .env
+  set_env_value .env BUILD_NAME "${BUILD_NAME_VALUE}"
+  set_env_value .env BUILD_LABEL "${BUILD_LABEL_VALUE}"
+  install_deps_and_validate
   restart_service
-  echo "[CertShield] Upgrade completed."
+  echo "Clean install complete at ${APP_DIR}."
 }
 
-run_clean_install() {
-  echo "WARNING: Clean install will delete $APP_DIR including old database/data."
-  echo "Type WIPE to continue:"
-  read -r confirm
-  if [ "$confirm" != "WIPE" ]; then
-    echo "[CertShield] Clean install cancelled."
+upgrade_only() {
+  if [ ! -d "${APP_DIR}/.git" ]; then
+    echo "Cannot upgrade: ${APP_DIR} is not a git checkout."
     exit 1
   fi
-
-  systemctl stop "$SERVICE_NAME" 2>/dev/null || true
-  rm -rf "$APP_DIR"
-  git clone "$REPO_URL" "$APP_DIR"
-  update_env_value "BUILD_NAME" "$BUILD_NAME_VALUE"
-  update_env_value "BUILD_LABEL" "$BUILD_LABEL_VALUE"
-  install_deps
+  stop_service
+  cd "${APP_DIR}"
+  [ -f .env ] || cp .env.example .env
+  cp -a .env ".env.pre-upgrade.$(date -u +%Y%m%dT%H%M%SZ)"
+  git fetch origin main
+  git reset --hard origin/main
+  [ -f .env ] || cp .env.example .env
+  set_env_value .env BUILD_NAME "${BUILD_NAME_VALUE}"
+  set_env_value .env BUILD_LABEL "${BUILD_LABEL_VALUE}"
+  install_deps_and_validate
   restart_service
-  echo "[CertShield] Clean install completed."
+  echo "Upgrade complete. Existing database and .env secrets were preserved."
 }
 
-echo "CertShield install/upgrade"
-echo "1) Clean install - wipes existing app and data"
-echo "2) Upgrade only - preserves existing data"
-echo "3) Cancel"
-read -r -p "Choose option [1-3]: " choice
-
-case "$choice" in
-  1) run_clean_install ;;
-  2) run_upgrade ;;
-  3) echo "[CertShield] Cancelled."; exit 0 ;;
-  *) echo "Invalid option."; exit 1 ;;
+cat <<MENU
+CertShield install/upgrade
+1) Clean install - wipes existing app and data under ${APP_DIR}
+2) Upgrade only - preserves existing data and .env secrets
+3) Cancel
+MENU
+read -r -p "Choose [1-3]: " choice
+case "${choice}" in
+  1) clean_install ;;
+  2) upgrade_only ;;
+  3) echo "Cancelled."; exit 0 ;;
+  *) echo "Invalid choice."; exit 1 ;;
 esac

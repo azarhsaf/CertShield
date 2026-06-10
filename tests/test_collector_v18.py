@@ -47,6 +47,16 @@ def test_collector_v18_contract_and_no_hardcoded_template_risk_defaults():
     assert 'Microsoft Software Key Storage Provider' not in COLLECTOR or 'software' in COLLECTOR
 
 
+def test_install_or_upgrade_script_exists_and_is_executable():
+    script = Path('scripts/install_or_upgrade_linux.sh')
+    assert script.exists()
+    assert script.stat().st_mode & 0o111
+    text = script.read_text()
+    assert 'Clean install - wipes existing app and data' in text
+    assert 'Upgrade only - preserves existing data' in text
+    assert 'BUILD_LABEL_VALUE="Collector v1.8.1"' in text
+
+
 def test_template_page_handles_missing_issues_key_in_template_risks():
     from jinja2 import Environment
 
