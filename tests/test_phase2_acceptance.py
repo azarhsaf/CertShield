@@ -21,7 +21,7 @@ def _login(client: TestClient) -> str:
 def test_risk_acceptance_reflects_across_pages_and_report():
     with TestClient(app) as client:
         payload = json.loads(Path('fixtures/sample_scan.json').read_text())
-        payload['collector_version'] = 'collector-ps51-1.8'
+        payload['collector_version'] = 'collector-ps51-1.8.1'
         payload['schema_version'] = '1.2'
         response = client.post(
             '/api/v1/collector/ingest',
@@ -69,7 +69,7 @@ def test_upgrade_and_fresh_install_scripts_are_executable():
 
 def test_collector_version_and_schema_are_phase2():
     collector = Path('collector/windows/Collect-AdcsData.ps1').read_text()
-    assert "collector-ps51-1.8" in collector
+    assert "collector-ps51-1.8.1" in collector
     assert "schema_version = '1.2'" in collector
     assert 'Get-EnrollmentServiceRecords' in collector
     assert 'Rejected truncated' in collector

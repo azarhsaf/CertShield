@@ -8,8 +8,6 @@
   .\Collect-AdcsData.ps1 -ApiUrl "http://10.0.0.25:8000" -ApiToken "collector-token"
 .EXAMPLE
   .\Collect-AdcsData.ps1 -ApiUrl "http://10.0.0.25:8000" -ApiToken "collector-token" -NoPost -OutputJson .\adcs-payload.json -DebugPayload
-.EXAMPLE
-  .\Collect-AdcsData.ps1 -ApiUrl "http://10.0.0.25:8000" -ApiToken "collector-token" -OfflineCaMetadataPath .\offline-ca-metadata.json -MaxIssuedCertificates 1000 -IncludeRevoked -SkipTemplateAcl
 #>
 param(
   [Parameter(Mandatory=$true)][string]$ApiUrl,
@@ -33,7 +31,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$CollectorVersion = 'collector-ps51-1.8'
+$CollectorVersion = 'collector-ps51-1.8.1'
 
 function Write-Step { param([string]$Message) Write-Host "[CertShield] $Message" }
 function Empty-List { return @() }
@@ -213,10 +211,10 @@ function Get-KeyProtectionHint {
     $lines = certutil -config $ConfigString -getreg CA\CSP 2>$null
     foreach ($line in $lines) {
       $evidence += [string]$line
-      if ($line -match 'Provider\s*=\s*(.+)$') { $provider = $matches[1].Trim() }
-      elseif ($line -match 'ProviderName\s*=\s*(.+)$') { $provider = $matches[1].Trim() }
-      elseif ($line -match 'ProviderType\s*=\s*(.+)$') { $providerType = $matches[1].Trim() }
+      if ($line -match 'ProviderType\s*=\s*(.+)$') { $providerType = $matches[1].Trim() }
       elseif ($line -match 'Provider Type\s*=\s*(.+)$') { $providerType = $matches[1].Trim() }
+      elseif ($line -match 'ProviderName(?:\s+REG_(?:SZ|EXPAND_SZ|MULTI_SZ|DWORD))?\s*=\s*(.+)$') { $provider = $matches[1].Trim() }
+      elseif ($line -match 'Provider(?:\s+REG_(?:SZ|EXPAND_SZ|MULTI_SZ|DWORD))?\s*=\s*(.+)$') { $provider = $matches[1].Trim() }
       elseif ($line -match 'KeyContainer\s*=\s*(.+)$') { $keyContainer = $matches[1].Trim() }
       elseif ($line -match 'Key Container\s*=\s*(.+)$') { $keyContainer = $matches[1].Trim() }
     }
@@ -228,8 +226,8 @@ function Get-KeyProtectionHint {
     elseif ($p -match 'microsoft software|microsoft enhanced|microsoft strong|software') { $storage = 'software'; $hsm = $false }
     else { $storage = 'unknown_provider'; $hsm = 'unknown' }
   }
-  $resolvedProviderType = $providerType
-  if (-not $resolvedProviderType) { $resolvedProviderType = $storage }
+  $resolvedProviderType = $storage
+  if ($storage -eq 'not_assessed' -and $providerType) { $resolvedProviderType = $providerType }
   return @{ provider = $provider; crypto_provider = $provider; key_storage_provider = $provider; provider_type = $resolvedProviderType; key_container = $keyContainer; storage = $storage; hsm_detected = $hsm; evidence = @($evidence) }
 }
 function Get-AuditHint {
@@ -625,6 +623,56 @@ function Get-Templates {
   } catch { Write-Warning "Template enumeration failed: $_" }
   return @($templates)
 }
+function Add-TemplateFallbackFromPublishedTemplates {
+  param([object[]]$Templates, [hashtable]$PublishedMap, [hashtable]$HealthCoverage)
+  if (@($Templates).Count -gt 0) { return @($Templates) }
+  $fallback = @{}
+  if ($PublishedMap) {
+    foreach ($caName in $PublishedMap.Keys) {
+      foreach ($templateName in @($PublishedMap[$caName])) {
+        if (-not $templateName) { continue }
+        $key = [string]$templateName
+        if (-not $fallback.ContainsKey($key)) {
+          $fallback[$key] = [ordered]@{ name = $key; published_to = @() }
+        }
+        $fallback[$key].published_to += [string]$caName
+      }
+    }
+  }
+  $records = @()
+  foreach ($templateName in ($fallback.Keys | Sort-Object)) {
+    $publishedTo = @($fallback[$templateName].published_to | Select-Object -Unique)
+    $records += [pscustomobject]@{
+      name = [string]$templateName
+      display_name = [string]$templateName
+      eku = @()
+      enrollee_supplies_subject = $false
+      manager_approval = $false
+      authorized_signatures = 0
+      validity_days = $null
+      renewal_days = $null
+      published_to = @($publishedTo)
+      permissions = @()
+      raw = @{
+        permissions_assessed = $false
+        acl_assessed = $false
+        acl_collection_reason = 'Template object enumeration failed; fallback created from CA published_templates.'
+        template_collection_fallback = $true
+        validity_days_assessed = $false
+        renewal_days_assessed = $false
+      }
+    }
+  }
+  if ($records.Count -gt 0) {
+    $HealthCoverage['template_collected'] = $true
+    $HealthCoverage['template_count'] = $records.Count
+    $HealthCoverage['template_collection_reason'] = "Fallback: created $($records.Count) template records from CA published_templates because AD template object enumeration returned zero."
+    $HealthCoverage['template_acl_collected'] = $false
+    $HealthCoverage['template_acl_reason'] = 'Fallback templates do not include ACL evidence.'
+  }
+  return @($records)
+}
+
 function Parse-CertValue { param([string]$Line) $parts = $Line -split ':',2; if ($parts.Count -lt 2) { return '' }; return $parts[1].Trim() }
 
 function Get-IssuedCertificates {
@@ -691,6 +739,7 @@ $enrollmentServices = @(Get-EnrollmentServiceRecords)
 $publishedMap = Get-PublishedTemplateMap -EnrollmentServices $enrollmentServices
 $cas = @(Get-CertificateAuthorities -PublishedMap $publishedMap -HealthCoverage $healthCoverage -EnrollmentServices $enrollmentServices)
 $templates = @(Get-Templates -PublishedMap $publishedMap -HealthCoverage $healthCoverage)
+$templates = @(Add-TemplateFallbackFromPublishedTemplates -Templates $templates -PublishedMap $publishedMap -HealthCoverage $healthCoverage)
 $issued = @(Get-IssuedCertificates -HealthCoverage $healthCoverage -Cas $cas)
 
 $payload = [ordered]@{

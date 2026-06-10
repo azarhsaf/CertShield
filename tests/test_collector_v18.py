@@ -29,11 +29,11 @@ def _login(client: TestClient) -> None:
 
 
 def test_collector_v18_contract_and_no_hardcoded_template_risk_defaults():
-    assert "collector-ps51-1.8" in COLLECTOR
-    assert '-OfflineCaMetadataPath' in COLLECTOR
-    assert '-MaxIssuedCertificates' in COLLECTOR
-    assert '-IncludeRevoked' in COLLECTOR
-    assert '-SkipTemplateAcl' in COLLECTOR
+    assert "collector-ps51-1.8.1" in COLLECTOR
+    assert 'OfflineCaMetadataPath' in COLLECTOR
+    assert 'MaxIssuedCertificates' in COLLECTOR
+    assert 'IncludeRevoked' in COLLECTOR
+    assert 'SkipTemplateAcl' in COLLECTOR
     assert 'nTSecurityDescriptor' in COLLECTOR
     assert 'Convert-TemplateAcl' in COLLECTOR
     assert 'Convert-ADIntervalToDays' in COLLECTOR
@@ -41,6 +41,25 @@ def test_collector_v18_contract_and_no_hardcoded_template_risk_defaults():
     assert "principal = 'Authenticated Users'" not in COLLECTOR
     assert 'permissions_assessed = $false' in COLLECTOR
     assert 'acl_collection_reason' in COLLECTOR
+    assert 'Add-TemplateFallbackFromPublishedTemplates' in COLLECTOR
+    assert COLLECTOR.index('Get-Templates -PublishedMap') < COLLECTOR.index('Add-TemplateFallbackFromPublishedTemplates -Templates')
+    assert 'Provider(?:\\s+REG_(?:SZ|EXPAND_SZ|MULTI_SZ|DWORD))?' in COLLECTOR
+    assert 'Microsoft Software Key Storage Provider' not in COLLECTOR or 'software' in COLLECTOR
+
+
+def test_template_page_handles_missing_issues_key_in_template_risks():
+    from jinja2 import Environment
+
+    snippet = """
+    {% set risk = template_risks.get(t.name) or template_risks.get(t.display_name) or {} %}
+    {% set risk_issues = risk.get('issues', []) %}
+    {% for issue in risk_issues[:3] %}{{ issue.title }}{% else %}no issues{% endfor %}
+    """
+    rendered = Environment().from_string(snippet).render(
+        template_risks={'FallbackTemplate': {'open': 0, 'accepted': 0}},
+        t={'name': 'FallbackTemplate', 'display_name': 'Fallback Template'},
+    )
+    assert 'no issues' in rendered
 
 
 def test_acl_not_hardcoded_and_broad_enrollment_requires_real_permission():
@@ -49,7 +68,7 @@ def test_acl_not_hardcoded_and_broad_enrollment_requires_real_permission():
         'schema_version': '1.2',
         'domain_name': 'acl.local',
         'source_host': 'collector01',
-        'collector_version': 'collector-ps51-1.8',
+        'collector_version': 'collector-ps51-1.8.1',
         'cas': [],
         'issued_certificates': [],
         'health_coverage': {'template_acl_collected': False},
@@ -73,11 +92,9 @@ def test_acl_not_hardcoded_and_broad_enrollment_requires_real_permission():
         ],
     }
     with TestClient(app) as client:
-        _login(client)
         result = _ingest(client, no_acl_payload)
-        response = client.get(f"/reports/{result['scan_id']}.json")
-        assert response.status_code == 200, response.text
-        report = response.json()
+        _login(client)
+        report = client.get(f"/reports/{result['scan_id']}.json").json()
         assert not any(f['category'] == 'ESC1-like' for f in report['findings'])
 
         broad_payload = json.loads(json.dumps(no_acl_payload))
@@ -91,9 +108,7 @@ def test_acl_not_hardcoded_and_broad_enrollment_requires_real_permission():
             'acl_collection_reason': 'nTSecurityDescriptor parsed from Active Directory',
         }
         result = _ingest(client, broad_payload)
-        response = client.get(f"/reports/{result['scan_id']}.json")
-        assert response.status_code == 200, response.text
-        report = response.json()
+        report = client.get(f"/reports/{result['scan_id']}.json").json()
         assert any(f['category'] == 'ESC1-like' for f in report['findings'])
 
 
@@ -103,7 +118,7 @@ def test_template_validity_missing_is_not_treated_as_pass_or_hardcoded():
         'schema_version': '1.2',
         'domain_name': 'validity.local',
         'source_host': 'collector01',
-        'collector_version': 'collector-ps51-1.8',
+        'collector_version': 'collector-ps51-1.8.1',
         'cas': [],
         'templates': [
             {
@@ -133,7 +148,7 @@ def test_offline_root_metadata_and_provider_mapping_feed_ui():
         'schema_version': '1.2',
         'domain_name': 'offline.local',
         'source_host': 'collector01',
-        'collector_version': 'collector-ps51-1.8',
+        'collector_version': 'collector-ps51-1.8.1',
         'cas': [
             {
                 'name': 'OFFLINE-ROOT-CA-IR',

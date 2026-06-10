@@ -63,7 +63,7 @@ Collectors should normalize platform data into `ca_list`/`cas`, `ca_certificate`
 
 ## ADCS collector v1.8 template and offline-root evidence
 
-The official Windows ADCS collector is `collector-ps51-1.8` and remains read-only.
+The official Windows ADCS collector is `collector-ps51-1.8.1` and remains read-only.
 It uses AD Enrollment Services for CA discovery and reads certificate template
 objects directly from Active Directory. Template permissions must come from the
 real `nTSecurityDescriptor`; if the ACL cannot be read the collector sends
