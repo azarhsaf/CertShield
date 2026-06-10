@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% from 'macros/evidence.html' import status_badge %}
+{% block content %}
+<div class="hero-panel compact-hero mb-3">
+  <div><div class="eyebrow">CertShield PKI Posture Management</div><h1>PKI Dashboard</h1>{% if scan %}<p>Latest scan #{{scan.id}} · {{scan.domain_name}} · {{scan.completed_at}}</p>{% else %}<p>No scan data yet. Run the collector to start posture management.</p>{% endif %}</div>
+  {% if scan %}<a class="btn btn-light btn-sm" href="/pki-posture">Open Posture</a>{% endif %}
+</div>
+{% if scan %}
+<div class="metric-grid mb-3">
+  <div class="metric-card score-card"><div class="metric-title">PKI Assurance Level</div><div class="metric-value status-word">{{assurance.assurance_level or posture.assurance_level or posture.status or 'Unknown / Not Enough Data'}}</div><div class="small text-secondary">Supporting score: {{assurance.score if assurance.score is not none else 'Not enough data'}}</div></div>
+  <div class="metric-card"><div class="metric-title">Coverage Level</div><div class="metric-value status-word-sm">{{assurance.coverage_level or 'Unknown'}}</div><div class="small text-secondary">{{assurance.coverage_score or 0}}% evidence coverage</div></div>
+  <div class="metric-card"><div class="metric-title">Open Critical Risks</div><div class="metric-value">{{assurance.open_critical or risk_acceptance_counts.open_critical}}</div></div>
+  <div class="metric-card"><div class="metric-title">Open High Risks</div><div class="metric-value">{{assurance.open_high or risk_acceptance_counts.open_high}}</div></div>
+  <div class="metric-card"><div class="metric-title">Accepted Risks</div><div class="metric-value">{{assurance.accepted_risk_count or risk_acceptance_counts.accepted_total}}</div></div>
+  <div class="metric-card"><div class="metric-title">Last Scan</div><div class="metric-value status-word-sm">{{scan.completed_at}}</div></div>
+</div>
+<div class="row g-3 mb-3">
+  <div class="col-xl-7"><div class="card card-panel"><div class="card-body compact-card"><h2 class="section-title">Why this status?</h2><ul class="compact-list">{% for reason in assurance.why[:8] %}<li>{{reason}}</li>{% else %}<li>No assurance explanation is available yet.</li>{% endfor %}</ul></div></div></div>
+  <div class="col-xl-5"><div class="card card-panel"><div class="card-body compact-card"><h2 class="section-title">Open and Accepted Risks</h2>{% for risk in (registry.open_risks or [])[:5] %}<div class="risk-row compact-risk"><span class="badge sev-{{risk.severity|lower}}">{{risk.severity}}</span><div><strong>{{risk.title}}</strong><div class="small text-secondary">{{risk.category}} · {{risk.object_name}}</div></div></div>{% else %}<p class="text-secondary">No open critical/high risks from shared evidence registry.</p>{% endfor %}{% if registry.accepted_risks %}<h2 class="mini-heading mt-2">Accepted by Policy</h2>{% for risk in registry.accepted_risks[:5] %}<span class="badge text-bg-info me-1 mb-1">{{risk.severity}} · {{risk.object_name}}</span>{% endfor %}{% endif %}</div></div></div>
+</div>
+<div class="card card-panel"><div class="card-body compact-card"><h2 class="section-title">Recent Issued Certificates</h2><div class="table-responsive"><table class="table table-sm align-middle modern-table"><thead><tr><th>Request ID</th><th>Requester</th><th>Template</th><th>Subject</th><th>Status</th><th>Issued</th><th>Expires</th></tr></thead><tbody>{% for c in recent_certs %}<tr><td>{{c.request_id}}</td><td class="text-wrap-sm">{{c.requester or '-'}}</td><td>{{c.template_name or '-'}}</td><td class="text-wrap-sm">{{c.subject or '-'}}</td><td>{{status_badge(c.status|title)}}</td><td>{{c.issued_at or '-'}}</td><td>{{c.expires_at or '-'}}</td></tr>{% else %}<tr><td colspan="7" class="text-secondary">No issued certificate rows collected. Open Certificates for collection guidance.</td></tr>{% endfor %}</tbody></table></div></div></div>
+{% else %}<div class="empty-state compact-card"><h2 class="h5">No scan data yet</h2><p>Run the Windows collector and refresh this page.</p></div>{% endif %}
+{% endblock %}
