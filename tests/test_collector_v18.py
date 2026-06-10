@@ -73,8 +73,11 @@ def test_acl_not_hardcoded_and_broad_enrollment_requires_real_permission():
         ],
     }
     with TestClient(app) as client:
+        _login(client)
         result = _ingest(client, no_acl_payload)
-        report = client.get(f"/reports/{result['scan_id']}.json").json()
+        response = client.get(f"/reports/{result['scan_id']}.json")
+        assert response.status_code == 200, response.text
+        report = response.json()
         assert not any(f['category'] == 'ESC1-like' for f in report['findings'])
 
         broad_payload = json.loads(json.dumps(no_acl_payload))
@@ -88,7 +91,9 @@ def test_acl_not_hardcoded_and_broad_enrollment_requires_real_permission():
             'acl_collection_reason': 'nTSecurityDescriptor parsed from Active Directory',
         }
         result = _ingest(client, broad_payload)
-        report = client.get(f"/reports/{result['scan_id']}.json").json()
+        response = client.get(f"/reports/{result['scan_id']}.json")
+        assert response.status_code == 200, response.text
+        report = response.json()
         assert any(f['category'] == 'ESC1-like' for f in report['findings'])
 
 

@@ -8,6 +8,8 @@
   .\Collect-AdcsData.ps1 -ApiUrl "http://10.0.0.25:8000" -ApiToken "collector-token"
 .EXAMPLE
   .\Collect-AdcsData.ps1 -ApiUrl "http://10.0.0.25:8000" -ApiToken "collector-token" -NoPost -OutputJson .\adcs-payload.json -DebugPayload
+.EXAMPLE
+  .\Collect-AdcsData.ps1 -ApiUrl "http://10.0.0.25:8000" -ApiToken "collector-token" -OfflineCaMetadataPath .\offline-ca-metadata.json -MaxIssuedCertificates 1000 -IncludeRevoked -SkipTemplateAcl
 #>
 param(
   [Parameter(Mandatory=$true)][string]$ApiUrl,
