@@ -8,3 +8,5 @@ __pycache__/
 .ruff_cache/
 *.bak
 *.bak-*
+.env.pre-upgrade.*
+*.egg-info/
