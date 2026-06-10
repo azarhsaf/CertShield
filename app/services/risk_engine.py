@@ -85,6 +85,11 @@ def _permission_evidence(template: CertificateTemplate) -> list[dict[str, Any]]:
     ]
 
 
+
+def _validity_assessed(template: CertificateTemplate) -> bool:
+    raw = template.raw_json or {}
+    return bool(raw.get("validity_days_assessed") or raw.get("pKIExpirationPeriod") or template.validity_days)
+
 def _simulation(path: str, preconditions: list[str], blast_radius: str, missing: list[str], confidence: str) -> dict:
     return {
         "safe_mode": True,
@@ -524,7 +529,7 @@ def evaluate_templates(templates: list[CertificateTemplate], cas: list[Certifica
         elif (template.raw_json or {}).get("acl_assessed") is True and coverage["ESC4-like"] != "detected":
             coverage["ESC4-like"] = "not_detected"
 
-        if template.validity_days > 825:
+        if _validity_assessed(template) and template.validity_days > 825:
             findings.append(
                 _finding(
                     rule_id="TPL-VALIDITY-001",

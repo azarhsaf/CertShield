@@ -14,8 +14,8 @@ class TemplateIn(BaseModel):
     enrollee_supplies_subject: bool = False
     manager_approval: bool = False
     authorized_signatures: int = 0
-    validity_days: int = 365
-    renewal_days: int = 30
+    validity_days: int | None = None
+    renewal_days: int | None = None
     published_to: list[str] = Field(default_factory=list)
     permissions: list[PermissionIn] = Field(default_factory=list)
     raw: dict = Field(default_factory=dict)

@@ -40,7 +40,7 @@ Each CA should include stable identity and hierarchy evidence where available:
   tested_urls, errors, source.
 - `config.ocsp`: configured, urls, reachable, status, errors.
 - `config.key_protection`: provider, crypto_provider, provider_type,
-  key_storage_provider, key_container, storage (`hsm`, `software`, `unknown`),
+  key_storage_provider, key_container, storage (`hsm`, `software`, `unknown_provider`, `not_assessed`),
   hsm_detected, evidence.
 - `config.published_templates`: templates/profiles published by the CA.
 
@@ -60,3 +60,60 @@ or `reason="..."`; do not omit fields and rely on the backend to guess health.
 ## Generic payload areas
 
 Collectors should normalize platform data into `ca_list`/`cas`, `ca_certificate`, `crl`, `aia`, `ocsp`, `key_protection`, `profiles` or `templates`, `certificates`, and `health_evidence`/`health_coverage` sections. ADCS-specific ESC checks are evaluated only for ADCS collector payloads; generic PKI health and hierarchy logic should rely on the normalized fields above.
+
+## ADCS collector v1.8 template and offline-root evidence
+
+The official Windows ADCS collector is `collector-ps51-1.8` and remains read-only.
+It uses AD Enrollment Services for CA discovery and reads certificate template
+objects directly from Active Directory. Template permissions must come from the
+real `nTSecurityDescriptor`; if the ACL cannot be read the collector sends
+`raw.permissions_assessed=false`, a human-readable `raw.acl_collection_reason`,
+and an empty `permissions` list. It must not invent `Authenticated Users` or any
+other broad principal.
+
+Maximum evidence collection example:
+
+```powershell
+.\Collect-AdcsData.ps1 `
+  -ApiUrl "http://certshield.example:8000" `
+  -ApiToken "<token>" `
+  -MaxIssuedCertificates 500 `
+  -IncludeRevoked `
+  -OfflineCaMetadataPath .\offline-root-metadata.json `
+  -DebugPayload
+```
+
+Offline root metadata can be supplied when an offline root is intentionally not
+reachable from the collector host:
+
+```json
+{
+  "OFFLINE-ROOT-CA-IR": {
+    "offline": true,
+    "domain_joined": false,
+    "backup_documented": true,
+    "auditing_enabled": true,
+    "key_protection": {
+      "provider": "Utimaco SecurityServer CSP",
+      "provider_type": "hsm",
+      "storage": "hsm",
+      "hsm_detected": true,
+      "evidence": ["offline root metadata file"]
+    }
+  }
+}
+```
+
+Use `-SkipTemplateAcl` only when the collector account cannot read template ACLs;
+CertShield will then show template ACL governance as Not Assessed rather than a
+confirmed failure.
+
+## Health Collection Notes
+
+The PKI Health page shows where each health signal came from:
+
+- **CA certificate health** is collected with `certutil -config <CAHost\CAName> -ca.cert <file>` or AD `cACertificate` fallback.
+- **CRL/CDP health** is extracted from CA certificate CDP and `CA\CRLPublicationURLs`; HTTP CRLs are fetched and parsed when reachable.
+- **AIA health** is extracted from CA certificate AIA and `CA\CACertPublicationURLs`; HTTP CA issuer URLs are probed.
+- **OCSP health** is extracted from OCSP URLs in AIA. If no OCSP URL exists, CertShield reports Not Configured rather than Healthy.
+- **Certificate issuance health** is collected with `certutil -view` and limited by `-MaxIssuedCertificates`.

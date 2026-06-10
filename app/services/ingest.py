@@ -51,8 +51,8 @@ class IngestService:
                 enrollee_supplies_subject=template.enrollee_supplies_subject,
                 manager_approval=template.manager_approval,
                 authorized_signatures=template.authorized_signatures,
-                validity_days=template.validity_days,
-                renewal_days=template.renewal_days,
+                validity_days=template.validity_days or 0,
+                renewal_days=template.renewal_days or 0,
                 published_to=template.published_to,
                 raw_json=template.raw,
             )

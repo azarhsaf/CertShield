@@ -268,6 +268,11 @@ def _key_protection_practice(ca: CertificateAuthority) -> dict:
     )
 
 
+
+def _template_validity_assessed(template: CertificateTemplate) -> bool:
+    raw = template.raw_json or {}
+    return bool(raw.get("validity_days_assessed") or raw.get("pKIExpirationPeriod") or template.validity_days)
+
 def _template_practices(template: CertificateTemplate) -> list[dict]:
     raw = template.raw_json or {}
     permission_data_available = bool(template.permissions) or raw.get("permissions_assessed") is True
@@ -342,10 +347,10 @@ def _template_practices(template: CertificateTemplate) -> list[dict]:
         _bp(
             "Templates",
             "Avoid overly long validity periods",
-            "Warning" if template.validity_days > 825 else "Pass",
+            "Not Assessed" if not _template_validity_assessed(template) else "Warning" if template.validity_days > 825 else "Pass",
             "Medium",
             template.name,
-            {"validity_days": template.validity_days},
+            {"validity_days": template.validity_days or "Not collected", "validity_days_assessed": _template_validity_assessed(template)},
             "Long-lived certificates increase exposure windows.",
             "Mis-issued certificates remain valid longer and are harder to remediate.",
             "Reduce validity to the organization baseline for the certificate purpose.",

@@ -6,7 +6,7 @@ It helps blue teams inventory ADCS, identify risky certificate template and CA p
 ## What CertShield Assesses
 - Enterprise CAs and CA metadata
 - Certificate templates, EKUs, and enrollment controls
-- Enrollment permissions (including broad fallback compatibility)
+- Enrollment permissions from real template ACL/security descriptor evidence
 - Issued certificate/request metadata where available
 - Defensive ESC-style exposure categories (read-only assessment)
 - Posture coverage state (`detected`, `not detected`, `not assessed`, `insufficient_data`)
@@ -97,13 +97,15 @@ powershell -ExecutionPolicy Bypass -File .\collector\windows\Collect-AdcsData.ps
 Optional:
 - `-SkipIssued`
 - `-DebugPayload`
+- `-MaxIssuedCertificates <count>`
+- `-IncludeRevoked`
+- `-SkipTemplateAcl` when ACL reads are not permitted
+- `-OfflineCaMetadataPath .\offline-root-metadata.json` for offline root posture evidence
 
 The collector additively attempts to map templates published by Enterprise CAs via AD Enrollment Services objects. If AD metadata or RSAT is unavailable, CertShield marks the related categories as `not_assessed` or `insufficient_data` instead of failing ingestion.
 
 ### Backward Compatibility Note
-Collector keeps the broad fallback permission for compatibility:
-`Authenticated Users` + `can_enroll=true`.
-This preserves current lab finding visibility.
+Old collector payloads still ingest, but collector-ps51-1.8 no longer invents broad template permissions. Template ACL risks are detected only when the real AD template security descriptor contains broad Enroll/AutoEnroll or dangerous write rights; otherwise the UI shows Not Assessed with the collection reason.
 
 ## Confidence and Coverage States
 - `detected`: evidence matched a defensive rule.
@@ -239,8 +241,8 @@ What changed:
 - ADCS collector emits richer CA certificate metadata including public key algorithm, SKI, AKI, self-signed status, role hint, CRL file URLs, and expanded key provider evidence.
 - Health and hierarchy pages show CRL/AIA/OCSP publication evidence and collection reasons instead of placeholder “Not collected” trees.
 - Footer and Settings identify Version 0.4.0 / Phase 2.
-- Official Windows collector is now `collector-ps51-1.7` with schema `1.2`, AD Enrollment Services primary discovery, truncated certutil config rejection, AD `cACertificate` fallback, optional manual/extra CA certificate inputs, and multi-CA evidence preservation.
-- Dashboard scoring uses weighted evidence-based Health, Posture, Best Practice, and Coverage signals with grade/confidence/top-factor explanations instead of penalty-only zero-heavy scoring.
+- Official Windows collector is now `collector-ps51-1.8` with schema `1.2`, AD Enrollment Services primary discovery, truncated certutil config rejection, AD `cACertificate` fallback, optional manual/extra CA certificate inputs, real template ACL/validity/flag collection, CA key/audit registry evidence, offline root metadata support, and multi-CA evidence preservation.
+- Dashboard uses the simplified PKI Assurance model and shared evidence registry so accepted risks, health evidence, hierarchy evidence, and best-practice status stay consistent across pages.
 - Added customer risk acceptance for template findings with accepted/open risk separation across dashboard, findings, templates, posture, and JSON reports.
 - Added issued certificate collection reasons so a successful zero-row CA database query is visible instead of a misleading empty inventory.
 
@@ -255,6 +257,17 @@ Fresh lab reinstall only (destroys the existing lab directory):
 ```bash
 sudo bash scripts/fresh_install_linux.sh
 ```
+
+
+### Collector 1.8 notes
+
+`collector-ps51-1.8` fixes the template collection path so template permissions,
+validity, EKUs, subject/SAN flags, private-key flags, RA signatures, manager
+approval, and published-template mapping are read from AD rather than guessed. If
+template ACLs cannot be read, CertShield records `permissions_assessed=false` and
+shows Not Assessed instead of inventing a broad principal. Offline root posture
+evidence can be supplied with `-OfflineCaMetadataPath`; see `docs/collectors.md`
+for the JSON example.
 
 Known limitations for Phase 2:
 - Risk acceptance is intentionally auditable and visible; accepted risks remain in reports and do not disappear from findings.
