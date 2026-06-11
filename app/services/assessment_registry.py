@@ -11,10 +11,12 @@ from app.services.risk_acceptance import acceptance_is_active, finding_fingerpri
 OPEN_DEDUCTIONS = {"Critical": 25, "High": 15, "Medium": 7, "Low": 3}
 ACCEPTED_DEDUCTIONS = {"Critical": 5, "High": 3, "Medium": 1, "Low": 0}
 CATEGORY_CAPS = {
-    "CA Health": 40,
-    "Template Risk": 35,
-    "Best Practices": 25,
-    "Coverage Gaps": 20,
+    "CA Health": 30,
+    "Template Risk": 25,
+    "Key Protection": 15,
+    "Best Practices": 15,
+    "PKI Architecture": 10,
+    "Coverage Gaps": 0,
 }
 
 COVERAGE_GAP_STATUSES = {
@@ -122,8 +124,16 @@ def _coverage_level(records: list[dict[str, Any]]) -> tuple[int, str, list[str]]
     return pct, label, gaps[:5]
 
 
-def _assurance(records: list[dict[str, Any]], hierarchy: dict[str, Any]) -> dict[str, Any]:
-    meaningful = [r for r in records if r["object_type"] != "pki_hierarchy"]
+def _assurance(
+    records: list[dict[str, Any]],
+    hierarchy: dict[str, Any],
+) -> dict[str, Any]:
+    meaningful = [
+        record
+        for record in records
+        if record.get("object_type") != "pki_hierarchy"
+    ]
+
     if not meaningful:
         return {
             "score": None,
@@ -134,42 +144,157 @@ def _assurance(records: list[dict[str, Any]], hierarchy: dict[str, Any]) -> dict
             "accepted_risk_count": 0,
             "open_critical": 0,
             "open_high": 0,
+            "accepted_critical": 0,
+            "accepted_high": 0,
             "why": ["No meaningful evidence was collected yet."],
+            "open_reasons": [],
             "accepted_reasons": [],
-            "coverage_gaps": ["Run a collector scan to populate PKI evidence."],
+            "coverage_gaps": [
+                "Run a collector scan to populate PKI evidence."
+            ],
+            "deduction_breakdown": [],
         }
 
-    caps = Counter()
-    open_counts = Counter()
-    accepted_counts = Counter()
-    open_reasons: list[str] = []
-    accepted_reasons: list[str] = []
-    for record in meaningful:
-        severity = record["severity"]
-        if severity not in OPEN_DEDUCTIONS:
-            continue
-        if record["accepted_risk"] and _is_confirmed_risk(record):
-            accepted_counts[severity] += 1
-            caps[record["category"]] += ACCEPTED_DEDUCTIONS[severity]
-            accepted_reasons.append(
-                f"{severity} accepted by policy: {record['title']} ({record['object_name']})."
-            )
-        elif _is_confirmed_risk(record):
-            open_counts[severity] += 1
-            caps[record["category"]] += OPEN_DEDUCTIONS[severity]
-            open_reasons.append(
-                f"{severity} confirmed: {record['title']} ({record['object_name']})."
-            )
+    coverage_score, coverage_level, coverage_gaps = (
+        _coverage_level(meaningful)
+    )
 
-    category_deduction = 0
-    for category, amount in caps.items():
-        cap = CATEGORY_CAPS.get(category, 20)
-        category_deduction += min(cap, amount)
-    score = max(0, min(100, 100 - category_deduction))
-    coverage_score, coverage_level, coverage_gaps = _coverage_level(meaningful)
+    open_records = [
+        record
+        for record in meaningful
+        if (
+            not record.get("accepted_risk")
+            and _is_confirmed_risk(record)
+        )
+    ]
+
+    accepted_records = [
+        record
+        for record in meaningful
+        if (
+            record.get("accepted_risk")
+            and _is_confirmed_risk(record)
+        )
+    ]
+
+    def group_families(
+        rows: list[dict[str, Any]],
+    ) -> dict[tuple[str, str], list[dict[str, Any]]]:
+        families: dict[
+            tuple[str, str],
+            list[dict[str, Any]],
+        ] = defaultdict(list)
+
+        for row in rows:
+            key = (
+                str(row.get("category") or "Other"),
+                str(row.get("title") or "Risk"),
+            )
+            families[key].append(row)
+
+        return families
+
+    open_families = group_families(open_records)
+    accepted_families = group_families(
+        accepted_records
+    )
+
+    category_amounts = Counter()
+    deduction_breakdown = []
+
+    for (category, title), family in open_families.items():
+        severity = (
+            "Critical"
+            if any(
+                row.get("severity") == "Critical"
+                for row in family
+            )
+            else "High"
+        )
+
+        affected_assets = {
+            str(row.get("object_name") or "PKI")
+            for row in family
+        }
+
+        affected_count = len(affected_assets)
+
+        base = 15 if severity == "Critical" else 8
+        spread_rate = 2 if severity == "Critical" else 1
+        spread = min(
+            max(affected_count - 1, 0),
+            5,
+        ) * spread_rate
+
+        deduction = base + spread
+        category_amounts[category] += deduction
+
+        deduction_breakdown.append(
+            {
+                "category": category,
+                "title": title,
+                "severity": severity,
+                "affected_assets": affected_count,
+                "raw_deduction": deduction,
+                "accepted": False,
+            }
+        )
+
+    # Accepted risk remains visible as residual governance exposure,
+    # but must always deduct less than the corresponding open risk.
+    for (category, title), family in accepted_families.items():
+        severity = (
+            "Critical"
+            if any(
+                row.get("severity") == "Critical"
+                for row in family
+            )
+            else "High"
+        )
+
+        deduction = 2 if severity == "Critical" else 1
+        category_amounts[category] += deduction
+
+        deduction_breakdown.append(
+            {
+                "category": category,
+                "title": title,
+                "severity": severity,
+                "affected_assets": len(
+                    {
+                        str(
+                            row.get("object_name")
+                            or "PKI"
+                        )
+                        for row in family
+                    }
+                ),
+                "raw_deduction": deduction,
+                "accepted": True,
+            }
+        )
+
+    capped_deductions = {}
+
+    for category, amount in category_amounts.items():
+        cap = CATEGORY_CAPS.get(category, 15)
+        capped_deductions[category] = min(
+            cap,
+            amount,
+        )
+
+    total_deduction = sum(
+        capped_deductions.values()
+    )
+
+    score = max(
+        0,
+        min(100, 100 - total_deduction),
+    )
+
     if coverage_score == 0:
-        assurance_level = "Unknown / Not Enough Data"
         score = None
+        assurance_level = "Unknown / Not Enough Data"
     elif score >= 90:
         assurance_level = "Excellent"
     elif score >= 75:
@@ -181,42 +306,105 @@ def _assurance(records: list[dict[str, Any]], hierarchy: dict[str, Any]) -> dict
     else:
         assurance_level = "Critical"
 
-    hierarchy_reason = (
-        f"CA hierarchy detected: {hierarchy.get('independent_hierarchies', 0)} PKI chain(s), "
-        f"{hierarchy.get('unclassified_count', 0)} unclassified CA(s)."
+    open_counts = Counter(
+        row.get("severity")
+        for row in open_records
     )
-    key_unknown = sum(
-        1 for r in meaningful
-        if r["category"] == "Key Protection" and r["original_status"] in {"Not Assessed", "Unknown Provider"}
+    accepted_counts = Counter(
+        row.get("severity")
+        for row in accepted_records
     )
-    key_reason = f"Key protection unknown for {key_unknown} CA(s)." if key_unknown else "Key protection evidence is available where collected."
-    why = open_reasons[:3] or [
-        "No confirmed Critical or High risk currently drives the PKI status."
+
+    open_reasons = []
+
+    for family in sorted(
+        deduction_breakdown,
+        key=lambda item: item["raw_deduction"],
+        reverse=True,
+    ):
+        if family["accepted"]:
+            continue
+
+        open_reasons.append(
+            f"{family['severity']} risk: "
+            f"{family['title']} "
+            f"({family['affected_assets']} affected asset(s))."
+        )
+
+    accepted_reasons = [
+        (
+            f"{family['severity']} accepted by policy: "
+            f"{family['title']}."
+        )
+        for family in deduction_breakdown
+        if family["accepted"]
     ]
+
+    key_unknown = sum(
+        1
+        for record in meaningful
+        if (
+            record.get("category") == "Key Protection"
+            and record.get("original_status")
+            in {"Not Assessed", "Unknown Provider"}
+        )
+    )
+
+    hierarchy_reason = (
+        "CA hierarchy detected: "
+        f"{hierarchy.get('independent_hierarchies', 0)} "
+        "PKI chain(s), "
+        f"{hierarchy.get('unclassified_count', 0)} "
+        "unclassified CA(s)."
+    )
+
+    why = open_reasons[:3] or [
+        "No confirmed Critical or High risk currently "
+        "drives the PKI status."
+    ]
+
     why.extend(accepted_reasons[:2])
+
     if coverage_gaps:
         why.append(
-            f"{len(coverage_gaps)} assessment item(s) need additional evidence. "
-            "These are coverage gaps and are not counted as confirmed risks."
+            "Additional assessment evidence is required. "
+            "Evidence gaps do not reduce the assurance score."
         )
-    why.extend([key_reason, hierarchy_reason])
+
+    why.append(
+        (
+            f"Key protection unknown for {key_unknown} CA(s)."
+            if key_unknown
+            else "Key protection evidence is available where collected."
+        )
+    )
+    why.append(hierarchy_reason)
+
     return {
         "score": score,
         "assurance_level": assurance_level,
         "coverage_score": coverage_score,
         "coverage_level": coverage_level,
-        "open_risk_count": sum(open_counts.values()),
-        "accepted_risk_count": sum(accepted_counts.values()),
+        "open_risk_count": len(open_records),
+        "accepted_risk_count": len(accepted_records),
         "open_critical": open_counts.get("Critical", 0),
         "open_high": open_counts.get("High", 0),
-        "accepted_critical": accepted_counts.get("Critical", 0),
+        "accepted_critical": accepted_counts.get(
+            "Critical",
+            0,
+        ),
         "accepted_high": accepted_counts.get("High", 0),
         "why": why[:12],
         "open_reasons": open_reasons[:10],
         "accepted_reasons": accepted_reasons[:10],
         "coverage_gaps": coverage_gaps[:10],
+        "deduction_breakdown": deduction_breakdown,
+        "category_deductions": capped_deductions,
+        "score_basis": (
+            "Unique confirmed Critical/High risk families "
+            "with limited exposure scaling."
+        ),
     }
-
 
 def _ca_records(cas: Iterable[CertificateAuthority], hierarchy: dict[str, Any], acceptances: dict[str, RiskAcceptance]) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
@@ -315,42 +503,119 @@ def _health_records(health: dict[str, Any], acceptances: dict[str, RiskAcceptanc
     return records
 
 
-def _best_practice_records(best_practices: dict[str, Any], acceptances: dict[str, RiskAcceptance]) -> list[dict[str, Any]]:
+def _best_practice_records(
+    best_practices: dict[str, Any],
+    acceptances: dict[str, RiskAcceptance],
+) -> list[dict[str, Any]]:
     records = []
-    duplicate_ca_registry_titles = {
+
+    canonical_ca_titles = {
         "CA auditing should be enabled",
         "Root CA key protection should be known and appropriate",
         "Issuing CA key protection should be known and appropriate",
         "Unclassified CA key protection should be known and appropriate",
     }
 
-    for item in best_practices.get("items", []):
-        # These controls already have canonical CA registry records:
-        # - CA auditing evidence
-        # - CA key protection status
-        # Keep the detailed checks on the Best Practices page, but do
-        # not duplicate them in Posture, Evidence Gaps, or Reports.
-        if item.get("title") in duplicate_ca_registry_titles:
+    architecture_display_titles = {
+        "CA role classified from certificate subject/issuer",
+        "Root CA detected",
+        "Root CA Detected",
+        "Issuing CA detected",
+        "Issuing CA Detected",
+    }
+
+    technical_template_titles = {
+        "Avoid broad enrollment on authentication templates",
+        "Avoid requester-supplied subject/SAN unless approved",
+        "Avoid overly long validity periods",
+    }
+
+    for item in best_practices.get("items", []) or []:
+        if not isinstance(item, dict):
+            continue
+
+        title = item.get("title", "Best practice")
+        category = item.get("category", "Best Practices")
+
+        # These already have canonical CA records.
+        if title in canonical_ca_titles:
+            continue
+
+        # Architecture is displayed by PKI Hierarchy.
+        if title in architecture_display_titles:
+            continue
+
+        # Template security findings are represented canonically
+        # by Findings/Templates and must not be scored twice.
+        if (
+            category == "Templates"
+            or title in technical_template_titles
+        ):
+            continue
+
+        # Certificate expiry belongs to PKI Health.
+        if title == "Certificate expiry should be monitored":
             continue
 
         status = item.get("status", "Not Assessed")
-        normalized = item.get("display_status") or ({"Fail": "High Risk", "Warning": "Needs Attention"}.get(status, status))
-        records.append(_record(
-            object_type="best_practice",
-            object_name=item.get("affected_object", "PKI"),
-            category="Best Practices" if item.get("category") not in {"Key Protection", "PKI Architecture"} else item.get("category"),
-            title=item.get("title", "Best practice"),
-            status=normalized,
-            severity=item.get("severity", _severity_from_status(normalized)),
-            confidence=item.get("confidence", "medium"),
-            source=item.get("data_source", "collector"),
-            evidence=item.get("evidence", {}),
-            recommendation=item.get("recommendation", "Review best-practice evidence."),
-            acceptances=acceptances,
-            related_ca=item.get("affected_object", ""),
-        ))
-    return records
+        normalized = (
+            item.get("display_status")
+            or {
+                "Fail": "High Risk",
+                "Warning": "Needs Attention",
+            }.get(status, status)
+        )
 
+        object_name = item.get(
+            "affected_object",
+            "PKI",
+        )
+
+        records.append(
+            _record(
+                object_type="best_practice",
+                object_name=object_name,
+                category=(
+                    category
+                    if category
+                    in {"Key Protection", "PKI Architecture"}
+                    else "Best Practices"
+                ),
+                title=title,
+                status=normalized,
+                severity=item.get(
+                    "severity",
+                    _severity_from_status(normalized),
+                ),
+                confidence=item.get(
+                    "confidence",
+                    "medium",
+                ),
+                source=item.get(
+                    "data_source",
+                    "collector",
+                ),
+                evidence=item.get("evidence", {}),
+                recommendation=item.get(
+                    "recommendation",
+                    "Review governance evidence.",
+                ),
+                acceptances=acceptances,
+                related_ca=(
+                    object_name
+                    if category
+                    in {
+                        "Root CA",
+                        "Issuing CA",
+                        "Key Protection",
+                        "Backup and Recovery",
+                    }
+                    else ""
+                ),
+            )
+        )
+
+    return records
 
 def _finding_records(findings: Iterable[Finding], acceptances: dict[str, RiskAcceptance]) -> list[dict[str, Any]]:
     records = []
@@ -391,7 +656,60 @@ def build_assessment_registry(
     records.extend(_ca_records(cas, hierarchy, acceptances))
     records.extend(_health_records(health, acceptances))
     records.extend(_best_practice_records(best_practices, acceptances))
-    records.extend(_finding_records(findings, acceptances))
+    records.extend(
+        _finding_records(findings, acceptances)
+    )
+
+    # Multiple assessment engines can observe the same condition.
+    # Keep one canonical record per fingerprint and prefer the
+    # strongest definitive result.
+    status_rank = {
+        "Critical": 100,
+        "High Risk": 90,
+        "Fail": 90,
+        "Needs Attention": 70,
+        "Warning": 70,
+        "Present / Not Tested": 45,
+        "Not Assessed": 30,
+        "Unknown": 20,
+        "Evidence Missing": 20,
+        "Pass": 10,
+        "Healthy": 10,
+    }
+
+    canonical_records: dict[str, dict[str, Any]] = {}
+
+    for record in records:
+        fingerprint = record.get("fingerprint")
+
+        if not fingerprint:
+            fingerprint = registry_fingerprint(
+                record.get("category", ""),
+                record.get("object_type", ""),
+                record.get("object_name", ""),
+                record.get("title", ""),
+            )
+            record["fingerprint"] = fingerprint
+
+        current = canonical_records.get(fingerprint)
+
+        if current is None:
+            canonical_records[fingerprint] = record
+            continue
+
+        current_rank = status_rank.get(
+            current.get("original_status"),
+            0,
+        )
+        new_rank = status_rank.get(
+            record.get("original_status"),
+            0,
+        )
+
+        if new_rank > current_rank:
+            canonical_records[fingerprint] = record
+
+    records = list(canonical_records.values())
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for record in records:
         grouped[record["object_type"]].append(record)

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CertShield PKI Posture Management</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="/static/css/style.css" />
+  <link rel="stylesheet" href="/static/css/style.css?v=modern-tools-2" />
 </head>
 <body>
 <nav class="navbar navbar-expand-xl app-nav py-1">
@@ -18,15 +18,156 @@
         <li class="nav-item"><a class="nav-link" href="/pki-hierarchy">PKI Hierarchy</a></li>
         <li class="nav-item"><a class="nav-link" href="/pki-posture">Posture</a></li>
         <li class="nav-item"><a class="nav-link" href="/pki-health">Health</a></li>
-        <li class="nav-item"><a class="nav-link" href="/best-practices">Best Practices</a></li>
-        <li class="nav-item"><a class="nav-link" href="/cas">CAs</a></li>
         <li class="nav-item"><a class="nav-link" href="/templates">Templates</a></li>
         <li class="nav-item"><a class="nav-link" href="/findings">Findings</a></li>
-        <li class="nav-item"><a class="nav-link" href="/certificates">Certificates</a></li>
-        <li class="nav-item"><a class="nav-link" href="/reports">Reports</a></li>
-        <li class="nav-item"><a class="nav-link" href="/history">History</a></li>
-        <li class="nav-item"><a class="nav-link" href="/settings">Settings</a></li>
       </ul>
+
+      <!-- utility-menu-start -->
+      <div class="dropdown nav-tools-menu me-2">
+
+        <button
+          class="nav-tools-button"
+          type="button"
+          data-bs-toggle="dropdown"
+          data-bs-auto-close="outside"
+          data-bs-offset="0,12"
+          aria-expanded="false"
+          aria-label="Open tools menu"
+          title="Tools"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path
+              d="M12 15.5a3.5 3.5 0 1 0 0-7
+                 3.5 3.5 0 0 0 0 7Z"
+            />
+            <path
+              d="M19.4 15a1.7 1.7 0 0 0 .34 1.88
+                 l.06.06-1.8 3.12-.09-.03
+                 a1.7 1.7 0 0 0-1.82.36
+                 l-.07.04a1.7 1.7 0 0 0-.99
+                 1.55V22h-3.6v-.09a1.7 1.7
+                 0 0 0-1.1-1.5l-.08-.04
+                 a1.7 1.7 0 0 0-1.85-.21
+                 l-.08.05-1.8-3.12.07-.06
+                 a1.7 1.7 0 0 0 .62-1.78
+                 v-.09a1.7 1.7 0 0 0-1.2
+                 -1.36l-.09-.03V10.2l.09-.03
+                 a1.7 1.7 0 0 0 1.2-1.36
+                 v-.09a1.7 1.7 0 0 0-.62
+                 -1.78l-.07-.06 1.8-3.12.08
+                 .05a1.7 1.7 0 0 0 1.85-.21
+                 l.08-.04a1.7 1.7 0 0 0 1.1
+                 -1.5V2h3.6v.09a1.7 1.7
+                 0 0 0 .99 1.55l.07.04a1.7
+                 1.7 0 0 0 1.82.36l.09-.03
+                 1.8 3.12-.06.06a1.7 1.7
+                 0 0 0-.34 1.88v.09a1.7
+                 1.7 0 0 0 1.22 1.34l.09
+                 .03v3.6l-.09.03A1.7 1.7
+                 0 0 0 19.4 15Z"
+            />
+          </svg>
+        </button>
+
+        <div class="
+          dropdown-menu dropdown-menu-end
+          nav-tools-dropdown
+        ">
+
+          <div class="nav-tools-header">
+            <div class="nav-tools-header-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 7h16M4 12h16M4 17h16"/>
+              </svg>
+            </div>
+
+            <div>
+              <strong>Workspace Tools</strong>
+              <span>Additional CertShield views</span>
+            </div>
+          </div>
+
+          <div class="nav-tools-list">
+
+            <a class="nav-tool-item" href="/certificates">
+              <span class="nav-tool-icon nav-tool-icon-cert">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M7 3h7l4 4v14H7z"/>
+                  <path d="M14 3v5h5"/>
+                  <path d="M10 13h5M10 17h5"/>
+                </svg>
+              </span>
+
+              <span class="nav-tool-copy">
+                <strong>Certificates</strong>
+                <small>Issued certificate inventory</small>
+              </span>
+
+              <span class="nav-tool-arrow">›</span>
+            </a>
+
+            <a class="nav-tool-item" href="/reports">
+              <span class="nav-tool-icon nav-tool-icon-report">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>
+                </svg>
+              </span>
+
+              <span class="nav-tool-copy">
+                <strong>Reports</strong>
+                <small>Assessment reports and exports</small>
+              </span>
+
+              <span class="nav-tool-arrow">›</span>
+            </a>
+
+            <a class="nav-tool-item" href="/history">
+              <span class="nav-tool-icon nav-tool-icon-history">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M3 12a9 9 0 1 0 3-6.7"/>
+                  <path d="M3 4v5h5"/>
+                  <path d="M12 7v5l3 2"/>
+                </svg>
+              </span>
+
+              <span class="nav-tool-copy">
+                <strong>History</strong>
+                <small>Previous scans and changes</small>
+              </span>
+
+              <span class="nav-tool-arrow">›</span>
+            </a>
+
+          </div>
+
+          <div class="nav-tools-footer">
+            <a class="nav-tool-item nav-tool-settings"
+               href="/settings">
+              <span class="nav-tool-icon nav-tool-icon-settings">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 7h10M18 7h2M4 17h2M10 17h10"/>
+                  <circle cx="16" cy="7" r="2"/>
+                  <circle cx="8" cy="17" r="2"/>
+                </svg>
+              </span>
+
+              <span class="nav-tool-copy">
+                <strong>Settings</strong>
+                <small>Application and collector configuration</small>
+              </span>
+
+              <span class="nav-tool-arrow">›</span>
+            </a>
+          </div>
+
+        </div>
+      </div>
+      <!-- utility-menu-end -->
+
       {% if current_user %}<div class="user-area"><span>Signed in as <strong>{{ current_user }}</strong></span><a class="btn btn-sm btn-outline-light" href="/logout">Logout</a></div>{% endif %}
     </div>
   </div>

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 
 from app.models.entities import CertificateAuthority, CertificateTemplate, IssuedCertificate
+from app.services.governance_evidence import apply_governance_evidence
 from app.services.pki_hierarchy import ca_certificate, ca_role, key_protection
 from app.services.risk_engine import _has_any_purpose, _has_client_auth
 
@@ -157,7 +158,7 @@ def _ca_practices(ca: CertificateAuthority) -> list[dict]:
                 "Root private key exposure can compromise the PKI hierarchy.",
                 "Keep the root CA offline except controlled CRL/key ceremony operations.",
                 "high" if offline is not None else "low",
-                not_assessed_reason="Collector did not provide root online/offline evidence." if offline is None else None,
+                not_assessed_reason="Customer confirmation is required: record whether the root CA is kept offline except for controlled operations." if offline is None else None,
             )
         )
         domain_joined = _config_bool(config, "domain_joined")
@@ -172,7 +173,7 @@ def _ca_practices(ca: CertificateAuthority) -> list[dict]:
                 "Domain compromise should not directly expose root CA trust.",
                 "Domain-joined root CA increases attack surface and administrative dependencies.",
                 "Keep root CA systems outside the domain and tightly controlled.",
-                not_assessed_reason="Collector did not provide domain-join evidence." if domain_joined is None else None,
+                not_assessed_reason="Customer confirmation is required: record whether the root CA is joined to an Active Directory domain." if domain_joined is None else None,
             )
         )
     else:
@@ -188,7 +189,7 @@ def _ca_practices(ca: CertificateAuthority) -> list[dict]:
                 "Combining CA and DC roles increases business impact of host compromise.",
                 "CA private key and domain controller attack surface become coupled.",
                 "Run issuing CAs on dedicated hardened servers, not domain controllers.",
-                not_assessed_reason="Collector did not provide server role evidence." if on_dc is None else None,
+                not_assessed_reason="Customer confirmation is required: record whether the issuing CA is installed on a domain controller." if on_dc is None else None,
             )
         )
 
@@ -220,7 +221,12 @@ def _ca_practices(ca: CertificateAuthority) -> list[dict]:
             "Unvalidated recovery increases outage duration during CA incidents.",
             "CA database/private key recovery may be inconsistent or impossible.",
             "Document and periodically test CA certificate, key, and database recovery.",
-            not_assessed_reason="Collector did not provide backup evidence." if backup is None else None,
+            data_source="operator evidence",
+            not_assessed_reason=(
+                "Customer input is required: add the backup owner, SOP, last recovery test and supporting evidence."
+                if backup is None
+                else None
+            ),
         )
     )
     return items
@@ -363,6 +369,7 @@ def assess_best_practices(
     templates: list[CertificateTemplate],
     certificates: list[IssuedCertificate],
     findings: list[object],
+    governance_evidence: dict | None = None,
 ) -> dict:
     items: list[dict] = []
     for ca in cas:
@@ -478,7 +485,7 @@ def assess_best_practices(
                 not_assessed_reason="Collector did not provide authoritative privilege/account status metadata." if not privileged_seen else None,
             ),
             _bp(
-                "Auditing",
+                "Operations",
                 "Collector should run on a schedule",
                 "Not Assessed",
                 "Medium",
@@ -506,6 +513,35 @@ def assess_best_practices(
                 not_assessed_reason="Backup custody cannot be confirmed by the collector.",
             ),
         ]
+    )
+
+    # Architecture classification is displayed in PKI Hierarchy
+    # and the compact Posture architecture summary. Do not repeat
+    # one detected-role control for every CA.
+    architecture_titles = {
+        "CA role classified from certificate subject/issuer",
+        "Root CA detected",
+        "Issuing CA detected",
+    }
+
+    items = [
+        item
+        for item in items
+        if item.get("title") not in architecture_titles
+    ]
+
+    # CA auditing is assessed canonically through AuditFilter
+    # evidence in the CA/Posture registry. Do not duplicate it here.
+    items = [
+        item
+        for item in items
+        if item.get("title")
+        != "CA auditing should be enabled"
+    ]
+
+    items = apply_governance_evidence(
+        items,
+        governance_evidence or {},
     )
 
     score, status, counts, explanations = _score(items)

@@ -1,23 +1,710 @@
 {% extends 'base.html' %}
 {% from 'macros/evidence.html' import evidence_table, status_badge %}
+
 {% block content %}
-<div class="page-title"><div><div class="eyebrow">Governance and Architecture</div><h1>PKI Best Practices</h1><p>High-level PKI design and operations gaps. Detailed template evidence remains in Templates and Findings.</p></div></div>
+
 {% if best_practices %}
-{% if best_practices.limited_visibility %}<div class="alert alert-warning compact-alert">Limited Visibility: more than half of best-practice checks are Not Assessed, so the score is capped.</div>{% endif %}
-<div class="alert alert-info compact-alert">Accepted Risk Count: {{(registry.accepted_risks or [])|length if registry else accepted_risk_count or 0}} · Accepted customer policy exceptions remain visible and reduce active-risk score impact but do not disappear from governance reporting.</div><div class="metric-grid mb-3">
-  <div class="metric-card"><div class="metric-title">Best Practice Status <span class="visually-hidden">Best Practice Score</span></div><div class="metric-value status-word-sm">{{best_practices.status}}</div><div class="small text-secondary">Supporting score: {{best_practices.score if best_practices.score is not none else 'Unknown'}}</div></div>
-  <div class="metric-card"><div class="metric-title">Passed</div><div class="metric-value">{{best_practices.counts.Pass or 0}}</div></div>
-  <div class="metric-card"><div class="metric-title">High Risk</div><div class="metric-value">{{best_practices.counts.Fail or 0}}</div></div>
-  <div class="metric-card"><div class="metric-title">Needs Attention</div><div class="metric-value">{{best_practices.counts.Warning or 0}}</div></div>
-  <div class="metric-card"><div class="metric-title">Not Assessed</div><div class="metric-value">{{best_practices.counts['Not Assessed'] or 0}}</div></div>
+{% set items = best_practices.get('items', []) %}
+{% set root_count =
+    items
+    | selectattr('title', 'equalto', 'Root CA detected')
+    | list
+    | length
+%}
+{% set issuing_count =
+    items
+    | selectattr('title', 'equalto', 'Issuing CA detected')
+    | list
+    | length
+%}
+{% set unknown_role_count =
+    items
+    | selectattr('category', 'equalto', 'PKI Architecture')
+    | selectattr('status', 'equalto', 'Not Assessed')
+    | list
+    | length
+%}
+
+<div class="page-title compact-hero">
+  <div>
+    <div class="eyebrow">Governance & Architecture</div>
+    <h1>PKI Best Practices</h1>
+    <p>Architecture, operations and governance controls requiring action.</p>
+  </div>
+
+  <div class="health-hero-status">
+    {{ status_badge(best_practices.get('status', 'Unknown')) }}
+    <strong>
+      {{ best_practices.get('score')
+         if best_practices.get('score') is not none
+         else '—' }}/100
+    </strong>
+  </div>
 </div>
-<div class="best-card-grid mb-3">
-{% for card in best_practices.summary_cards %}<div class="card card-panel"><div class="card-body compact-card"><div class="d-flex justify-content-between"><h2 class="section-title">{{card.category}}</h2>{{status_badge(card.status|replace("Fail", "High Risk")|replace("Warning", "Needs Attention"))}}</div><div class="small text-secondary">{{card.total}} checks · {{card.fail}} high risk · {{card.warning}} needs attention · {{card.not_assessed}} not assessed</div><p class="small mt-2 mb-0">{{card.recommendation}}</p></div></div>{% endfor %}
+
+<div class="health-metric-grid mb-3">
+
+  <a class="health-metric health-metric-primary"
+     href="#control-areas">
+    <div class="health-metric-label">
+      Baseline status
+      <span class="visually-hidden">Best Practice Score</span>
+    </div>
+    <div class="health-metric-value health-metric-status">
+      {{ best_practices.get('status', 'Unknown') }}
+    </div>
+    <div class="health-metric-meta">
+      Score {{ best_practices.get('score', '—') }}
+    </div>
+  </a>
+
+  <a class="health-metric health-metric-coverage"
+     href="#control-areas">
+    <div class="health-metric-label">Passed</div>
+    <div class="health-metric-value">
+      {{ best_view.passed }}
+    </div>
+    <div class="health-metric-meta">Verified controls</div>
+  </a>
+
+  <a class="health-metric health-metric-critical"
+     href="#action-required">
+    <div class="health-metric-label">Action required</div>
+    <div class="health-metric-value">
+      {{ best_view.action_required }}
+    </div>
+    <div class="health-metric-meta">Open gaps</div>
+  </a>
+
+  <a class="health-metric health-metric-unknown"
+     href="#manual-governance">
+    <div class="health-metric-label">Evidence needed</div>
+    <div class="health-metric-value">
+      {{ best_view.evidence_needed }}
+    </div>
+    <div class="health-metric-meta">Not assessed controls</div>
+  </a>
+
+  <a class="health-metric health-metric-warning"
+     href="#manual-governance">
+    <div class="health-metric-label">Accepted exceptions</div>
+    <div class="health-metric-value">
+      {{ best_view.accepted }}
+    </div>
+    <div class="health-metric-meta">Visible for governance</div>
+  </a>
+
+  <a class="health-metric health-metric-expiry"
+     href="#manual-governance">
+    <div class="health-metric-label">Manual controls</div>
+    <div class="health-metric-value">
+      {{ best_view.manual_controls }}
+    </div>
+    <div class="health-metric-meta">Operator-managed evidence</div>
+  </a>
+
 </div>
-<div class="row g-3 mb-3"><div class="col-lg-6"><div class="card card-panel"><div class="card-body compact-card"><h2 class="section-title">Top Gaps</h2><ul class="compact-list">{% for item in best_practices.top_gaps %}<li><strong>{{item.category}}</strong>: {{item.title}} — {{item.recommendation}} <a href="/findings">Details</a></li>{% else %}<li>No high-level gaps detected.</li>{% endfor %}</ul></div></div></div><div class="col-lg-6"><div class="card card-panel"><div class="card-body compact-card"><h2 class="section-title">Why this status?</h2><ul class="compact-list">{% for item in best_practices.score_explanation %}<li>{{item}}</li>{% else %}<li>No additional best-practice status reasons were produced.</li>{% endfor %}</ul></div></div></div></div>
-<div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">Accepted Risk / Customer Policy Exceptions</h2>{% for risk in registry.accepted_risks %}<div class="risk-row compact-risk"><span class="badge text-bg-info">Accepted Risk</span><div><strong>{{risk.title}}</strong><div class="small text-secondary">{{risk.category}} · {{risk.object_name}}</div></div></div>{% else %}<p class="text-secondary mb-0">No accepted risks in the shared registry.</p>{% endfor %}</div></div>
-{% for category, items in best_practices.grouped.items() %}
-<div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">{{category}}</h2><div class="table-responsive"><table class="table modern-table table-sm align-middle"><thead><tr><th>Status</th><th>Gap / Control</th><th>Severity</th><th>Affected</th><th>Evidence</th><th>Recommendation</th></tr></thead><tbody>{% for item in items %}<tr><td>{{status_badge(item.display_status or item.status)}}</td><td class="text-wrap-sm"><strong>{{item.title}}</strong><div class="small text-secondary">{{item.business_impact}}</div>{% if item.not_assessed_reason %}<div class="small text-warning">{{item.not_assessed_reason}}</div>{% endif %}</td><td>{{item.severity}}</td><td class="text-wrap-sm">{{item.affected_object}}</td><td class="evidence-cell">{{evidence_table(item.evidence)}}</td><td class="text-wrap-sm">{{item.recommendation}}</td></tr>{% endfor %}</tbody></table></div></div></div>
-{% endfor %}
-{% else %}<div class="empty-state compact-card">No best-practice assessment available yet.</div>{% endif %}
+
+<div class="health-dashboard-grid mb-3">
+
+  <section class="card card-panel" id="action-required">
+    <div class="card-body compact-card">
+
+      <div class="health-section-head">
+        <div>
+          <h2 class="section-title mb-1">Action Required</h2>
+          <div class="small text-secondary">
+            Open controls only. Passed and accepted controls are hidden here.
+          </div>
+        </div>
+        <a class="btn btn-sm btn-outline-primary"
+           href="#control-areas">
+          All controls
+        </a>
+      </div>
+
+      <div class="health-issue-list">
+        {% set action_state = namespace(count=0) %}
+
+        {% for item in items %}
+          {% if not item.accepted_risk
+                and item.status in ['Fail', 'Warning', 'Not Assessed']
+                and action_state.count < 10 %}
+
+            {% set action_state.count = action_state.count + 1 %}
+            {% set reason =
+                item.not_assessed_reason
+                or item.business_impact
+                or item.recommendation
+            %}
+
+            {% set target = '/evidence-gaps' %}
+            {% if item.category in [
+                'Root CA',
+                'Issuing CA',
+                'PKI Architecture',
+                'Key Protection',
+                'Backup and Recovery'
+            ] %}
+              {% set target = '/pki-hierarchy' %}
+            {% elif item.category in [
+                'Templates',
+                'Template Governance'
+            ] %}
+              {% set target = '/templates' %}
+            {% elif item.category == 'Lifecycle' %}
+              {% set target = '/certificates' %}
+            {% endif %}
+
+            <div class="
+              health-issue-row
+              {% if item.status == 'Fail' %}
+                health-issue-critical
+              {% elif item.status == 'Warning' %}
+                health-issue-warning
+              {% else %}
+                health-issue-unknown
+              {% endif %}
+            ">
+
+              <div class="health-issue-badge">
+                {{ status_badge(
+                    item.display_status or item.status
+                ) }}
+              </div>
+
+              <div class="health-issue-content">
+                <div class="health-issue-title">
+                  {{ item.title }}
+                </div>
+                <div class="health-issue-object">
+                  {{ item.category }} · {{ item.affected_object }}
+                </div>
+                <div class="health-issue-reason">
+                  <strong>Why:</strong> {{ reason }}
+                </div>
+              </div>
+
+              <div class="health-issue-actions">
+                {% if item.manual_control %}
+                  <a class="btn btn-sm btn-outline-primary"
+                     href="#manual-governance">
+                    Add evidence
+                  </a>
+                {% else %}
+                  <a class="btn btn-sm btn-outline-primary"
+                     href="{{ target }}">
+                    Open
+                  </a>
+                {% endif %}
+
+                <details class="health-inline-details">
+                  <summary>Evidence</summary>
+                  <div class="health-evidence-popover">
+                    {{ evidence_table(item.evidence) }}
+                  </div>
+                </details>
+              </div>
+
+            </div>
+          {% endif %}
+        {% endfor %}
+
+        {% if action_state.count == 0 %}
+          <div class="health-empty-success">
+            <strong>No open best-practice actions.</strong>
+            <span>
+              All controls are passed or covered by an active exception.
+            </span>
+          </div>
+        {% endif %}
+      </div>
+
+    </div>
+  </section>
+
+  <aside class="health-side-stack">
+
+    <section class="card card-panel">
+      <div class="card-body compact-card">
+
+        <div class="health-section-head mb-2">
+          <h2 class="section-title mb-0">PKI Architecture</h2>
+          <a class="small" href="/pki-hierarchy">Hierarchy</a>
+        </div>
+
+        <div class="governance-architecture-grid">
+          <div class="governance-stat">
+            <strong>{{ root_count }}</strong>
+            <span>Root CAs</span>
+          </div>
+
+          <div class="governance-stat">
+            <strong>{{ issuing_count }}</strong>
+            <span>Issuing CAs</span>
+          </div>
+
+          <div class="governance-stat">
+            <strong>{{ unknown_role_count }}</strong>
+            <span>Role unknown</span>
+          </div>
+        </div>
+
+        <div class="governance-quick-links">
+          <a href="/pki-hierarchy">View hierarchy</a>
+          <a href="/pki-hierarchy#ca-inventory">CA inventory</a>
+        </div>
+
+      </div>
+    </section>
+
+    <section class="card card-panel">
+      <div class="card-body compact-card">
+
+        <div class="health-section-head mb-2">
+          <h2 class="section-title mb-0">Accepted Risk / Policy Exceptions</h2>
+          <a class="small" href="/findings">Findings</a>
+        </div>
+
+        {% for risk in registry.get('accepted_risks', [])[:5] %}
+          <div class="governance-exception-row">
+            <span class="badge text-bg-info">Accepted Risk</span>
+            <div>
+              <strong>{{ risk.title }}</strong>
+              <span>{{ risk.object_name }}</span>
+            </div>
+          </div>
+        {% else %}
+          <div class="health-empty-success health-empty-compact">
+            <strong>No accepted exceptions</strong>
+            <span>All active controls remain open or passed.</span>
+          </div>
+        {% endfor %}
+
+      </div>
+    </section>
+
+  </aside>
+</div>
+
+<section class="card card-panel mb-3"
+         id="manual-governance">
+  <div class="card-body compact-card">
+
+    <div class="health-section-head mb-2">
+      <div>
+        <h2 class="section-title mb-1">Manual Governance Evidence</h2>
+        <div class="small text-secondary">
+          Record backup, ownership, scheduling and custody evidence.
+          Accepting risk does not replace missing evidence.
+        </div>
+      </div>
+    </div>
+
+    <div class="governance-control-list">
+
+      {% for item in items if item.manual_control %}
+        {% set manual = item.governance_evidence or {} %}
+
+        <div class="governance-control-row">
+
+          <div class="governance-control-summary">
+            <div>
+              <strong>{{ item.title }}</strong>
+              <span>
+                {{ item.category }} · {{ item.affected_object }}
+              </span>
+            </div>
+
+            <div class="governance-control-status">
+              {% if item.accepted_risk %}
+                <span class="badge text-bg-info">
+                  Accepted Risk
+                </span>
+              {% endif %}
+              {{ status_badge(
+                  item.display_status or item.status
+              ) }}
+            </div>
+          </div>
+
+          {% if manual %}
+            <div class="governance-evidence-summary">
+              <span>
+                Owner:
+                <strong>{{ manual.get('owner') or 'Not specified' }}</strong>
+              </span>
+              <span>
+                Last reviewed:
+                <strong>
+                  {{ manual.get('last_reviewed') or 'Not specified' }}
+                </strong>
+              </span>
+              <span>
+                State:
+                <strong>
+                  {{ manual.get('state', '') | replace('_', ' ') | title }}
+                </strong>
+              </span>
+            </div>
+          {% endif %}
+
+          <div class="governance-control-actions">
+
+            <details class="governance-action-panel">
+              <summary>
+                {% if manual %}Update evidence{% else %}Add evidence{% endif %}
+              </summary>
+
+              <form method="post"
+                    action="/best-practices/evidence"
+                    class="governance-form">
+
+                <input type="hidden"
+                       name="csrf_token"
+                       value="{{ csrf_token }}">
+
+                <input type="hidden"
+                       name="category"
+                       value="{{ item.category }}">
+
+                <input type="hidden"
+                       name="object_name"
+                       value="{{ item.affected_object }}">
+
+                <input type="hidden"
+                       name="control_title"
+                       value="{{ item.title }}">
+
+                <div class="governance-form-grid">
+
+                  <label>
+                    Implementation state
+                    <select name="state"
+                            class="form-select form-select-sm"
+                            required>
+                      <option value="implemented"
+                        {% if manual.get('state') == 'implemented' %}
+                          selected
+                        {% endif %}>
+                        Implemented / evidence available
+                      </option>
+                      <option value="partial"
+                        {% if manual.get('state') == 'partial' %}
+                          selected
+                        {% endif %}>
+                        Partially implemented
+                      </option>
+                      <option value="not_implemented"
+                        {% if manual.get('state') == 'not_implemented' %}
+                          selected
+                        {% endif %}>
+                        Not implemented
+                      </option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Owner
+                    <input class="form-control form-control-sm"
+                           name="owner"
+                           value="{{ manual.get('owner', '') }}"
+                           placeholder="Team or accountable owner">
+                  </label>
+
+                  <label>
+                    Last reviewed / tested
+                    <input class="form-control form-control-sm"
+                           type="date"
+                           name="last_reviewed"
+                           value="{{ manual.get('last_reviewed', '') }}">
+                  </label>
+
+                  <label>
+                    Next review
+                    <input class="form-control form-control-sm"
+                           type="date"
+                           name="next_review"
+                           value="{{ manual.get('next_review', '') }}">
+                  </label>
+
+                </div>
+
+                <label class="mt-2">
+                  Evidence reference
+                  <input class="form-control form-control-sm"
+                         name="evidence_reference"
+                         value="{{ manual.get('evidence_reference', '') }}"
+                         placeholder="Ticket, SOP, document path or repository reference">
+                </label>
+
+                <label class="mt-2">
+                  Evidence details
+                  <textarea class="form-control form-control-sm"
+                            name="details"
+                            rows="3"
+                            placeholder="What is implemented, tested and reviewed?">{{ manual.get('details', '') }}</textarea>
+                </label>
+
+                <button class="btn btn-sm btn-primary mt-2"
+                        type="submit">
+                  Save evidence
+                </button>
+
+              </form>
+            </details>
+
+            <details class="governance-action-panel">
+              <summary>
+                {% if item.accepted_risk %}
+                  Update accepted risk
+                {% else %}
+                  Accept risk
+                {% endif %}
+              </summary>
+
+              <form method="post"
+                    action="/best-practices/accept"
+                    class="governance-form">
+
+                <input type="hidden"
+                       name="csrf_token"
+                       value="{{ csrf_token }}">
+
+                <input type="hidden"
+                       name="category"
+                       value="{{ item.category }}">
+
+                <input type="hidden"
+                       name="object_name"
+                       value="{{ item.affected_object }}">
+
+                <input type="hidden"
+                       name="control_title"
+                       value="{{ item.title }}">
+
+                <input type="hidden"
+                       name="severity"
+                       value="{{ item.severity }}">
+
+                <div class="governance-note">
+                  A policy exception keeps the control visible.
+                  It does not convert missing evidence into Pass.
+                </div>
+
+                <label>
+                  Exception expiry
+                  <input class="form-control form-control-sm"
+                         type="date"
+                         name="expiry_date">
+                </label>
+
+                <label class="mt-2">
+                  Business justification
+                  <textarea class="form-control form-control-sm"
+                            name="business_justification"
+                            rows="3"
+                            required></textarea>
+                </label>
+
+                <label class="mt-2">
+                  Compensating control
+                  <textarea class="form-control form-control-sm"
+                            name="compensating_control"
+                            rows="2"></textarea>
+                </label>
+
+                <button class="btn btn-sm btn-outline-primary mt-2"
+                        type="submit">
+                  Save policy exception
+                </button>
+
+              </form>
+            </details>
+
+            <details class="health-inline-details">
+              <summary>Collected evidence</summary>
+              <div class="health-evidence-popover">
+                {{ evidence_table(item.evidence) }}
+              </div>
+            </details>
+
+          </div>
+
+        </div>
+      {% else %}
+        <div class="text-secondary">
+          No operator-managed governance controls were produced.
+        </div>
+      {% endfor %}
+
+    </div>
+  </div>
+</section>
+
+<section class="card card-panel" id="control-areas">
+  <div class="card-body compact-card">
+
+    <div class="health-section-head mb-2">
+      <div>
+        <h2 class="section-title mb-1">Control Areas</h2>
+        <div class="small text-secondary">
+          Expand a category only when detailed evidence is required.
+        </div>
+      </div>
+    </div>
+
+    <div class="accordion health-area-accordion"
+         id="bestPracticeAccordion">
+
+      {% for category, category_items
+            in best_practices.grouped.items() %}
+
+        {% set category_state = namespace(
+            passed=0,
+            fail=0,
+            warning=0,
+            not_assessed=0,
+            accepted=0
+        ) %}
+
+        {% for item in category_items %}
+          {% if item.accepted_risk %}
+            {% set category_state.accepted =
+                category_state.accepted + 1 %}
+          {% elif item.status == 'Pass' %}
+            {% set category_state.passed =
+                category_state.passed + 1 %}
+          {% elif item.status == 'Fail' %}
+            {% set category_state.fail =
+                category_state.fail + 1 %}
+          {% elif item.status == 'Warning' %}
+            {% set category_state.warning =
+                category_state.warning + 1 %}
+          {% else %}
+            {% set category_state.not_assessed =
+                category_state.not_assessed + 1 %}
+          {% endif %}
+        {% endfor %}
+
+        <div class="accordion-item health-area-item">
+
+          <h3 class="accordion-header"
+              id="bp-heading-{{ loop.index }}">
+
+            <button class="accordion-button collapsed health-area-button"
+                    type="button"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#bp-area-{{ loop.index }}"
+                    aria-expanded="false">
+
+              <span class="health-area-name">
+                {{ category }}
+              </span>
+
+              <span class="health-area-summary">
+
+                {% if category_state.fail %}
+                  <span class="badge status-critical">
+                    {{ category_state.fail }} high risk
+                  </span>
+                {% endif %}
+
+                {% if category_state.warning %}
+                  <span class="badge status-warning">
+                    {{ category_state.warning }} attention
+                  </span>
+                {% endif %}
+
+                {% if category_state.not_assessed %}
+                  <span class="badge status-not-assessed">
+                    {{ category_state.not_assessed }} evidence needed
+                  </span>
+                {% endif %}
+
+                {% if category_state.accepted %}
+                  <span class="badge text-bg-info">
+                    {{ category_state.accepted }} accepted
+                  </span>
+                {% endif %}
+
+                {% if category_state.passed %}
+                  <span class="badge status-healthy">
+                    {{ category_state.passed }} passed
+                  </span>
+                {% endif %}
+
+              </span>
+            </button>
+          </h3>
+
+          <div id="bp-area-{{ loop.index }}"
+               class="accordion-collapse collapse">
+
+            <div class="accordion-body health-area-body">
+
+              {% for item in category_items %}
+
+                {% set reason =
+                    item.not_assessed_reason
+                    or item.business_impact
+                    or item.recommendation
+                %}
+
+                <div class="best-control-row">
+
+                  <div class="health-check-main">
+                    <strong>{{ item.title }}</strong>
+                    <span>{{ item.affected_object }}</span>
+                  </div>
+
+                  <div>
+                    {% if item.accepted_risk %}
+                      <span class="badge text-bg-info">
+                        Accepted Risk
+                      </span>
+                    {% else %}
+                      {{ status_badge(
+                          item.display_status or item.status
+                      ) }}
+                    {% endif %}
+                  </div>
+
+                  <div class="health-check-reason"
+                       title="{{ reason }}">
+                    {{ reason }}
+                  </div>
+
+                  <details class="health-check-evidence">
+                    <summary>Details</summary>
+                    <div class="evidence-box mt-2">
+                      {{ evidence_table(item.evidence) }}
+                      <div class="mt-2">
+                        <strong>Recommended action:</strong>
+                        {{ item.recommendation }}
+                      </div>
+                    </div>
+                  </details>
+
+                </div>
+
+              {% endfor %}
+            </div>
+          </div>
+
+        </div>
+      {% endfor %}
+
+    </div>
+  </div>
+</section>
+
+{% else %}
+
+<div class="empty-state compact-card">
+  No best-practice assessment is available yet.
+</div>
+
+{% endif %}
+
 {% endblock %}

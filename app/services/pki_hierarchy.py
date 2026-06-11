@@ -384,9 +384,28 @@ def build_pki_hierarchy(cas: list[CertificateAuthority], health: dict | None = N
         else:
             unclassified.append(orphan)
 
+    role_order = {
+        "root": 0,
+        "issuing": 1,
+        "unknown": 2,
+        "external": 3,
+    }
+
+    inventory = sorted(
+        all_nodes,
+        key=lambda node: (
+            role_order.get(
+                node.get("role_key"),
+                9,
+            ),
+            str(node.get("name") or "").casefold(),
+        ),
+    )
+
     return {
         "hierarchies": hierarchies,
         "unclassified": unclassified,
+        "inventory": inventory,
         "ca_count": len(all_nodes),
         "independent_hierarchies": len(hierarchies),
         "root_count": len(roots),

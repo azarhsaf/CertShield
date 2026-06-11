@@ -19,9 +19,20 @@ def issue_fingerprint(category: str, object_type: str, object_name: str, evidenc
 
 
 def finding_fingerprint(finding: Finding) -> str:
-    evidence = finding.evidence_json or {}
-    evidence_key = evidence.get("stable_key") or evidence.get("template") or finding.rule_id or finding.title
-    return issue_fingerprint(finding.esc_category, "template", finding.affected_object, str(evidence_key))
+    # A finding acceptance must be specific to:
+    # category + template + finding title.
+    #
+    # Do not use evidence["template"] as the evidence key because
+    # multiple findings on the same template would then share one
+    # fingerprint.
+    evidence_key = finding.title or finding.rule_id
+
+    return issue_fingerprint(
+        finding.esc_category,
+        "template",
+        finding.affected_object,
+        str(evidence_key),
+    )
 
 
 def acceptance_is_active(acceptance: RiskAcceptance, today: date | None = None) -> bool:
@@ -36,9 +47,36 @@ def acceptance_is_active(acceptance: RiskAcceptance, today: date | None = None) 
         return False
 
 
-def active_acceptance_map(db: Session) -> dict[str, RiskAcceptance]:
-    rows = db.query(RiskAcceptance).filter(RiskAcceptance.status == "active").all()
-    return {row.fingerprint: row for row in rows if acceptance_is_active(row)}
+def active_acceptance_map(
+    db: Session,
+) -> dict[str, RiskAcceptance]:
+    rows = (
+        db.query(RiskAcceptance)
+        .filter(RiskAcceptance.status == "active")
+        .all()
+    )
+
+    result: dict[str, RiskAcceptance] = {}
+
+    for row in rows:
+        if not acceptance_is_active(row):
+            continue
+
+        # Preserve the stored fingerprint.
+        result[row.fingerprint] = row
+
+        # Compatibility alias for older template acceptances that
+        # were saved using a template-wide fingerprint.
+        if row.object_type == "template":
+            canonical = issue_fingerprint(
+                row.category,
+                "template",
+                row.object_name,
+                row.risk_title,
+            )
+            result.setdefault(canonical, row)
+
+    return result
 
 
 def decorate_findings(findings: Iterable[Finding], acceptances: dict[str, RiskAcceptance]) -> list[Finding]:

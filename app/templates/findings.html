@@ -2,11 +2,23 @@
 {% from 'macros/evidence.html' import evidence_table, status_badge %}
 {% block content %}
 <div class="page-title"><div><div class="eyebrow">ADCS Vulnerability Assessment</div><h1>Findings</h1><p>Can ADCS misconfiguration lead to certificate misuse or domain compromise?</p></div></div>
+{% if filter_template %}
+<div class="health-visibility-alert">
+  <span>
+    Showing findings for:
+    <strong>{{ filter_template }}</strong>
+  </span>
+  <a href="/findings">Clear filter</a>
+</div>
+{% endif %}
 {% if findings %}
 <div class="d-grid gap-2">
 {% for f in findings %}
 {% set evidence = f.evidence_json or {} %}
-<div class="card card-panel finding-card sev-border-{{f.severity|lower}}">
+<div
+  id="finding-{{ f.id }}"
+  class="card card-panel finding-card sev-border-{{f.severity|lower}}"
+>
   <div class="card-body compact-card">
     <div class="finding-head">
       <div><div class="small text-secondary">{{f.rule_id}}</div><h2>{{f.title}}</h2><div class="small">Affected: <strong>{{f.affected_object}}</strong></div></div>

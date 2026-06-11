@@ -7,6 +7,17 @@
   <tbody>
   {% for t in templates_data %}
   {% set eku = (t.eku|join(' ')|lower) %}
+  {% set risk =
+      template_risks.get(t.name)
+      or template_risks.get(t.display_name)
+      or {}
+  %}
+  {% set risk_issues = risk.get('issues', []) %}
+  {% set is_fallback =
+      t.raw_json.get('template_collection_fallback')
+      if t.raw_json
+      else false
+  %}
   <tr>
     <td><div class="fw-semibold">{{t.display_name}}</div><div class="small text-secondary">{{t.name}}</div></td>
     <td>
@@ -36,9 +47,6 @@
         <div class="small">Signatures: {{t.authorized_signatures}}</div>
       {% endif %}
     </td>
-    {% set risk = template_risks.get(t.name) or template_risks.get(t.display_name) or {} %}
-    {% set risk_issues = risk.get('issues', []) %}
-    {% set is_fallback = t.raw_json.get('template_collection_fallback') if t.raw_json else false %}
     <td>
       {% if risk.open %}
         <span class="badge text-bg-danger">Open risks: {{risk.open}}</span>
@@ -53,10 +61,22 @@
         <span class="badge text-bg-success">No open template findings</span>
       {% endif %}
       {% for issue in risk_issues[:3] %}
-        <div class="small text-secondary">{{issue.severity}} · {{issue.title}}{% if issue.accepted %} · Accepted{% endif %}</div>
+        <div class="small">
+          <a href="{{ issue.url }}">
+            {{ issue.severity }} · {{ issue.title }}
+          </a>
+          {% if issue.accepted %}
+            <span class="text-info">· Accepted</span>
+          {% endif %}
+        </div>
       {% endfor %}
+
       {% if risk.open or risk.accepted or risk_issues %}
-        <div class="small"><a href="/findings">Accept Risk / View Evidence</a></div>
+        <div class="small mt-1">
+          <a href="/findings?template={{ t.name | urlencode }}">
+            View all findings for this template
+          </a>
+        </div>
       {% endif %}
     </td>
     <td>

@@ -1,29 +1,492 @@
 {% extends 'base.html' %}
 {% from 'macros/evidence.html' import evidence_table, status_badge %}
+
 {% block content %}
-<div class="page-title"><div><div class="eyebrow">Operational Availability</div><h1>PKI Health</h1><p>Can the PKI issue certificates and can clients validate certificates without outage?</p></div></div>
+
 {% if health %}
-{% if health.limited_visibility %}<div class="alert alert-warning compact-alert"><strong>Limited Visibility:</strong> more than 40% of PKI health checks are Not Assessed, so the health score is capped. Run the latest collector without <code>-SkipHealth</code>, <code>-SkipCrl</code>, or <code>-SkipIssued</code> to collect CA certificate, CRL, AIA, OCSP, and issuance evidence.</div>{% endif %}
-<div class="metric-grid mb-3">
-  <div class="metric-card"><div class="metric-title">Health Status</div><div class="metric-value status-word-sm">{{health.status}}</div><div class="small text-secondary">Supporting score: {{health.score if health.score is not none else 'Unknown'}}</div></div>
-  <div class="metric-card"><div class="metric-title">Healthy</div><div class="metric-value">{{health.counts.Healthy or 0}}</div></div>
-  <div class="metric-card"><div class="metric-title">Needs Attention</div><div class="metric-value">{{health.counts['Needs Attention'] or health.counts.Warning or 0}}</div></div>
-  <div class="metric-card"><div class="metric-title">Critical</div><div class="metric-value">{{health.counts.Critical or 0}}</div></div>
-  <div class="metric-card"><div class="metric-title">Not Assessed</div><div class="metric-value">{{health.counts['Not Assessed'] or 0}}</div></div>
-</div>
-<div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">What CertShield Collects for Health</h2><div class="health-how-grid"><div><strong>CA certificate</strong><div class="small text-secondary">Fetched with <code>certutil -config &lt;CAHost\CAName&gt; -ca.cert</code>.</div></div><div><strong>CRL / CDP</strong><div class="small text-secondary">Extracted from CA certificate CDP and <code>CA\CRLPublicationURLs</code>; HTTP CRLs are downloaded and parsed for nextUpdate.</div></div><div><strong>AIA</strong><div class="small text-secondary">Extracted from AIA extension and <code>CA\CACertPublicationURLs</code>; HTTP URLs are probed.</div></div><div><strong>OCSP</strong><div class="small text-secondary">OCSP URLs are extracted from AIA. If no URL exists, status is Not Configured, not Healthy.</div></div><div><strong>Issued certificates</strong><div class="small text-secondary">Queried per CA with <code>certutil -view</code>; the collector account needs CA database read access.</div></div></div></div></div>
-<div class="row g-3 mb-3">
-  <div class="col-xl-8">
-    {% for category in ['CA Service Health', 'CA Certificate Health', 'CRL Health', 'AIA Health', 'OCSP Health', 'Certificate Issuance Health', 'Template Health'] %}
-    <div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">{{category}}</h2><div class="table-responsive"><table class="table modern-table table-sm align-middle"><thead><tr><th>Check</th><th>Status</th><th>Affected</th><th>Evidence and Collection Details</th></tr></thead><tbody>{% for item in health['items'] if item.category == category %}<tr><td class="text-wrap-sm">{{item.title}}</td><td>{{status_badge(item.status)}}</td><td class="text-wrap-sm">{{item.affected_object}}</td><td class="evidence-cell">{{evidence_table(item.evidence)}}</td></tr>{% else %}<tr><td colspan="4" class="text-secondary">No {{category}} records in latest scan.</td></tr>{% endfor %}</tbody></table></div></div></div>
-    {% endfor %}
+{% set counts = health.get('counts', {}) %}
+{% set critical_count = counts.get('Critical', 0) %}
+{% set warning_count =
+    counts.get('Needs Attention', 0)
+    + counts.get('Warning', 0)
+    + counts.get('Degraded', 0)
+%}
+{% set healthy_count = counts.get('Healthy', 0) %}
+{% set not_assessed_count =
+    counts.get('Not Assessed', 0)
+    + counts.get('Unknown', 0)
+    + counts.get('Present / Not Tested', 0)
+%}
+{% set not_configured_count =
+    counts.get('Not Configured', 0)
+%}
+{% set expiry_count = health.get('expiry_risks', []) | length %}
+{% set health_total_count = health.get('items', []) | length %}
+{% set health_assessed_count = health_total_count - not_assessed_count %}
+{% set platform_evidence_gap_count =
+    registry.get('coverage_gaps', []) | length
+    if registry
+    else 0
+%}
+{% set problem_statuses = [
+    'Critical',
+    'Warning',
+    'Degraded',
+    'Needs Attention',
+    'Not Assessed',
+    'Unknown'
+] %}
+{% set categories = [
+    'CA Service Health',
+    'CA Certificate Health',
+    'CRL Health',
+    'AIA Health',
+    'OCSP Health',
+    'Certificate Issuance Health',
+    'Template Health'
+] %}
+
+<div class="page-title compact-hero">
+  <div>
+    <div class="eyebrow">Operational Readiness</div>
+    <h1>PKI Health</h1>
+    <p>Availability, certificate validity and revocation health at a glance.</p>
   </div>
-  <div class="col-xl-4">
-    <div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">Collector Coverage</h2><div class="kv"><span>Collector</span><strong>{{health.collector.version}}</strong></div><div class="kv"><span>Source Host</span><strong>{{health.collector.source_host}}</strong></div><div class="kv"><span>Last Successful Scan</span><strong>{{health.collector.last_successful_scan}}</strong></div><div class="kv"><span>Last Failed Scan</span><strong>{{health.collector.last_failed_scan or 'None recorded'}}</strong></div></div></div>
-    <div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">Why this status?</h2><ul class="compact-list">{% for item in health.score_explanation %}<li>{{item}}</li>{% else %}<li>No additional health status reasons were produced.</li>{% endfor %}</ul></div></div>
-    <div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">Shared Evidence Coverage Gaps</h2><ul class="compact-list">{% for gap in registry.coverage_gaps[:5] %}<li>{{gap.category}} · {{gap.title}} · {{gap.object_name}}</li>{% else %}<li>No registry coverage gaps affecting health.</li>{% endfor %}</ul></div></div><div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">Expiry Risks</h2>{% for risk in health.expiry_risks %}<span class="badge text-bg-warning me-1 mb-1">{{risk.type}} · {{risk.ca}} · {{risk.status}}</span>{% else %}<p class="text-secondary mb-0">No expiry risks detected from collected data.</p>{% endfor %}</div></div>
-    <div class="card card-panel"><div class="card-body compact-card"><h2 class="section-title">Recommendations</h2><ul class="compact-list">{% for rec in health.recommendations %}<li>{{rec}}</li>{% else %}<li>No active health recommendations.</li>{% endfor %}</ul></div></div>
+
+  <div class="health-hero-status">
+    {{ status_badge(health.get('status', 'Unknown')) }}
   </div>
 </div>
-{% else %}<div class="empty-state compact-card">No PKI health assessment available yet.</div>{% endif %}
+
+{% if health.get('limited_visibility') %}
+<a class="health-visibility-alert" href="/evidence-gaps">
+  <span>Visibility limited</span>
+  <strong>{{ not_assessed_count }} checks not assessed</strong>
+  <span>Review evidence gaps →</span>
+</a>
+{% endif %}
+
+<div class="health-metric-grid mb-3">
+
+  <a class="health-metric health-metric-primary" href="#health-issues">
+    <div class="health-metric-label">Health status</div>
+    <div class="health-metric-value health-metric-status">
+      {{ health.get('status', 'Unknown') }}
+    </div>
+    <div class="health-metric-meta">
+      Operational status from the latest scan
+      · {{ health.get('confidence', 'Unknown') }} confidence
+    </div>
+  </a>
+
+  <a class="health-metric health-metric-critical" href="#health-issues">
+    <div class="health-metric-label">Critical</div>
+    <div class="health-metric-value">{{ critical_count }}</div>
+    <div class="health-metric-meta">Immediate action</div>
+  </a>
+
+  <a class="health-metric health-metric-warning" href="#health-issues">
+    <div class="health-metric-label">Warnings</div>
+    <div class="health-metric-value">{{ warning_count }}</div>
+    <div class="health-metric-meta">Needs attention</div>
+  </a>
+
+  <a class="health-metric health-metric-unknown" href="/evidence-gaps">
+    <div class="health-metric-label">Health checks not assessed</div>
+    <div class="health-metric-value">{{ not_assessed_count }}</div>
+    <div class="health-metric-meta">
+      {% if not_assessed_count %}
+        Missing health evidence
+      {% else %}
+        All health checks assessed
+      {% endif %}
+    </div>
+  </a>
+
+  <a class="health-metric health-metric-coverage" href="#health-areas">
+    <div class="health-metric-label">Health checks assessed</div>
+    <div class="health-metric-value">
+      {{ health_assessed_count }}/{{ health_total_count }}
+    </div>
+    <div class="health-metric-meta">
+      {{ health.get('coverage', 0) }}% assessment completeness
+    </div>
+  </a>
+
+  <a class="health-metric health-metric-expiry" href="/evidence-gaps">
+    <div class="health-metric-label">Platform evidence gaps</div>
+    <div class="health-metric-value">
+      {{ platform_evidence_gap_count }}
+    </div>
+    <div class="health-metric-meta">
+      Missing evidence across CertShield
+    </div>
+  </a>
+
+</div>
+
+<div class="health-dashboard-grid mb-3">
+
+  <section class="card card-panel" id="health-issues">
+    <div class="card-body compact-card">
+
+      <div class="health-section-head">
+        <div>
+          <h2 class="section-title mb-1">Needs Attention</h2>
+          <div class="small text-secondary">
+            Only checks requiring action or additional evidence.
+          </div>
+        </div>
+        <a class="btn btn-sm btn-outline-primary" href="#health-areas">
+          All health checks
+        </a>
+      </div>
+
+      <div class="health-issue-list">
+        {% set issue_state = namespace(count=0) %}
+
+        {% for item in health.get('items', [])
+            if item.status in problem_statuses %}
+
+          {% set issue_state.count = issue_state.count + 1 %}
+          {% set ev = item.evidence or {} %}
+          {% set reason =
+              ev.get('reason')
+              or ev.get('collection_reason')
+              or ev.get('collection_status')
+              or item.recommendation
+          %}
+
+          {% if item.category == 'CA Service Health' %}
+            {% set reason =
+                'CA status: '
+                ~ ev.get('status', 'Not collected')
+                ~ ' · Host: '
+                ~ ev.get('dns_name', 'Unknown')
+            %}
+          {% endif %}
+
+          {% set target = '/cas' %}
+          {% if item.category == 'Template Health' %}
+            {% set target = '/templates' %}
+          {% elif item.category == 'Certificate Issuance Health' %}
+            {% set target = '/certificates' %}
+          {% endif %}
+
+          <div class="
+            health-issue-row
+            {% if item.status == 'Critical' %}
+              health-issue-critical
+            {% elif item.status in ['Warning', 'Degraded', 'Needs Attention'] %}
+              health-issue-warning
+            {% else %}
+              health-issue-unknown
+            {% endif %}
+          ">
+
+            <div class="health-issue-badge">
+              {{ status_badge(item.status) }}
+            </div>
+
+            <div class="health-issue-content">
+              <div class="health-issue-title">
+                {{ item.title }}
+              </div>
+
+              <div class="health-issue-object">
+                {{ item.category }} · {{ item.affected_object }}
+              </div>
+
+              <div class="health-issue-reason" title="{{ reason }}">
+                <strong>Why:</strong> {{ reason }}
+              </div>
+            </div>
+
+            <div class="health-issue-actions">
+              <a class="btn btn-sm btn-outline-primary" href="{{ target }}">
+                Open
+              </a>
+
+              <details class="health-inline-details">
+                <summary>Evidence</summary>
+                <div class="health-evidence-popover">
+                  {{ evidence_table(item.evidence) }}
+                </div>
+              </details>
+            </div>
+
+          </div>
+
+        {% endfor %}
+
+        {% if issue_state.count == 0 %}
+          <div class="health-empty-success">
+            <strong>No active operational health issues.</strong>
+            <span>All collected health checks are healthy.</span>
+          </div>
+        {% endif %}
+      </div>
+
+    </div>
+  </section>
+
+  <aside class="health-side-stack">
+
+    <section class="card card-panel" id="collector-coverage">
+      <div class="card-body compact-card">
+        <div class="health-section-head mb-2">
+          <h2 class="section-title mb-0">Health Assessment</h2>
+          <a class="small" href="/history">History</a>
+        </div>
+
+        <div class="health-coverage-score">
+          <strong>{{ health_assessed_count }}/{{ health_total_count }}</strong>
+          <span>
+            health checks assessed ·
+            {{ health.get('coverage', 0) }}% complete
+          </span>
+        </div>
+
+        <div class="kv">
+          <span>Collector</span>
+          <strong>{{ health.collector.version }}</strong>
+        </div>
+        <div class="kv">
+          <span>Source host</span>
+          <strong>{{ health.collector.source_host }}</strong>
+        </div>
+        <div class="kv">
+          <span>Latest scan</span>
+          <strong>{{ health.collector.last_successful_scan }}</strong>
+        </div>
+
+        <div class="kv">
+          <span>Platform evidence gaps</span>
+          <strong>{{ platform_evidence_gap_count }}</strong>
+        </div>
+
+        <div class="health-coverage-links">
+          <a href="/evidence-gaps">Review evidence gaps</a>
+          <a href="/history">Scan history</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="card card-panel" id="expiry-risks">
+      <div class="card-body compact-card">
+        <div class="health-section-head mb-2">
+          <h2 class="section-title mb-0">Certificate & CRL Expiry</h2>
+          <a class="small" href="#health-areas">Health details</a>
+        </div>
+
+        <div class="health-expiry-list">
+          {% for risk in health.get('expiry_risks', [])[:6] %}
+            <a class="health-expiry-row" href="#health-areas">
+              <div>
+                <strong>{{ risk.ca }}</strong>
+                {% set expiry_days = risk.get('days_remaining') %}
+                <span>
+                  {{ risk.get('type', 'Expiry item') }} ·
+                  {% if expiry_days is number %}
+                    {% if expiry_days < 0 %}
+                      expired {{ expiry_days | abs }} day(s) ago
+                    {% elif expiry_days == 0 %}
+                      expires today
+                    {% else %}
+                      expires in {{ expiry_days }} day(s)
+                    {% endif %}
+                  {% else %}
+                    {{ risk.get('reason', 'Expiry threshold reached') }}
+                  {% endif %}
+                </span>
+              </div>
+              {{ status_badge(risk.get('status', 'Warning')) }}
+            </a>
+          {% else %}
+            <div class="health-empty-success health-empty-compact">
+              <strong>No active expiry risks</strong>
+              <span>Collected expiry data is within threshold.</span>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+  </aside>
+
+</div>
+
+<section class="card card-panel" id="health-areas">
+  <div class="card-body compact-card">
+
+    <div class="health-section-head mb-2">
+      <div>
+        <h2 class="section-title mb-1">Health Areas</h2>
+        <div class="small text-secondary">
+          Expand an area only when detailed review is needed.
+        </div>
+      </div>
+    </div>
+
+    <div class="accordion health-area-accordion" id="healthAreaAccordion">
+
+      {% for category in categories %}
+
+        {% set category_state = namespace(
+            total=0,
+            healthy=0,
+            critical=0,
+            warning=0,
+            not_configured=0,
+            not_tested=0,
+            not_assessed=0
+        ) %}
+
+        {% for item in health.get('items', [])
+            if item.category == category %}
+
+          {% set category_state.total = category_state.total + 1 %}
+
+          {% if item.status == 'Healthy' %}
+            {% set category_state.healthy = category_state.healthy + 1 %}
+          {% elif item.status == 'Critical' %}
+            {% set category_state.critical = category_state.critical + 1 %}
+          {% elif item.status in ['Warning', 'Degraded', 'Needs Attention'] %}
+            {% set category_state.warning = category_state.warning + 1 %}
+          {% elif item.status == 'Not Configured' %}
+            {% set category_state.not_configured =
+                category_state.not_configured + 1 %}
+          {% elif item.status == 'Present / Not Tested' %}
+            {% set category_state.not_tested =
+                category_state.not_tested + 1 %}
+          {% else %}
+            {% set category_state.not_assessed =
+                category_state.not_assessed + 1 %}
+          {% endif %}
+
+        {% endfor %}
+
+        <div class="accordion-item health-area-item">
+
+          <h3 class="accordion-header" id="health-heading-{{ loop.index }}">
+            <button
+              class="accordion-button collapsed health-area-button"
+              type="button"
+              data-bs-toggle="collapse"
+              data-bs-target="#health-area-{{ loop.index }}"
+              aria-expanded="false"
+              aria-controls="health-area-{{ loop.index }}"
+            >
+              <span class="health-area-name">{{ category }}</span>
+
+              <span class="health-area-summary">
+                {% if category_state.critical %}
+                  <span class="badge status-critical">
+                    {{ category_state.critical }} critical
+                  </span>
+                {% endif %}
+
+                {% if category_state.warning %}
+                  <span class="badge status-warning">
+                    {{ category_state.warning }} warning
+                  </span>
+                {% endif %}
+
+                {% if category_state.not_configured %}
+                  <span class="badge status-not-configured">
+                    {{ category_state.not_configured }} not configured
+                  </span>
+                {% endif %}
+
+                {% if category_state.not_tested %}
+                  <span class="badge status-present---not-tested">
+                    {{ category_state.not_tested }} not tested
+                  </span>
+                {% endif %}
+
+                {% if category_state.not_assessed %}
+                  <span class="badge status-not-assessed">
+                    {{ category_state.not_assessed }} not assessed
+                  </span>
+                {% endif %}
+
+                {% if category_state.healthy %}
+                  <span class="badge status-healthy">
+                    {{ category_state.healthy }} healthy
+                  </span>
+                {% endif %}
+              </span>
+            </button>
+          </h3>
+
+          <div
+            id="health-area-{{ loop.index }}"
+            class="accordion-collapse collapse"
+            aria-labelledby="health-heading-{{ loop.index }}"
+          >
+            <div class="accordion-body health-area-body">
+
+              {% for item in health.get('items', [])
+                  if item.category == category %}
+
+                {% set ev = item.evidence or {} %}
+                {% set reason =
+                    ev.get('reason')
+                    or ev.get('collection_reason')
+                    or ev.get('collection_status')
+                    or item.recommendation
+                %}
+
+                <div class="health-check-row">
+
+                  <div class="health-check-main">
+                    <strong>{{ item.title }}</strong>
+                    <span>{{ item.affected_object }}</span>
+                  </div>
+
+                  <div>
+                    {{ status_badge(item.status) }}
+                  </div>
+
+                  <div
+                    class="health-check-reason"
+                    title="{{ reason }}"
+                  >
+                    {{ reason }}
+                  </div>
+
+                  <details class="health-check-evidence">
+                    <summary>Evidence</summary>
+                    <div class="evidence-box mt-2">
+                      {{ evidence_table(item.evidence) }}
+                    </div>
+                  </details>
+
+                </div>
+
+              {% else %}
+                <div class="text-secondary py-2">
+                  No records were produced for this health area.
+                </div>
+              {% endfor %}
+
+            </div>
+          </div>
+
+        </div>
+
+      {% endfor %}
+
+    </div>
+  </div>
+</section>
+
+{% else %}
+
+<div class="empty-state compact-card">
+  No PKI health assessment is available yet.
+</div>
+
+{% endif %}
+
 {% endblock %}

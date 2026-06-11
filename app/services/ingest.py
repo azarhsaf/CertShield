@@ -16,6 +16,7 @@ from app.models.entities import (
 from app.schemas.collector import CollectorPayload
 from app.services.assessment_registry import build_assessment_registry
 from app.services.best_practices import assess_best_practices
+from app.services.governance_evidence import governance_evidence_map
 from app.services.health_assessment import assess_pki_health
 from app.services.posture_assessment import assess_pki_posture
 from app.services.risk_acceptance import active_acceptance_map
@@ -142,7 +143,13 @@ class IngestService:
             payload.source_host,
             payload.health_coverage,
         )
-        best_practices = assess_best_practices(cas, templates, certificates, persisted_findings)
+        best_practices = assess_best_practices(
+            cas,
+            templates,
+            certificates,
+            persisted_findings,
+            governance_evidence_map(db),
+        )
         registry = build_assessment_registry(
             cas, templates, certificates, persisted_findings, health, best_practices, active_acceptance_map(db)
         )

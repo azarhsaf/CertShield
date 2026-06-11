@@ -129,7 +129,6 @@ def _score(items: list[dict]) -> tuple[int | None, str, list[str], str, int, lis
     top_factors: list[str] = []
     assessed_weight = 0
     weighted_points = 0
-    total_weight = sum(category_weights.values())
     category_scores: dict[str, list[int]] = {}
 
     for item in items:
@@ -149,8 +148,32 @@ def _score(items: list[dict]) -> tuple[int | None, str, list[str], str, int, lis
         return None, "Unknown", ["No meaningful CA certificate, CRL, AIA, OCSP, or issuance evidence was collected."], "Unknown", 0, top_factors[:8]
 
     score = round(weighted_points / assessed_weight)
-    coverage = round(assessed_weight * 100 / total_weight)
-    confidence = "High" if coverage >= 80 else "Medium" if coverage >= 50 else "Low"
+
+    # Completeness measures whether CertShield reached a definitive
+    # assessment result. "Not Configured" is definitive. A resource
+    # that is present but was not tested is only partially assessed.
+    incomplete_assessment_statuses = {
+        "Not Assessed",
+        "Unknown",
+        "Present / Not Tested",
+    }
+
+    assessed_items = sum(
+        1
+        for item in items
+        if item.get("status") not in incomplete_assessment_statuses
+    )
+
+    coverage = round(assessed_items * 100 / len(items))
+    coverage = max(0, min(100, coverage))
+
+    confidence = (
+        "High"
+        if coverage >= 80
+        else "Medium"
+        if coverage >= 50
+        else "Low"
+    )
     explanations.append(
         f"Weighted health score uses collected categories only; scan coverage is {coverage}% with {confidence} confidence."
     )
@@ -309,9 +332,30 @@ def _crl_item(ca: CertificateAuthority, config: dict) -> tuple[dict, dict | None
         "Publish valid CRLs at reachable CDP URLs and monitor nextUpdate values.",
         "validation",
     )
+    # Expiry Watch must contain only actual freshness/expiry risks.
+    # Missing publication URLs and unreachable CRLs remain operational
+    # Health issues, but they are not expiry events.
     risk = None
-    if status in {"Critical", "Warning"}:
-        risk = {"type": "CRL", "ca": ca.name, "days_remaining": days, "status": status}
+
+    if days is not None and days < 0:
+        risk = {
+            "type": "CRL",
+            "ca": ca.name,
+            "days_remaining": days,
+            "expires_at": next_update,
+            "status": "Critical",
+            "reason": f"CRL expired {abs(days)} day(s) ago.",
+        }
+    elif days is not None and days <= 3:
+        risk = {
+            "type": "CRL",
+            "ca": ca.name,
+            "days_remaining": days,
+            "expires_at": next_update,
+            "status": "Warning",
+            "reason": f"CRL expires in {days} day(s).",
+        }
+
     return item, risk
 
 def _aia_item(ca: CertificateAuthority, config: dict) -> dict:
