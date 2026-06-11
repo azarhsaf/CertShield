@@ -1,75 +1,606 @@
 {% extends 'base.html' %}
-{% from 'macros/evidence.html' import status_badge, evidence_table, display_value %}
+{% from 'macros/evidence.html'
+   import evidence_table, display_value %}
+
 {% macro url_list(urls) -%}
-  {%- if urls -%}<div class="pill-list">{%- for url in urls -%}<a class="evidence-pill" href="{{url}}" target="_blank" rel="noreferrer">{{url}}</a>{%- endfor -%}</div>{%- else -%}<span class="text-secondary">Not collected</span>{%- endif -%}
+  {% if urls %}
+    <div class="hierarchy-url-list">
+      {% for url in urls %}
+        <a href="{{ url }}"
+           target="_blank"
+           rel="noreferrer">
+          {{ url }}
+        </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <span class="text-secondary">Not configured or not collected</span>
+  {% endif %}
 {%- endmacro %}
-{% macro issue_list(items, empty_text) -%}
-  <ul class="compact-list">{% for item in items[:5] %}<li>{{item.category}}: {{item.title}} ({{item.status}})</li>{% else %}<li class="text-warning">{{empty_text}}</li>{% endfor %}</ul>
+
+{% macro compact_status(value) -%}
+  {% set normalized = value|string|lower %}
+  <span class="
+    hierarchy-status
+    {% if normalized in [
+        'healthy',
+        'normal',
+        'hsm protected',
+        'pass',
+        'collected'
+    ] %}
+      hierarchy-status-good
+    {% elif normalized in [
+        'critical',
+        'high',
+        'high risk',
+        'expired',
+        'collection failed'
+    ] %}
+      hierarchy-status-critical
+    {% elif normalized in [
+        'warning',
+        'software key',
+        'unknown provider',
+        'needs attention'
+    ] %}
+      hierarchy-status-warning
+    {% else %}
+      hierarchy-status-neutral
+    {% endif %}
+  ">
+    {{ value }}
+  </span>
 {%- endmacro %}
+
+{% macro role_icon(node) -%}
+  <div class="
+    hierarchy-role-icon
+    hierarchy-role-{{ node.role_key }}
+  ">
+    {% if node.role_key == 'root' %}
+      R
+    {% elif node.role_key == 'issuing' %}
+      I
+    {% else %}
+      ?
+    {% endif %}
+  </div>
+{%- endmacro %}
+
+{% macro node_anchor(node) -%}
+ca-{{ (node.id or node.name)
+      | lower
+      | replace(' ', '-')
+      | replace('_', '-')
+      | replace('|', '-')
+      | replace('\\', '-')
+      | replace('/', '-')
+      | replace(':', '-')
+      | replace('.', '-')
+      | replace(',', '-')
+      | replace('=', '-') }}
+{%- endmacro %}
+
 {% macro ca_node(node, depth=0) -%}
-<div class="ca-node depth-{{depth}} {{'unclassified-node' if not node.metadata_collected else ''}}">
-  {% if node.metadata_warning %}<div class="alert alert-warning compact-alert mb-2">{{node.metadata_warning}}</div>{% endif %}
-  {% if node.external_parent_reason %}<div class="alert alert-warning compact-alert mb-2">{{node.external_parent_reason}}</div>{% endif %}
-  <div class="ca-node-main">
-    <div>
-      <strong>{{node.name}}</strong>
-      <div class="small text-secondary">Role: {{node.role}} · Host: {{node.dns_name or 'No host collected'}} · Config: {{node.config_string or 'Not collected'}}</div>
-      <div class="small">Cert Expiry: <strong>{{node.not_after}}</strong> / {{node.days_remaining}} days · CRL: {{node.crl_status}} · AIA: {{node.aia_status}} · OCSP: {{node.ocsp_status}} · Key: {{node.key_protection.status}}</div>
-      {% if node.key_protection.reason %}
-      <div class="small {{ 'text-warning' if node.key_protection.status in ['Collection Failed', 'Not Assessed', 'Software Key'] else 'text-secondary' }}">
-        Key evidence: {{node.key_protection.reason}}
+  <div class="hierarchy-tree-node depth-{{ depth }}">
+
+    <div class="
+      hierarchy-node-card
+      hierarchy-node-{{ node.role_key }}
+    ">
+
+      {{ role_icon(node) }}
+
+      <div class="hierarchy-node-main">
+        <div class="hierarchy-node-title">
+          <strong>{{ node.name }}</strong>
+          <span>{{ node.role }}</span>
+        </div>
+
+        <div class="hierarchy-node-host">
+          {{ node.dns_name or 'Host not collected' }}
+        </div>
+
+        <div class="hierarchy-node-signals">
+          {{ compact_status(node.risk_badge) }}
+          {{ compact_status(node.key_protection.status) }}
+          {{ compact_status('CRL ' ~ node.crl_status) }}
+
+          {% if node.days_remaining is number %}
+            <span class="
+              hierarchy-status
+              {% if node.days_remaining < 0 %}
+                hierarchy-status-critical
+              {% elif node.days_remaining <= 30 %}
+                hierarchy-status-warning
+              {% else %}
+                hierarchy-status-good
+              {% endif %}
+            ">
+              Cert {{ node.days_remaining }}d
+            </span>
+          {% endif %}
+        </div>
       </div>
-      {% endif %}
+
+      <a class="hierarchy-node-open js-ca-details"
+         href="#{{ node_anchor(node) }}"
+         data-ca-target="{{ node_anchor(node) }}">
+        Details
+      </a>
+
     </div>
-    <div class="ca-node-badges">
-    <span class="badge text-bg-{{'success' if node.metadata_collected else 'secondary'}}">
-      Certificate: {{'Collected' if node.metadata_collected else 'Missing'}}
-    </span>
 
-    <span class="badge text-bg-{{'success' if node.crl_urls else 'secondary'}}">
-      CRL: {{'Collected' if node.crl_urls else 'Not assessed'}}
-    </span>
+    {% if node.metadata_warning %}
+      <div class="hierarchy-inline-message">
+        {{ node.metadata_warning }}
+      </div>
+    {% endif %}
 
-    <span class="badge text-bg-{{'success' if node.aia_urls else 'secondary'}}">
-      AIA: {{'Collected' if node.aia_urls else 'Not assessed'}}
-    </span>
+    {% if node.external_parent_reason %}
+      <div class="hierarchy-inline-message">
+        {{ node.external_parent_reason }}
+      </div>
+    {% endif %}
 
-    <span class="badge text-bg-{{
-      'success' if node.key_protection.status == 'HSM Protected'
-      else 'warning' if node.key_protection.status in ['Software Key', 'Unknown Provider']
-      else 'secondary'
-    }}">
-      Key: {{node.key_protection.status}}
-    </span>
+    {% if node.children %}
+      <div class="hierarchy-tree-children">
+        {% for child in node.children %}
+          {{ ca_node(child, depth + 1) }}
+        {% endfor %}
+      </div>
+    {% endif %}
 
-    <span class="badge sev-{{
-      'high' if node.risk_badge == 'High'
-      else 'critical' if node.risk_badge == 'Critical'
-      else 'medium' if node.risk_badge in ['Warning', 'Not Assessed']
-      else 'low'
-    }}">
-      Overall: {{node.risk_badge}}
-    </span>
   </div>
-  </div>
-  <details class="ca-details"><summary>Certificate, publication, key protection, and assessment evidence</summary>
-    <div class="row g-2 mt-2">
-      <div class="col-lg-6"><h3 class="mini-heading">Certificate</h3>{{ evidence_table({'subject': node.subject, 'issuer': node.issuer, 'serial_number': node.serial_number, 'thumbprint': node.thumbprint, 'valid_from': node.not_before, 'valid_to': node.not_after, 'days_remaining': node.days_remaining, 'signature_algorithm': node.signature_algorithm, 'public_key_algorithm': node.public_key_algorithm, 'key_size': node.key_size, 'subject_key_identifier': node.subject_key_identifier, 'authority_key_identifier': node.authority_key_identifier, 'self_signed': node.is_self_signed}) }}</div>
-      <div class="col-lg-6"><h3 class="mini-heading">Publication</h3><div class="evidence-table"><div class="evidence-row"><div class="evidence-label">CRL URLs</div><div class="evidence-value">{{url_list(node.crl_urls)}}</div></div><div class="evidence-row"><div class="evidence-label">AIA URLs</div><div class="evidence-value">{{url_list(node.aia_urls)}}</div></div><div class="evidence-row"><div class="evidence-label">OCSP URLs</div><div class="evidence-value">{{url_list(node.ocsp_urls)}}</div></div><div class="evidence-row"><div class="evidence-label">CRL Next Update</div><div class="evidence-value">{{node.crl_next_update}}</div></div><div class="evidence-row"><div class="evidence-label">CRL Reachability</div><div class="evidence-value">{{display_value(node.crl_reachable)}}</div></div></div></div>
-    </div>
-    <div class="row g-2 mt-2"><div class="col-lg-6"><h3 class="mini-heading">Key Protection</h3>{{ evidence_table(node.key_protection) }}</div><div class="col-lg-6"><h3 class="mini-heading">Published Templates / Profiles</h3>{{display_value(node.published_templates)}}</div></div>
-    <div class="row g-2 mt-2"><div class="col-lg-6"><h3 class="mini-heading">Health Issues</h3>{{ issue_list(node.health_issues, 'Health cannot be fully assessed because CA certificate/CDP/AIA evidence is missing or incomplete.') }}</div><div class="col-lg-6"><h3 class="mini-heading">Best-Practice Gaps</h3>{{ issue_list(node.best_practice_gaps, 'Best-practice posture is Not Assessed until collector evidence is available.') }}</div></div>
-  </details>
-  {% for child in node.children %}{{ ca_node(child, depth + 1) }}{% endfor %}
-</div>
 {%- endmacro %}
+
 {% block content %}
-<div class="page-title"><div><div class="eyebrow">PKI Environment</div><h1>PKI Hierarchy</h1><p>Certificate chain, CA publication paths, revocation status, and key protection.</p></div></div>
-{% if hierarchy.metadata_missing %}<div class="alert alert-warning compact-alert"><strong>Hierarchy incomplete:</strong> {{hierarchy.metadata_warning}} CAs without certificate metadata are listed as Unclassified, not as fake roots.</div>{% endif %}
-<div class="metric-grid mb-3"><div class="metric-card"><div class="metric-title">PKI Hierarchies</div><div class="metric-value">{{hierarchy.independent_hierarchies}}</div></div><div class="metric-card"><div class="metric-title">Root CAs</div><div class="metric-value">{{hierarchy.root_count}}</div></div><div class="metric-card"><div class="metric-title">Issuing CAs</div><div class="metric-value">{{hierarchy.issuing_count}}</div></div><div class="metric-card"><div class="metric-title">Unclassified CAs</div><div class="metric-value">{{hierarchy.unclassified_count}}</div></div><div class="metric-card"><div class="metric-title">CRL Issues</div><div class="metric-value">{{hierarchy.crl_issue_count}}</div></div><div class="metric-card"><div class="metric-title">Key Warnings</div><div class="metric-value">{{hierarchy.key_warning_count}}</div></div></div>
-{% for pki in hierarchy.hierarchies %}
-<div class="card card-panel mb-3"><div class="card-body compact-card"><div class="d-flex justify-content-between align-items-start"><h2 class="section-title">{{pki.name}} · {{pki.root.name}}{% if pki.external_root %} <span class="badge text-bg-warning">External / Uncollected Parent</span>{% endif %}</h2>{{status_badge(pki.health)}}</div>{{ ca_node(pki.root) }}</div></div>
-{% else %}{% if hierarchy.ca_count %}<div class="empty-state compact-card">No certificate-backed PKI hierarchy could be built from the latest scan.</div>{% endif %}{% endfor %}
-{% if hierarchy.unclassified %}<div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">Unclassified CAs - Insufficient Certificate Metadata</h2><p class="text-warning small">Cannot build PKI hierarchy because CA certificate Subject/Issuer was not collected for these CAs. Run the latest ADCS collector with CA certificate evidence enabled.</p>{% for node in hierarchy.unclassified %}{{ ca_node(node) }}{% endfor %}</div></div>{% endif %}
-{% if not hierarchy.hierarchies and not hierarchy.unclassified %}<div class="empty-state compact-card">No CAs collected yet.</div>{% endif %}
+
+<div class="page-title compact-hero">
+  <div>
+    <div class="eyebrow">PKI Environment</div>
+    <h1>PKI Hierarchy & CA Inventory</h1>
+    <p>
+      Visual trust chains with compact operational and
+      cryptographic status for every Certificate Authority.
+    </p>
+  </div>
+
+  {% if scan %}
+    <div class="hierarchy-scan-label">
+      <span>Latest scan</span>
+      <strong>#{{ scan.id }}</strong>
+      <small>{{ scan.domain_name }}</small>
+    </div>
+  {% endif %}
+</div>
+
+<div class="hierarchy-summary-grid mb-3">
+
+  <a href="#ca-inventory" class="hierarchy-summary-card">
+    <span>Total CAs</span>
+    <strong>{{ hierarchy.ca_count }}</strong>
+    <small>Collected inventory</small>
+  </a>
+
+  <a href="#hierarchy-view" class="hierarchy-summary-card">
+    <span>PKI chains</span>
+    <strong>{{ hierarchy.independent_hierarchies }}</strong>
+    <small>Independent trust paths</small>
+  </a>
+
+  <a href="#ca-inventory" class="hierarchy-summary-card">
+    <span>Root CAs</span>
+    <strong>{{ hierarchy.root_count }}</strong>
+    <small>Trust anchors</small>
+  </a>
+
+  <a href="#ca-inventory" class="hierarchy-summary-card">
+    <span>Issuing CAs</span>
+    <strong>{{ hierarchy.issuing_count }}</strong>
+    <small>Certificate issuers</small>
+  </a>
+
+  <a href="/pki-health#health-areas"
+     class="hierarchy-summary-card">
+    <span>CRL alerts</span>
+    <strong>{{ hierarchy.crl_issue_count }}</strong>
+    <small>Review in Health</small>
+  </a>
+
+  <a href="/pki-posture#governance-controls"
+     class="hierarchy-summary-card">
+    <span>Key alerts</span>
+    <strong>{{ hierarchy.key_warning_count }}</strong>
+    <small>Protection review</small>
+  </a>
+
+</div>
+
+{% if hierarchy.metadata_missing %}
+  <div class="hierarchy-visibility-note">
+    <strong>
+      {{ hierarchy.unclassified_count }}
+      CA{{ '' if hierarchy.unclassified_count == 1 else 's' }}
+      could not be placed in a verified chain.
+    </strong>
+    <span>
+      Certificate Subject/Issuer evidence is incomplete.
+      The CA remains visible in the inventory below.
+    </span>
+  </div>
+{% endif %}
+
+<section class="card card-panel mb-3"
+         id="hierarchy-view">
+  <div class="card-body compact-card">
+
+    <div class="health-section-head mb-2">
+      <div>
+        <h2 class="section-title mb-1">Trust Chain View</h2>
+        <div class="small text-secondary">
+          Root and issuing relationships based on CA certificate evidence.
+        </div>
+      </div>
+    </div>
+
+    <div class="hierarchy-canvas">
+
+      {% for pki in hierarchy.hierarchies %}
+        <div class="hierarchy-chain">
+
+          <div class="hierarchy-chain-header">
+            <div>
+              <strong>{{ pki.name }}</strong>
+              <span>{{ pki.root.name }}</span>
+            </div>
+
+            {{ compact_status(pki.health) }}
+          </div>
+
+          {% if pki.external_root %}
+            <div class="hierarchy-external-label">
+              Parent CA was not included in the scan.
+            </div>
+          {% endif %}
+
+          {{ ca_node(pki.root) }}
+
+        </div>
+      {% else %}
+        <div class="empty-state compact-card">
+          No certificate-backed trust chain could be built.
+          All collected CAs remain available in the inventory.
+        </div>
+      {% endfor %}
+
+      {% if hierarchy.unclassified %}
+        <details class="hierarchy-unclassified">
+          <summary>
+            Unclassified CAs
+            <span>{{ hierarchy.unclassified_count }}</span>
+          </summary>
+
+          <div class="hierarchy-unclassified-list">
+            {% for node in hierarchy.unclassified %}
+              {{ ca_node(node) }}
+            {% endfor %}
+          </div>
+        </details>
+      {% endif %}
+
+    </div>
+  </div>
+</section>
+
+<section class="card card-panel"
+         id="ca-inventory">
+  <div class="card-body compact-card">
+
+    <div class="hierarchy-inventory-header">
+
+      <div>
+        <h2 class="section-title mb-1">CA Inventory</h2>
+        <div class="small text-secondary">
+          {{ hierarchy.inventory | length }}
+          Certificate Authorities from the latest scan.
+        </div>
+      </div>
+
+      <div class="hierarchy-search">
+        <input id="caInventorySearch"
+               class="form-control form-control-sm"
+               type="search"
+               placeholder="Search CA, host or provider">
+      </div>
+
+    </div>
+
+    <div class="hierarchy-inventory-list"
+         id="caInventoryList">
+
+      {% for node in hierarchy.inventory %}
+
+        <article
+          id="{{ node_anchor(node) }}"
+          class="
+            ca-inventory-item
+            {% if loop.index > 6 %}
+              ca-inventory-extra
+            {% endif %}
+          "
+          data-search="{{
+            (
+              node.name ~ ' '
+              ~ node.dns_name ~ ' '
+              ~ node.role ~ ' '
+              ~ node.key_protection.provider
+            ) | lower
+          }}"
+        >
+
+          <div class="ca-inventory-summary">
+
+            {{ role_icon(node) }}
+
+            <div class="ca-inventory-name">
+              <strong>{{ node.name }}</strong>
+              <span>
+                {{ node.dns_name or 'Host not collected' }}
+              </span>
+            </div>
+
+            <div class="ca-inventory-role">
+              {{ node.role }}
+            </div>
+
+            <div class="ca-inventory-signals">
+              {{ compact_status(node.risk_badge) }}
+              {{ compact_status(node.key_protection.status) }}
+              {{ compact_status('CRL ' ~ node.crl_status) }}
+            </div>
+
+            <div class="ca-inventory-expiry">
+              {% if node.days_remaining is number %}
+                <strong>{{ node.days_remaining }}d</strong>
+                <span>certificate</span>
+              {% else %}
+                <strong>—</strong>
+                <span>expiry unknown</span>
+              {% endif %}
+            </div>
+
+          </div>
+
+          <details class="ca-inventory-details">
+            <summary>View CA evidence</summary>
+
+            <div class="ca-inventory-detail-grid">
+
+              <div>
+                <h3 class="mini-heading">Certificate</h3>
+                {{ evidence_table({
+                  'subject': node.subject,
+                  'issuer': node.issuer,
+                  'serial_number': node.serial_number,
+                  'thumbprint': node.thumbprint,
+                  'valid_from': node.not_before,
+                  'valid_to': node.not_after,
+                  'days_remaining': node.days_remaining,
+                  'signature_algorithm': node.signature_algorithm,
+                  'public_key_algorithm': node.public_key_algorithm,
+                  'key_size': node.key_size,
+                  'self_signed': node.is_self_signed
+                }) }}
+              </div>
+
+              <div>
+                <h3 class="mini-heading">Key Protection</h3>
+                {{ evidence_table(node.key_protection) }}
+              </div>
+
+              <div>
+                <h3 class="mini-heading">Publication</h3>
+
+                <div class="evidence-table">
+                  <div class="evidence-row">
+                    <div class="evidence-label">CRL</div>
+                    <div class="evidence-value">
+                      {{ url_list(node.crl_urls) }}
+                    </div>
+                  </div>
+
+                  <div class="evidence-row">
+                    <div class="evidence-label">AIA</div>
+                    <div class="evidence-value">
+                      {{ url_list(node.aia_urls) }}
+                    </div>
+                  </div>
+
+                  <div class="evidence-row">
+                    <div class="evidence-label">OCSP</div>
+                    <div class="evidence-value">
+                      {{ url_list(node.ocsp_urls) }}
+                    </div>
+                  </div>
+
+                  <div class="evidence-row">
+                    <div class="evidence-label">CRL next update</div>
+                    <div class="evidence-value">
+                      {{ node.crl_next_update }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 class="mini-heading">Assessment</h3>
+
+                <div class="ca-assessment-summary">
+                  <a href="/pki-health#health-areas">
+                    Health issues
+                    <strong>{{ node.health_issues | length }}</strong>
+                  </a>
+
+                  <a href="/pki-posture#governance-controls">
+                    Governance controls
+                    <strong>
+                      {{ node.best_practice_gaps | length }}
+                    </strong>
+                  </a>
+
+                  <a href="/templates">
+                    Published templates
+                    <strong>
+                      {{ node.published_templates | length }}
+                    </strong>
+                  </a>
+                </div>
+              </div>
+
+            </div>
+          </details>
+
+        </article>
+
+      {% else %}
+        <div class="empty-state compact-card">
+          No Certificate Authorities were collected.
+        </div>
+      {% endfor %}
+
+    </div>
+
+    {% if hierarchy.inventory | length > 6 %}
+      <button id="toggleCaInventory"
+              class="btn btn-sm btn-outline-primary mt-2"
+              type="button">
+        Show all {{ hierarchy.inventory | length }} CAs
+      </button>
+    {% endif %}
+
+  </div>
+</section>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const search = document.getElementById("caInventorySearch");
+  const toggle = document.getElementById("toggleCaInventory");
+  const cards = Array.from(
+    document.querySelectorAll(".ca-inventory-item")
+  );
+
+  let expanded = false;
+
+  function renderInventory() {
+    const query = (search?.value || "").trim().toLowerCase();
+    let matched = 0;
+
+    cards.forEach((card) => {
+      const matches = !query ||
+        card.dataset.search.includes(query);
+
+      if (matches) {
+        matched += 1;
+      }
+
+      const visible = matches &&
+        (expanded || query || matched <= 6);
+
+      card.hidden = !visible;
+    });
+
+    if (toggle) {
+      toggle.hidden = Boolean(query) || cards.length <= 6;
+      toggle.textContent = expanded
+        ? "Show fewer CAs"
+        : `Show all ${cards.length} CAs`;
+    }
+  }
+
+  search?.addEventListener("input", renderInventory);
+
+  toggle?.addEventListener("click", () => {
+    expanded = !expanded;
+    renderInventory();
+  });
+
+  document.querySelectorAll(".js-ca-details").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+
+      const targetId = link.dataset.caTarget;
+      const target = document.getElementById(targetId);
+
+      if (!target) {
+        return;
+      }
+
+      // Ensure CAs beyond the initial six are visible.
+      expanded = true;
+
+      if (search) {
+        search.value = "";
+      }
+
+      renderInventory();
+      target.hidden = false;
+
+      const evidencePanel = target.querySelector(
+        "details.ca-inventory-details"
+      );
+
+      if (evidencePanel) {
+        evidencePanel.open = true;
+      }
+
+      window.history.replaceState(
+        null,
+        "",
+        `#${targetId}`
+      );
+
+      window.requestAnimationFrame(() => {
+        target.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+
+        target.classList.add("ca-inventory-highlight");
+
+        window.setTimeout(() => {
+          target.classList.remove(
+            "ca-inventory-highlight"
+          );
+        }, 2200);
+      });
+    });
+  });
+
+  // Support direct URLs such as:
+  // /pki-hierarchy#ca-root-ca-name
+  if (window.location.hash.startsWith("#ca-")) {
+    const targetId = window.location.hash.substring(1);
+    const target = document.getElementById(targetId);
+
+    if (target) {
+      expanded = true;
+      renderInventory();
+      target.hidden = false;
+
+      const evidencePanel = target.querySelector(
+        "details.ca-inventory-details"
+      );
+
+      if (evidencePanel) {
+        evidencePanel.open = true;
+      }
+    }
+  }
+
+  renderInventory();
+});
+</script>
+
 {% endblock %}

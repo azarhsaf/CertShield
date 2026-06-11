@@ -1,260 +1,755 @@
 {% extends 'base.html' %}
+{% from 'macros/evidence.html' import evidence_table %}
+
 {% block content %}
 
-<div class="hero-panel compact-hero mb-3">
-  <div>
-    <div class="eyebrow">CertShield PKI Posture Management</div>
-    <h1>PKI Posture</h1>
-    <p>Prioritized, evidence-backed risks affecting your PKI environment.</p>
-  </div>
-</div>
+{% set accepted_governance =
+    accepted_governance | default([], true)
+%}
+{% set accepted_template_risks =
+    accepted_template_risks | default([], true)
+%}
+
+{% set posture = posture | default({}, true) %}
+{% set registry = registry | default({}, true) %}
+{% set assurance = assurance | default({}, true) %}
+{% set governance_groups =
+    governance_groups | default({}, true)
+%}
+{% set governance_counts =
+    governance_counts | default({
+        'verified': 0,
+        'action': 0,
+        'input_needed': 0,
+        'accepted': 0
+    }, true)
+%}
+{% set hierarchy_summary =
+    hierarchy_summary | default({}, true)
+%}
+{% set csrf_token = csrf_token | default('', true) %}
 
 {% if posture %}
-{% set confirmed_risks = registry.get('confirmed_risks', registry.get('open_risks', [])) if registry else [] %}
-{% set accepted_risks = registry.get('accepted_risks', []) if registry else [] %}
-{% set coverage_gaps = registry.get('coverage_gaps', []) if registry else [] %}
-{% set confirmed_risk_count = registry.get('confirmed_risk_count', confirmed_risks|length) if registry else 0 %}
-{% set coverage_gap_count = registry.get('coverage_gap_count', coverage_gaps|length) if registry else 0 %}
+{% set confirmed_risks =
+    registry.get('confirmed_risks')
+    or registry.get('open_risks')
+    or []
+%}
+{% set accepted_risks =
+    registry.get('accepted_risks')
+    or []
+%}
+{% set coverage_gaps =
+    registry.get('coverage_gaps')
+    or []
+%}
+{% set posture_state =
+    assurance_level | default(
+        'Unknown / Not Enough Data',
+        true
+    )
+%}
+{% set posture_label = {
+    'Critical': 'Immediate Attention',
+    'High Risk': 'Action Required',
+    'Needs Attention': 'Review Recommended',
+    'Good': 'Good',
+    'Excellent': 'Excellent'
+}.get(posture_state, posture_state) %}
 
-<div class="row g-3 mb-3">
-
-  <div class="col-12 col-md-6 col-xl-3">
-    <div class="metric-card h-100">
-      <div class="d-flex justify-content-between align-items-start">
-        <div>
-          <div class="metric-title">PKI Status</div>
-          <div class="metric-value status-word">
-            {{ assurance.assurance_level or posture.assurance_level or posture.status }}
-          </div>
-          <button
-            class="btn btn-link btn-sm p-0 mt-2 text-decoration-none"
-            type="button"
-            data-bs-toggle="collapse"
-            data-bs-target="#postureStatusExplanation"
-            aria-expanded="false"
-            aria-controls="postureStatusExplanation"
-          >
-            Explain status
-          </button>
-        </div>
-
-        <button
-          class="btn btn-sm btn-outline-secondary rounded-circle"
-          type="button"
-          data-bs-toggle="collapse"
-          data-bs-target="#postureStatusExplanation"
-          aria-label="Explain PKI status"
-          style="width:38px;height:38px"
-        >
-          ?
-        </button>
-      </div>
-    </div>
+<div class="page-title compact-hero">
+  <div>
+    <div class="eyebrow">Security, Assurance & Governance</div>
+    <h1>PKI Posture</h1>
+    <p>
+      One view of priority risks, missing evidence,
+      governance controls and approved exceptions.
+    </p>
   </div>
 
-  <div class="col-12 col-md-6 col-xl-3">
-    <a
-      class="metric-card h-100 d-block text-decoration-none text-reset"
-      href="#confirmed-findings"
-    >
-      <div class="metric-title">Confirmed Critical/High Findings</div>
-      <div class="metric-value">{{ confirmed_risk_count }}</div>
-      <div class="small text-secondary">
-        Critical {{ assurance.open_critical or 0 }}
-        · High {{ assurance.open_high or 0 }}
-      </div>
-      <div class="small text-primary mt-2">View immediate actions ↓</div>
-    </a>
+  <div class="posture-primary-score">
+    <span>{{ posture_label }}</span>
+    <strong>
+      {% if assurance_score is number %}
+        {{ assurance_score }}/100
+      {% else %}
+        —
+      {% endif %}
+    </strong>
+    <small>Overall assurance</small>
   </div>
+</div>
 
-  <div class="col-12 col-md-6 col-xl-3">
-    <a
-      class="metric-card h-100 d-block text-decoration-none text-reset"
-      href="#accepted-risks"
-    >
-      <div class="metric-title">Accepted Risks</div>
-      <div class="metric-value">{{ accepted_risks|length }}</div>
-      <div class="small text-secondary">
-        Approved policy exceptions
-      </div>
-      <div class="small text-primary mt-2">View accepted risks ↓</div>
-    </a>
-  </div>
+<div class="posture-summary-grid mb-3">
 
-  <div class="col-12 col-md-6 col-xl-3">
-    <a
-      class="metric-card h-100 d-block text-decoration-none text-reset"
-      href="/evidence-gaps"
-    >
-      <div class="metric-title">Assessment Coverage</div>
-      <div class="metric-value">{{ assurance.coverage_score or 0 }}%</div>
-      <div class="small text-secondary">
-        {{ coverage_gap_count }} evidence gap(s)
-      </div>
-      <div class="small text-primary mt-2">View all evidence gaps →</div>
-    </a>
-  </div>
+  <a class="posture-summary-card"
+     href="#priority-actions">
+    <span>Priority actions</span>
+    <strong>
+      {{ registry.get(
+          'confirmed_risk_count',
+          confirmed_risks | length
+      ) }}
+    </strong>
+    <small>Evidence-backed issues</small>
+  </a>
+
+  <a class="posture-summary-card"
+     href="#governance-controls">
+    <span>Governance input</span>
+    <strong>{{ governance_counts.input_needed }}</strong>
+    <small>Customer-managed control evidence</small>
+  </a>
+
+  <a class="posture-summary-card"
+     href="#governance-controls">
+    <span>Review recommended</span>
+    <strong>{{ governance_counts.action }}</strong>
+    <small>Controls to improve</small>
+  </a>
+
+  <a class="posture-summary-card"
+     href="#governance-controls">
+    <span>Policy exceptions</span>
+    <strong>{{ governance_counts.accepted }}</strong>
+    <small>Accepted Risk records</small>
+  </a>
 
 </div>
 
-<div class="collapse mb-3" id="postureStatusExplanation">
-  <div class="card card-panel">
+<div class="posture-main-grid mb-3">
+
+  <section class="card card-panel"
+           id="priority-actions">
     <div class="card-body compact-card">
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <h2 class="section-title mb-0">Why this PKI status?</h2>
 
-        <button
-          class="btn-close"
-          type="button"
-          data-bs-toggle="collapse"
-          data-bs-target="#postureStatusExplanation"
-          aria-label="Close"
-        ></button>
-      </div>
-
-      <ul class="compact-list mb-2">
-        {% for reason in assurance.why %}
-          <li>{{reason}}</li>
-        {% else %}
-          <li>No status explanation is available.</li>
-        {% endfor %}
-      </ul>
-
-      <div class="small text-secondary">
-        Evidence gaps are shown separately and are not counted as confirmed risks.
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="row g-3 mb-3">
-  <div class="col-xl-8" id="confirmed-findings">
-    <div class="card card-panel h-100">
-      <div class="card-body compact-card">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-          <div>
-            <h2 class="section-title mb-1">Immediate Actions</h2>
-            <div class="small text-secondary">
-              Highest-priority confirmed risks backed by collected evidence.
-            </div>
+      <div class="health-section-head mb-2">
+        <div>
+          <h2 class="section-title mb-1">Priority Actions</h2>
+          <div class="small text-secondary">
+            Highest-priority issues confirmed by collected evidence.
           </div>
-
-          <a class="btn btn-sm btn-outline-primary" href="/findings">
-            View all findings
-          </a>
         </div>
 
-        {% for risk in confirmed_risks[:5] %}
-          <div class="risk-row compact-risk">
-            <span class="badge sev-{{risk.severity|lower}}">
-              {{risk.severity}}
+        <a class="btn btn-sm btn-outline-primary"
+           href="/findings">
+          All findings
+        </a>
+      </div>
+
+      {% for risk in confirmed_risks[:5] %}
+        <div class="posture-action-row">
+
+          <span class="
+            posture-action-level
+            {% if risk.severity == 'Critical' %}
+              posture-action-immediate
+            {% else %}
+              posture-action-priority
+            {% endif %}
+          ">
+            {% if risk.severity == 'Critical' %}
+              Immediate
+            {% else %}
+              Priority
+            {% endif %}
+          </span>
+
+          <div class="posture-action-content">
+            <strong>{{ risk.title }}</strong>
+
+            <span>
+              {{ risk.category }} · {{ risk.object_name }}
             </span>
 
-            <div class="flex-grow-1">
-              <strong>{{risk.title}}</strong>
-
-              <div class="small text-secondary">
-                {{risk.category}} · {{risk.object_name}}
+            {% if risk.recommendation %}
+              <div>
+                {{ risk.recommendation }}
               </div>
-
-              <div class="small mt-1">
-                <strong>Evidence source:</strong> {{risk.source}}
-                · <strong>Confidence:</strong> {{risk.confidence|title}}
-              </div>
-
-              {% if risk.recommendation %}
-                <div class="small mt-1">
-                  <strong>Recommended action:</strong> {{risk.recommendation}}
-                </div>
-              {% endif %}
-
-              <div class="small mt-2">
-                {% if risk.related_template %}
-                  <a href="/templates">Open template evidence</a>
-                {% elif risk.related_ca %}
-                  <a href="/pki-hierarchy">Open CA in hierarchy</a>
-                {% endif %}
-
-                {% if risk.related_template or risk.related_ca %}
-                  ·
-                {% endif %}
-
-                <a href="/findings">Review / Accept Risk</a>
-              </div>
-            </div>
+            {% endif %}
           </div>
-        {% else %}
-          <div class="alert alert-success mb-0">
-            No confirmed Critical or High risks were found in the latest assessment.
-          </div>
-        {% endfor %}
-      </div>
-    </div>
-  </div>
 
-  <div class="col-xl-4" id="coverage-gaps">
-    <div class="card card-panel h-100">
+          <div class="posture-action-link">
+            <a href="{{ risk.target_url }}">
+              Open
+            </a>
+          </div>
+
+        </div>
+      {% else %}
+        <div class="health-empty-success">
+          <strong>No priority security actions.</strong>
+          <span>
+            No confirmed Critical or High issues are currently open.
+          </span>
+        </div>
+      {% endfor %}
+
+  </section>
+
+  <aside class="health-side-stack">
+
+    <section class="card card-panel">
       <div class="card-body compact-card">
-        <div class="d-flex justify-content-between align-items-center mb-2">
-          <h2 class="section-title mb-0">Evidence Gaps</h2>
-          <a class="btn btn-sm btn-outline-primary" href="/evidence-gaps">
-            View all
-          </a>
+
+        <div class="health-section-head mb-2">
+          <h2 class="section-title mb-0">Environment</h2>
+          <a class="small" href="/pki-hierarchy">Hierarchy</a>
         </div>
 
-        <p class="small text-secondary">
-          Missing or unreachable evidence. These items are not counted as confirmed risks.
-        </p>
+        <div class="governance-architecture-grid">
 
-        <div class="metric-value mb-2">
-          {{ coverage_gap_count }}
+          <div class="governance-stat">
+            <strong>
+              {{ hierarchy_summary.get('roots', 0) }}
+            </strong>
+            <span>Root CAs</span>
+          </div>
+
+          <div class="governance-stat">
+            <strong>
+              {{ hierarchy_summary.get('issuing', 0) }}
+            </strong>
+            <span>Issuing CAs</span>
+          </div>
+
+          <div class="governance-stat">
+            <strong>
+              {{ hierarchy_summary.get('unclassified', 0) }}
+            </strong>
+            <span>Role unknown</span>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <section class="card card-panel">
+      <div class="card-body compact-card">
+
+        <div class="health-section-head mb-2">
+          <h2 class="section-title mb-0">Collection Gaps</h2>
+          <a class="small" href="/evidence-gaps">View all</a>
         </div>
 
-        <ul class="compact-list">
-          {% for gap in coverage_gaps[:5] %}
-            <li>
-              <strong>{{gap.object_name}}</strong><br>
-              <span class="small text-secondary">
-                {{gap.title}}
-              </span>
-            </li>
-          {% else %}
-            <li>No major assessment gaps.</li>
-          {% endfor %}
-        </ul>
+        <div class="posture-side-number">
+          {{ collection_gaps | length }}
+        </div>
 
-        {% if coverage_gap_count > 5 %}
+        <div class="small text-secondary">
+          Technical evidence the collector could not obtain or test.
+          Governance input is counted separately above.
+          These items are not treated as confirmed risks.
+        </div>
+
+        {% if all_coverage_gap_count
+              > collection_gaps | length %}
           <div class="small text-secondary mt-2">
-            Plus {{coverage_gap_count - 5}} additional evidence gap(s).
+            Total evidence gaps:
+            {{ all_coverage_gap_count }},
+            including governance input.
           </div>
         {% endif %}
+
       </div>
-    </div>
-  </div>
+    </section>
+
+  </aside>
 </div>
 
-<div class="card card-panel mb-3" id="accepted-risks">
+<section class="card card-panel"
+         id="governance-controls">
   <div class="card-body compact-card">
-    <h2 class="section-title">Accepted by Policy</h2>
 
-    {% for risk in accepted_risks[:5] %}
-      <div class="risk-row compact-risk">
-        <span class="badge text-bg-info">Accepted</span>
-
-        <div>
-          <strong>{{risk.title}}</strong>
-          <div class="small text-secondary">
-            {{risk.severity}} · {{risk.object_name}}
-          </div>
+    <div class="health-section-head mb-2">
+      <div>
+        <h2 class="section-title mb-1">Governance & Controls</h2>
+        <div class="small text-secondary">
+          Only open, customer-input and accepted controls are shown.
+          {{ governance_counts.verified }} verified controls are hidden
+          to keep the page focused.
         </div>
       </div>
-    {% else %}
-      <p class="text-secondary mb-0">
-        No active policy exceptions.
-      </p>
-    {% endfor %}
+    </div>
+
+    <div class="governance-guidance">
+      Control priority is role-aware. For example, a software-backed
+      root CA key is prioritised more strongly than a software-backed
+      issuing CA key because compromise of the root affects the entire
+      trust hierarchy.
+    </div>
+
+    {% if accepted_governance %}
+      <details class="accepted-governance-panel mb-3">
+        <summary>
+          Accepted Policy Exceptions
+          <span class="badge text-bg-info">
+            {{ accepted_governance | length }}
+          </span>
+        </summary>
+
+        <div class="accepted-governance-list">
+          {% for item in accepted_governance %}
+            <div class="accepted-governance-row">
+              <div>
+                <strong>{{ item.title }}</strong>
+                <span>
+                  {{ item.category }} ·
+                  {{ item.affected_object }}
+                </span>
+
+                <small>
+                  Accepted by
+                  {{ item.accepted_by }}
+                  {% if item.expiry_date %}
+                    · expires
+                    {{ item.expiry_date }}
+                  {% else %}
+                    · no expiry specified
+                  {% endif %}
+                </small>
+
+                {% if item.business_justification %}
+                  <small>
+                    Justification:
+                    {{ item.business_justification }}
+                  </small>
+                {% endif %}
+
+                {% if item.compensating_control %}
+                  <small>
+                    Compensating control:
+                    {{ item.compensating_control }}
+                  </small>
+                {% endif %}
+
+                <small>
+                  Policy exception only:
+                  supporting evidence remains unchanged.
+                </small>
+              </div>
+
+              <form
+                method="post"
+                action="/acceptances/{{ item.acceptance_id }}/revoke"
+              >
+                <input
+                  type="hidden"
+                  name="csrf_token"
+                  value="{{ csrf_token }}"
+                >
+                <button
+                  class="btn btn-sm btn-outline-secondary"
+                  type="submit"
+                >
+                  Revoke
+                </button>
+              </form>
+            </div>
+          {% endfor %}
+        </div>
+      </details>
+    {% endif %}
+
+    {% if accepted_template_risks %}
+      <details class="accepted-governance-panel mb-3">
+        <summary>
+          Accepted Template Risk Exceptions
+          <span class="badge text-bg-info">
+            {{ accepted_template_risks | length }}
+          </span>
+        </summary>
+
+        <div class="accepted-governance-list">
+          {% for risk in accepted_template_risks %}
+            <div class="accepted-governance-row">
+              <div>
+                <strong>{{ risk.title }}</strong>
+                <span>
+                  {{ risk.object_name }}
+                  · {{ risk.severity }}
+                </span>
+              </div>
+
+              <a
+                class="btn btn-sm btn-outline-primary"
+                href="{{ risk.target_url }}"
+              >
+                Open finding
+              </a>
+            </div>
+          {% endfor %}
+        </div>
+      </details>
+    {% endif %}
+
+    <div class="accordion health-area-accordion"
+         id="governanceAccordion">
+
+      {% for category, items in governance_groups.items() %}
+
+        {% set category_state = namespace(
+            priority=0,
+            review=0,
+            input=0,
+            accepted=0
+        ) %}
+
+        {% for item in items %}
+          {% if item.ui_class == 'priority' %}
+            {% set category_state.priority =
+                category_state.priority + 1 %}
+          {% elif item.ui_class == 'review' %}
+            {% set category_state.review =
+                category_state.review + 1 %}
+          {% elif item.ui_class == 'input' %}
+            {% set category_state.input =
+                category_state.input + 1 %}
+          {% elif item.ui_class == 'accepted' %}
+            {% set category_state.accepted =
+                category_state.accepted + 1 %}
+          {% endif %}
+        {% endfor %}
+
+        <div class="accordion-item health-area-item">
+
+          <h3 class="accordion-header"
+              id="governance-heading-{{ loop.index }}">
+
+            <button
+              class="accordion-button collapsed health-area-button"
+              type="button"
+              data-bs-toggle="collapse"
+              data-bs-target="#governance-area-{{ loop.index }}"
+              aria-expanded="false"
+            >
+
+              <span class="health-area-name">
+                {{ category }}
+              </span>
+
+              <span class="health-area-summary">
+
+                {% if category_state.priority %}
+                  <span class="governance-pill governance-pill-priority">
+                    {{ category_state.priority }} priority
+                  </span>
+                {% endif %}
+
+                {% if category_state.review %}
+                  <span class="governance-pill governance-pill-review">
+                    {{ category_state.review }} review
+                  </span>
+                {% endif %}
+
+                {% if category_state.input %}
+                  <span class="governance-pill governance-pill-input">
+                    {{ category_state.input }} input needed
+                  </span>
+                {% endif %}
+
+                {% if category_state.accepted %}
+                  <span class="governance-pill governance-pill-accepted">
+                    {{ category_state.accepted }} accepted
+                  </span>
+                {% endif %}
+
+              </span>
+            </button>
+          </h3>
+
+          <div id="governance-area-{{ loop.index }}"
+               class="accordion-collapse collapse">
+
+            <div class="accordion-body health-area-body">
+
+              {% for item in items %}
+                {% set manual =
+                    item.get('governance_evidence')
+                    or {}
+                %}
+                {% set reason =
+                    item.get('not_assessed_reason')
+                    or item.get('business_impact')
+                    or item.get('recommendation')
+                %}
+
+                <div class="governance-posture-row">
+
+                  <div class="governance-posture-status">
+                    <span class="
+                      governance-state
+                      governance-state-{{ item.ui_class }}
+                    ">
+                      {{ item.ui_status }}
+                    </span>
+                  </div>
+
+                  <div class="governance-posture-content">
+                    <strong>{{ item.title }}</strong>
+                    <span>
+                      {{ item.affected_object }}
+                    </span>
+                    <div>
+                      {{ reason }}
+                    </div>
+
+                    {% if manual %}
+                      <div class="governance-recorded">
+                        Owner:
+                        {{ manual.get('owner') or 'Not specified' }}
+                        · Reviewed:
+                        {{ manual.get('last_reviewed')
+                           or 'Not specified' }}
+                      </div>
+                    {% endif %}
+                  </div>
+
+                  <div class="governance-posture-actions">
+
+                    {% if item.manual_control
+                          and not item.accepted_risk %}
+
+                      <details class="governance-action-panel">
+                        <summary>
+                          {% if manual %}
+                            Update evidence
+                          {% else %}
+                            Add evidence
+                          {% endif %}
+                        </summary>
+
+                        <form
+                          method="post"
+                          action="/pki-posture/governance/evidence"
+                          class="governance-form"
+                        >
+
+                          <input type="hidden"
+                                 name="csrf_token"
+                                 value="{{ csrf_token }}">
+
+                          <input type="hidden"
+                                 name="category"
+                                 value="{{ item.category }}">
+
+                          <input type="hidden"
+                                 name="object_name"
+                                 value="{{ item.affected_object }}">
+
+                          <input type="hidden"
+                                 name="control_title"
+                                 value="{{ item.title }}">
+
+                          <div class="governance-form-grid">
+
+                            <label>
+                              Control state
+                              <select
+                                name="state"
+                                class="form-select form-select-sm"
+                                required
+                              >
+                                <option value="implemented"
+                                  {% if manual.get('state')
+                                        == 'implemented' %}
+                                    selected
+                                  {% endif %}>
+                                  Implemented
+                                </option>
+
+                                <option value="partial"
+                                  {% if manual.get('state')
+                                        == 'partial' %}
+                                    selected
+                                  {% endif %}>
+                                  Partially implemented
+                                </option>
+
+                                <option value="not_implemented"
+                                  {% if manual.get('state')
+                                        == 'not_implemented' %}
+                                    selected
+                                  {% endif %}>
+                                  Not implemented
+                                </option>
+                              </select>
+                            </label>
+
+                            <label>
+                              Owner
+                              <input
+                                class="form-control form-control-sm"
+                                name="owner"
+                                value="{{ manual.get('owner', '') }}"
+                                placeholder="PKI Operations"
+                              >
+                            </label>
+
+                            <label>
+                              Last reviewed or tested
+                              <input
+                                class="form-control form-control-sm"
+                                type="date"
+                                name="last_reviewed"
+                                value="{{ manual.get(
+                                    'last_reviewed',
+                                    ''
+                                ) }}"
+                              >
+                            </label>
+
+                            <label>
+                              Next review
+                              <input
+                                class="form-control form-control-sm"
+                                type="date"
+                                name="next_review"
+                                value="{{ manual.get(
+                                    'next_review',
+                                    ''
+                                ) }}"
+                              >
+                            </label>
+
+                          </div>
+
+                          <label class="mt-2">
+                            SOP, ticket or evidence reference
+                            <input
+                              class="form-control form-control-sm"
+                              name="evidence_reference"
+                              value="{{ manual.get(
+                                  'evidence_reference',
+                                  ''
+                              ) }}"
+                            >
+                          </label>
+
+                          <label class="mt-2">
+                            Evidence details
+                            <textarea
+                              class="form-control form-control-sm"
+                              name="details"
+                              rows="3"
+                            >{{ manual.get('details', '') }}</textarea>
+                          </label>
+
+                          <button
+                            class="btn btn-sm btn-primary mt-2"
+                            type="submit"
+                          >
+                            Save evidence
+                          </button>
+
+                        </form>
+                      </details>
+                    {% endif %}
+
+                    {% if item.status != 'Pass'
+                          and not item.accepted_risk %}
+
+                      <details class="governance-action-panel">
+                        <summary>Accept Risk</summary>
+
+                        <form
+                          method="post"
+                          action="/pki-posture/governance/accept"
+                          class="governance-form"
+                        >
+
+                          <input type="hidden"
+                                 name="csrf_token"
+                                 value="{{ csrf_token }}">
+
+                          <input type="hidden"
+                                 name="category"
+                                 value="{{ item.category }}">
+
+                          <input type="hidden"
+                                 name="object_name"
+                                 value="{{ item.affected_object }}">
+
+                          <input type="hidden"
+                                 name="control_title"
+                                 value="{{ item.title }}">
+
+                          <input type="hidden"
+                                 name="severity"
+                                 value="{{ item.severity }}">
+
+                          <div class="governance-note">
+                            The control remains visible as an
+                            Accepted Risk / Policy Exception.
+                            It is not converted into a verified control.
+                          </div>
+
+                          <label>
+                            Exception expiry
+                            <input
+                              class="form-control form-control-sm"
+                              type="date"
+                              name="expiry_date"
+                            >
+                          </label>
+
+                          <label class="mt-2">
+                            Business justification
+                            <textarea
+                              class="form-control form-control-sm"
+                              name="business_justification"
+                              rows="3"
+                              required
+                            ></textarea>
+                          </label>
+
+                          <label class="mt-2">
+                            Compensating control
+                            <textarea
+                              class="form-control form-control-sm"
+                              name="compensating_control"
+                              rows="2"
+                            ></textarea>
+                          </label>
+
+                          <button
+                            class="btn btn-sm btn-outline-primary mt-2"
+                            type="submit"
+                          >
+                            Save policy exception
+                          </button>
+
+                        </form>
+                      </details>
+                    {% endif %}
+
+                    <details class="health-inline-details">
+                      <summary>Evidence</summary>
+                      <div class="health-evidence-popover">
+                        {{ evidence_table(item.evidence) }}
+                      </div>
+                    </details>
+
+                  </div>
+                </div>
+
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+      {% else %}
+        <div class="health-empty-success">
+          <strong>No open governance controls.</strong>
+          <span>
+            All controls are verified or no customer input is required.
+          </span>
+        </div>
+      {% endfor %}
+
+    </div>
   </div>
-</div>
+</section>
 
 {% else %}
 <div class="empty-state compact-card">

@@ -1,5 +1,6 @@
 from collections import Counter
 from contextlib import contextmanager
+from datetime import datetime
 
 from fastapi import Depends, FastAPI, Form, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -25,14 +26,22 @@ from app.models.entities import (
     CertificateAuthority,
     CertificateTemplate,
     Finding,
+    GovernanceEvidence,
     IssuedCertificate,
     RiskAcceptance,
     Scan,
     User,
 )
 from app.schemas.collector import CollectorPayload
-from app.services.assessment_registry import build_assessment_registry
+from app.services.assessment_registry import (
+    build_assessment_registry,
+    registry_fingerprint,
+)
 from app.services.best_practices import assess_best_practices
+from app.services.governance_evidence import (
+    governance_control_key,
+    governance_evidence_map,
+)
 from app.services.ingest import IngestService
 from app.services.pki_hierarchy import build_pki_hierarchy
 from app.services.posture_assessment import assess_pki_posture
@@ -105,6 +114,37 @@ def _assessment(scan: Scan | None, key: str, default):
 
 
 
+def _best_practice_registry_category(
+    category: str,
+) -> str:
+    if category in {"PKI Architecture", "Key Protection"}:
+        return category
+    return "Best Practices"
+
+
+
+def _best_practice_acceptance_identity(
+    category: str,
+    object_name: str,
+    control_title: str,
+) -> tuple[str, str, str]:
+    """Return the canonical registry identity for policy exceptions."""
+
+    if category == "Key Protection":
+        return (
+            "Key Protection",
+            "ca",
+            "CA key protection status",
+        )
+
+    return (
+        _best_practice_registry_category(category),
+        "best_practice",
+        control_title,
+    )
+
+
+
 def _refresh_posture_for_scan(db: Session, scan_id: int) -> None:
     scan = db.query(Scan).filter_by(id=scan_id).first()
     if not scan:
@@ -121,6 +161,7 @@ def _refresh_posture_for_scan(db: Session, scan_id: int) -> None:
         templates_data,
         certificates,
         findings,
+        governance_evidence_map(db),
     )
     summary["best_practices"] = best_practices
 
@@ -312,27 +353,473 @@ def pki_hierarchy_page(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("pki_hierarchy.html", ctx)
 
 
+def _posture_target_url(record: dict) -> str:
+    """Return the correct drill-down page for a posture record."""
+
+    object_type = str(record.get("object_type") or "")
+    category = str(record.get("category") or "")
+    title = str(record.get("title") or "")
+
+    # Health records can also have related_ca. Health must win
+    # before generic CA routing.
+    if object_type == "health_check" or category == "CA Health":
+        return "/pki-health#health-issues"
+
+    if record.get("related_finding"):
+        return (
+            f"/findings"
+            f"#finding-{record['related_finding']}"
+        )
+
+    technical_template_titles = {
+        "Avoid broad enrollment on authentication templates",
+        "Avoid requester-supplied subject/SAN unless approved",
+        "Avoid overly long validity periods",
+    }
+
+    if (
+        record.get("related_template")
+        or object_type == "template"
+        or category in {"Template Risk", "Templates"}
+        or title in technical_template_titles
+    ):
+        return "/templates"
+
+    if (
+        category in {"PKI Architecture", "Key Protection"}
+        or object_type == "ca"
+    ):
+        return "/pki-hierarchy"
+
+    if object_type == "best_practice":
+        return "/pki-posture#governance-controls"
+
+    return "/findings"
+
+
+def _find_governance_acceptance(
+    acceptances,
+    fingerprint: str,
+    *,
+    registry_category: str,
+    object_name: str,
+    title: str,
+    canonical_title: str,
+):
+    """Find an active governance exception, including older fingerprints."""
+
+    exact = acceptances.get(fingerprint)
+
+    if exact:
+        return exact
+
+    expected_titles = {
+        str(title).strip().casefold(),
+        str(canonical_title).strip().casefold(),
+    }
+
+    expected_categories = {
+        str(registry_category).strip().casefold(),
+    }
+
+    if registry_category != "Key Protection":
+        expected_categories.add("best practices")
+
+    for candidate in acceptances.values():
+        if (
+            str(candidate.object_name).strip().casefold()
+            != str(object_name).strip().casefold()
+        ):
+            continue
+
+        if (
+            str(candidate.risk_title).strip().casefold()
+            not in expected_titles
+        ):
+            continue
+
+        if (
+            str(candidate.category).strip().casefold()
+            not in expected_categories
+        ):
+            continue
+
+        return candidate
+
+    return None
+
+
 @app.get("/pki-posture", response_class=HTMLResponse)
-def pki_posture_page(request: Request, db: Session = Depends(get_db)):
+def pki_posture_page(
+    request: Request,
+    db: Session = Depends(get_db),
+):
     ensure_authenticated(request)
     latest_scan = _latest_scan(db)
 
     if latest_scan:
-        stored_registry = _assessment(latest_scan, "registry", {})
-        if not isinstance(stored_registry, dict) or "confirmed_risks" not in stored_registry:
-            _refresh_posture_for_scan(db, latest_scan.id)
+        stored_registry = _assessment(
+            latest_scan,
+            "registry",
+            {},
+        )
+
+        if (
+            not isinstance(stored_registry, dict)
+            or "confirmed_risks" not in stored_registry
+        ):
+            _refresh_posture_for_scan(
+                db,
+                latest_scan.id,
+            )
             db.commit()
             db.refresh(latest_scan)
 
-    registry = _assessment(latest_scan, "registry", {})
+    posture = (
+        _assessment(latest_scan, "posture", {})
+        or {}
+    )
+    registry = (
+        _assessment(latest_scan, "registry", {})
+        or {}
+    )
+    best_practices = (
+        _assessment(
+            latest_scan,
+            "best_practices",
+            {},
+        )
+        or {}
+    )
+
+    if not isinstance(posture, dict):
+        posture = {}
+
+    if not isinstance(registry, dict):
+        registry = {}
+
+    if not isinstance(best_practices, dict):
+        best_practices = {}
+
+    # Work with a request-local copy.
+    registry = dict(registry)
+
+    assurance = registry.get("assurance") or {}
+
+    if not isinstance(assurance, dict):
+        assurance = {}
+
+    assurance_score = assurance.get("score")
+
+    if assurance_score is None:
+        assurance_score = posture.get("score")
+
+    assurance_level = (
+        assurance.get("assurance_level")
+        or posture.get("assurance_level")
+        or posture.get("status")
+        or "Unknown / Not Enough Data"
+    )
+
+    # Decorate every confirmed risk with its correct destination.
+    confirmed_risks = []
+
+    for original in (
+        registry.get("confirmed_risks")
+        or registry.get("open_risks")
+        or []
+    ):
+        if not isinstance(original, dict):
+            continue
+
+        risk = dict(original)
+        risk["target_url"] = _posture_target_url(risk)
+        confirmed_risks.append(risk)
+
+    registry["confirmed_risks"] = confirmed_risks
+
+    all_coverage_gaps = (
+        registry.get("coverage_gaps")
+        or []
+    )
+
+    acceptances = active_acceptance_map(db)
+
+    governance_counts = {
+        "verified": 0,
+        "action": 0,
+        "input_needed": 0,
+        "accepted": 0,
+    }
+
+    governance_groups = {}
+    accepted_governance = []
+    governance_input_fingerprints = set()
+
+    hidden_titles = {
+        "CA role classified from certificate subject/issuer",
+        "Root CA detected",
+        "Root CA Detected",
+        "Issuing CA detected",
+        "Issuing CA Detected",
+        "Certificate expiry should be monitored",
+    }
+
+    for original in best_practices.get("items", []) or []:
+        if not isinstance(original, dict):
+            continue
+
+        item = dict(original)
+
+        title = item.get(
+            "title",
+            "Governance control",
+        )
+        category = item.get(
+            "category",
+            "Other Controls",
+        )
+        object_name = item.get(
+            "affected_object",
+            "PKI",
+        )
+
+        if title in hidden_titles:
+            continue
+
+        # Detailed certificate-template security controls remain
+        # under Templates and Findings.
+        if category == "Templates":
+            continue
+
+        if category == "Key Protection":
+            registry_category = "Key Protection"
+            object_type = "ca"
+            canonical_title = "CA key protection status"
+
+        elif category == "PKI Architecture":
+            registry_category = "PKI Architecture"
+            object_type = "best_practice"
+            canonical_title = title
+
+        else:
+            registry_category = "Best Practices"
+            object_type = "best_practice"
+            canonical_title = title
+
+        fingerprint = registry_fingerprint(
+            registry_category,
+            object_type,
+            object_name,
+            canonical_title,
+        )
+
+        acceptance = _find_governance_acceptance(
+            acceptances,
+            fingerprint,
+            registry_category=registry_category,
+            object_name=object_name,
+            title=title,
+            canonical_title=canonical_title,
+        )
+
+        item["fingerprint"] = fingerprint
+        item["accepted_risk"] = (
+            acceptance is not None
+        )
+        item["acceptance"] = acceptance
+
+        # Keep governance evidence separate from technical
+        # collection gaps, whether open or accepted.
+        if (
+            item.get("manual_control")
+            or str(item.get("data_source") or "").casefold()
+            in {
+                "operator evidence",
+                "customer evidence",
+                "deployment",
+            }
+        ):
+            governance_input_fingerprints.add(
+                fingerprint
+            )
+
+        status = item.get(
+            "status",
+            "Not Assessed",
+        )
+
+        if acceptance:
+            item["ui_status"] = "Accepted by policy"
+            item["ui_class"] = "accepted"
+            governance_counts["accepted"] += 1
+
+            # Accepted controls are governance exceptions.
+            # They must not remain mixed into the open/input list.
+            accepted_governance.append(item)
+            continue
+
+        elif status == "Pass":
+            item["ui_status"] = "Verified"
+            item["ui_class"] = "verified"
+            governance_counts["verified"] += 1
+
+        elif status == "Fail":
+            item["ui_status"] = "Priority action"
+            item["ui_class"] = "priority"
+            governance_counts["action"] += 1
+
+        elif status == "Warning":
+            item["ui_status"] = "Review recommended"
+            item["ui_class"] = "review"
+            governance_counts["action"] += 1
+
+        else:
+            item["ui_status"] = "Customer input needed"
+            item["ui_class"] = "input"
+            governance_counts["input_needed"] += 1
+            governance_input_fingerprints.add(
+                fingerprint
+            )
+
+        # Verified controls contribute to the count but remain hidden
+        # from the main customer view.
+        if status == "Pass" and not acceptance:
+            continue
+
+        governance_groups.setdefault(
+            category,
+            [],
+        ).append(item)
+
+    # Collection gaps are technical visibility failures only.
+    # Manual governance input is already represented separately.
+    collection_gaps = []
+
+    for original in all_coverage_gaps:
+        if not isinstance(original, dict):
+            continue
+
+        fingerprint = original.get("fingerprint")
+        source = str(
+            original.get("source")
+            or ""
+        ).strip().casefold()
+
+        if fingerprint in governance_input_fingerprints:
+            continue
+
+        if source in {
+            "operator evidence",
+            "customer evidence",
+            "deployment",
+        }:
+            continue
+
+        collection_gaps.append(original)
+
+    # Build the policy-exception panel directly from persistent,
+    # active RiskAcceptance records. This also displays older
+    # exceptions whose historical fingerprint no longer matches
+    # the current assessment wording.
+    accepted_governance = []
+
+    for acceptance in sorted(
+        acceptances.values(),
+        key=lambda row: row.id,
+        reverse=True,
+    ):
+        if acceptance.object_type not in {
+            "best_practice",
+            "ca",
+        }:
+            continue
+
+        if acceptance.category not in {
+            "Best Practices",
+            "Key Protection",
+            "PKI Architecture",
+        }:
+            continue
+
+        accepted_governance.append(
+            {
+                "acceptance_id": acceptance.id,
+                "title": acceptance.risk_title,
+                "category": acceptance.category,
+                "affected_object": acceptance.object_name,
+                "severity": acceptance.severity,
+                "accepted_by": acceptance.accepted_by,
+                "expiry_date": acceptance.expiry_date,
+                "business_justification": (
+                    acceptance.business_justification
+                ),
+                "compensating_control": (
+                    acceptance.compensating_control
+                ),
+            }
+        )
+
+    governance_counts["accepted"] = len(
+        accepted_governance
+    )
+
+    accepted_template_risks = []
+
+    for original in registry.get("accepted_risks", []) or []:
+        if not isinstance(original, dict):
+            continue
+
+        if (
+            original.get("object_type")
+            not in {"finding", "template"}
+            and original.get("category")
+            != "Template Risk"
+        ):
+            continue
+
+        accepted_item = dict(original)
+        accepted_item["target_url"] = (
+            _posture_target_url(accepted_item)
+        )
+        accepted_template_risks.append(
+            accepted_item
+        )
+
+    hierarchy_summary = registry.get(
+        "hierarchy_summary",
+        {},
+    )
+
+    if not isinstance(hierarchy_summary, dict):
+        hierarchy_summary = {}
+
     ctx = _nav_context(request)
-    ctx.update({
-        "scan": latest_scan,
-        "posture": _assessment(latest_scan, "posture", {}),
-        "registry": registry,
-        "assurance": registry.get("assurance", {}) if isinstance(registry, dict) else {},
-    })
-    return templates.TemplateResponse("pki_posture.html", ctx)
+    ctx.update(
+        {
+            "scan": latest_scan,
+            "posture": posture,
+            "registry": registry,
+            "assurance": assurance,
+            "assurance_score": assurance_score,
+            "assurance_level": assurance_level,
+            "governance_groups": governance_groups,
+            "accepted_template_risks": accepted_template_risks,
+            "accepted_governance": accepted_governance,
+            "governance_counts": governance_counts,
+            "collection_gaps": collection_gaps,
+            "all_coverage_gap_count": len(
+                all_coverage_gaps
+            ),
+            "hierarchy_summary": hierarchy_summary,
+            "csrf_token": issue_csrf_token(request),
+        }
+    )
+
+    return templates.TemplateResponse(
+        "pki_posture.html",
+        ctx,
+    )
 
 
 @app.get("/pki-health", response_class=HTMLResponse)
@@ -344,22 +831,197 @@ def pki_health_page(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("pki_health.html", ctx)
 
 
-@app.get("/best-practices", response_class=HTMLResponse)
-def best_practices_page(request: Request, db: Session = Depends(get_db)):
+@app.get("/best-practices")
+def best_practices_page(request: Request):
     ensure_authenticated(request)
+
+    return RedirectResponse(
+        "/pki-posture#governance-controls",
+        status_code=303,
+    )
+
+
+@app.post("/pki-posture/governance/evidence")
+@app.post("/best-practices/evidence")
+def save_best_practice_evidence(
+    request: Request,
+    category: str = Form(...),
+    object_name: str = Form(...),
+    control_title: str = Form(...),
+    state: str = Form(...),
+    owner: str = Form(""),
+    details: str = Form(""),
+    evidence_reference: str = Form(""),
+    last_reviewed: str = Form(""),
+    next_review: str = Form(""),
+    csrf_token: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    ensure_authenticated(request)
+    validate_csrf(request, csrf_token)
+
+    if state not in {
+        "implemented",
+        "partial",
+        "not_implemented",
+    }:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid governance evidence state",
+        )
+
+    key = governance_control_key(
+        category,
+        object_name,
+        control_title,
+    )
+
+    row = (
+        db.query(GovernanceEvidence)
+        .filter_by(control_key=key)
+        .first()
+    )
+
+    if not row:
+        row = GovernanceEvidence(
+            control_key=key,
+            category=category,
+            object_name=object_name,
+            control_title=control_title,
+        )
+        db.add(row)
+
+    row.state = state
+    row.owner = owner.strip()
+    row.details = details.strip()
+    row.evidence_reference = evidence_reference.strip()
+    row.last_reviewed = last_reviewed.strip()
+    row.next_review = next_review.strip()
+    row.updated_by = request.session.get(
+        "user",
+        "unknown",
+    )
+    row.updated_at = datetime.utcnow()
+
+    db.add(
+        AuditLog(
+            actor=row.updated_by,
+            action="governance_evidence_updated",
+            details_json={
+                "control_key": key,
+                "category": category,
+                "object_name": object_name,
+                "control_title": control_title,
+                "state": state,
+            },
+        )
+    )
+
+    db.flush()
+
     latest_scan = _latest_scan(db)
-    accepted = 0
     if latest_scan:
-        scan_findings = db.query(Finding).filter_by(scan_id=latest_scan.id).all()
-        accepted = accepted_counts(scan_findings, active_acceptance_map(db))["accepted_total"]
-    ctx = _nav_context(request)
-    ctx.update({
-        "scan": latest_scan,
-        "best_practices": _assessment(latest_scan, "best_practices", {}),
-        "registry": _assessment(latest_scan, "registry", {}),
-        "accepted_risk_count": accepted,
-    })
-    return templates.TemplateResponse("best_practices.html", ctx)
+        _refresh_posture_for_scan(db, latest_scan.id)
+
+    db.commit()
+
+    return RedirectResponse(
+        url="/pki-posture#governance-controls",
+        status_code=303,
+    )
+
+
+@app.post("/pki-posture/governance/accept")
+@app.post("/best-practices/accept")
+def accept_best_practice_risk(
+    request: Request,
+    category: str = Form(...),
+    object_name: str = Form(...),
+    control_title: str = Form(...),
+    severity: str = Form("Medium"),
+    expiry_date: str = Form(""),
+    business_justification: str = Form(...),
+    compensating_control: str = Form(""),
+    csrf_token: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    ensure_authenticated(request)
+    validate_csrf(request, csrf_token)
+
+    (
+        registry_category,
+        acceptance_object_type,
+        canonical_title,
+    ) = _best_practice_acceptance_identity(
+        category,
+        object_name,
+        control_title,
+    )
+
+    fingerprint = registry_fingerprint(
+        registry_category,
+        acceptance_object_type,
+        object_name,
+        canonical_title,
+    )
+
+    acceptance = (
+        db.query(RiskAcceptance)
+        .filter_by(
+            fingerprint=fingerprint,
+            status="active",
+        )
+        .first()
+    )
+
+    username = request.session.get("user", "unknown")
+
+    if not acceptance:
+        acceptance = RiskAcceptance(
+            finding_id=None,
+            fingerprint=fingerprint,
+            object_type=acceptance_object_type,
+            object_name=object_name,
+            category=registry_category,
+            risk_title=canonical_title,
+            severity=severity,
+            accepted_by=username,
+            scope="exact_fingerprint",
+        )
+        db.add(acceptance)
+
+    acceptance.expiry_date = expiry_date.strip()
+    acceptance.business_justification = (
+        business_justification.strip()
+    )
+    acceptance.compensating_control = (
+        compensating_control.strip()
+    )
+    acceptance.status = "active"
+
+    db.add(
+        AuditLog(
+            actor=username,
+            action="best_practice_risk_accepted",
+            details_json={
+                "fingerprint": fingerprint,
+                "control_title": control_title,
+                "object_name": object_name,
+                "expiry_date": expiry_date,
+            },
+        )
+    )
+
+    latest_scan = _latest_scan(db)
+    if latest_scan:
+        _refresh_posture_for_scan(db, latest_scan.id)
+
+    db.commit()
+
+    return RedirectResponse(
+        url="/pki-posture#governance-controls",
+        status_code=303,
+    )
 
 
 @app.get("/reports", response_class=HTMLResponse)
@@ -371,63 +1033,229 @@ def reports_page(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("reports.html", ctx)
 
 
-@app.get("/cas", response_class=HTMLResponse)
-def cas_page(request: Request, db: Session = Depends(get_db)):
-    return render_page(request, "cas.html", db.query(CertificateAuthority), "cas", db)
+@app.get("/cas")
+def cas_page(request: Request):
+    ensure_authenticated(request)
+
+    return RedirectResponse(
+        "/pki-hierarchy#ca-inventory",
+        status_code=303,
+    )
 
 
 @app.get("/templates", response_class=HTMLResponse)
-def template_page(request: Request, db: Session = Depends(get_db)):
+def template_page(
+    request: Request,
+    db: Session = Depends(get_db),
+):
     ensure_authenticated(request)
     latest_scan = _latest_scan(db)
+
     records = (
         db.query(CertificateTemplate)
-        .options(joinedload(CertificateTemplate.permissions))
+        .options(
+            joinedload(CertificateTemplate.permissions)
+        )
         .filter_by(scan_id=latest_scan.id)
         .all()
         if latest_scan
         else []
     )
+
+    # Resolve both internal template name and display name to the
+    # same template record.
+    alias_lookup = {}
+
+    for template in records:
+        for alias in (
+            template.name,
+            template.display_name,
+        ):
+            normalized = str(alias or "").strip().casefold()
+
+            if normalized:
+                alias_lookup[normalized] = template
+
     template_risks = {}
+
     if latest_scan:
-        findings = db.query(Finding).filter_by(scan_id=latest_scan.id).all()
+        findings = (
+            db.query(Finding)
+            .filter_by(scan_id=latest_scan.id)
+            .all()
+        )
         acceptances = active_acceptance_map(db)
+
         for finding in findings:
-            accepted = finding_fingerprint(finding) in acceptances
-            risk = template_risks.setdefault(
-                finding.affected_object,
-                {"open": 0, "accepted": 0, "critical": 0, "high": 0, "issues": []},
+            affected = str(
+                finding.affected_object or ""
+            ).strip()
+
+            template = alias_lookup.get(
+                affected.casefold()
             )
+
+            aliases = {affected}
+
+            if template:
+                aliases.update(
+                    {
+                        template.name,
+                        template.display_name,
+                    }
+                )
+
+            aliases = {
+                alias
+                for alias in aliases
+                if alias
+            }
+
+            risk = None
+
+            for alias in aliases:
+                existing = template_risks.get(alias)
+
+                if existing is not None:
+                    risk = existing
+                    break
+
+            if risk is None:
+                risk = {
+                    "open": 0,
+                    "accepted": 0,
+                    "critical": 0,
+                    "high": 0,
+                    "issues": [],
+                }
+
+            for alias in aliases:
+                template_risks[alias] = risk
+
+            acceptance = acceptances.get(
+                finding_fingerprint(finding)
+            )
+            accepted = acceptance is not None
+
             if accepted:
                 risk["accepted"] += 1
             else:
                 risk["open"] += 1
+
                 if finding.severity == "Critical":
                     risk["critical"] += 1
                 elif finding.severity == "High":
                     risk["high"] += 1
-            risk["issues"].append({"title": finding.title, "severity": finding.severity, "accepted": accepted})
+
+            risk["issues"].append(
+                {
+                    "id": finding.id,
+                    "title": finding.title,
+                    "severity": finding.severity,
+                    "accepted": accepted,
+                    "url": (
+                        f"/findings"
+                        f"#finding-{finding.id}"
+                    ),
+                }
+            )
+
     ctx = _nav_context(request)
-    ctx.update({"templates_data": records, "scan": latest_scan, "template_risks": template_risks})
-    return templates.TemplateResponse("templates.html", ctx)
+    ctx.update(
+        {
+            "templates_data": records,
+            "scan": latest_scan,
+            "template_risks": template_risks,
+        }
+    )
+
+    return templates.TemplateResponse(
+        "templates.html",
+        ctx,
+    )
 
 
 @app.get("/findings", response_class=HTMLResponse)
-def findings_page(request: Request, db: Session = Depends(get_db)):
+def findings_page(
+    request: Request,
+    template: str = "",
+    db: Session = Depends(get_db),
+):
     ensure_authenticated(request)
     latest_scan = _latest_scan(db)
-    records = (
-        db.query(Finding)
-        .filter_by(scan_id=latest_scan.id)
-        .order_by(func.instr("Critical,High,Medium,Low", Finding.severity), Finding.id.desc())
-        .all()
-        if latest_scan
-        else []
+
+    records = []
+    filter_template = template.strip()
+
+    if latest_scan:
+        query = db.query(Finding).filter_by(
+            scan_id=latest_scan.id
+        )
+
+        if filter_template:
+            aliases = {filter_template}
+
+            template_rows = (
+                db.query(CertificateTemplate)
+                .filter_by(scan_id=latest_scan.id)
+                .all()
+            )
+
+            normalized = filter_template.casefold()
+
+            for template_row in template_rows:
+                row_aliases = {
+                    str(template_row.name or "").casefold(),
+                    str(
+                        template_row.display_name or ""
+                    ).casefold(),
+                }
+
+                if normalized in row_aliases:
+                    aliases.update(
+                        {
+                            template_row.name,
+                            template_row.display_name,
+                        }
+                    )
+                    break
+
+            query = query.filter(
+                Finding.affected_object.in_(
+                    list(aliases)
+                )
+            )
+
+        records = (
+            query.order_by(
+                func.instr(
+                    "Critical,High,Medium,Low",
+                    Finding.severity,
+                ),
+                Finding.id.desc(),
+            )
+            .all()
+        )
+
+    records = decorate_findings(
+        records,
+        active_acceptance_map(db),
     )
-    records = decorate_findings(records, active_acceptance_map(db))
+
     ctx = _nav_context(request)
-    ctx.update({"findings": records, "scan": latest_scan, "csrf_token": issue_csrf_token(request)})
-    return templates.TemplateResponse("findings.html", ctx)
+    ctx.update(
+        {
+            "findings": records,
+            "scan": latest_scan,
+            "csrf_token": issue_csrf_token(request),
+            "filter_template": filter_template,
+        }
+    )
+
+    return templates.TemplateResponse(
+        "findings.html",
+        ctx,
+    )
 
 
 @app.post("/findings/{finding_id}/accept")
@@ -473,7 +1301,10 @@ def accept_finding_risk(
     db.add(AuditLog(actor=request.session.get("user", "unknown"), action="risk_accepted", details_json={"finding_id": finding.id, "fingerprint": fingerprint}))
     _refresh_posture_for_scan(db, finding.scan_id)
     db.commit()
-    return RedirectResponse("/findings", status_code=303)
+    return RedirectResponse(
+        f"/findings#finding-{finding.id}",
+        status_code=303,
+    )
 
 
 @app.post("/acceptances/{acceptance_id}/revoke")

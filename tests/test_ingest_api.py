@@ -37,13 +37,12 @@ def test_ingest_and_dashboard_flow():
         assert 'CertShield PKI Posture Management' in login.text
 
         pages = (
-            ('/pki-hierarchy', 'PKI Hierarchy'),
-            ('/pki-posture', 'Confirmed Critical/High Findings'),
+            ('/pki-hierarchy', 'CA Inventory'),
+            ('/pki-posture', 'Priority Actions'),
                 ('/evidence-gaps', 'Evidence Gaps'),
             ('/pki-health', 'PKI Health'),
-            ('/best-practices', 'Best Practice Score'),
+            ('/best-practices', 'Governance & Controls'),
             ('/reports', 'Reports'),
-            ('/cas', 'Assessment Coverage'),
             ('/certificates', 'ADCS Issued Certificates / Requests'),
         )
         for path, text in pages:
@@ -148,7 +147,7 @@ def test_legacy_payload_without_health_coverage_still_ingests():
         client.post('/login', data={'username': 'admin', 'password': 'ChangeMeNow!', 'csrf_token': csrf}, follow_redirects=True)
         page = client.get('/pki-hierarchy')
         assert page.status_code == 200
-        assert 'Unclassified CAs - Insufficient Certificate Metadata' in page.text
+        assert 'Unclassified CAs' in page.text
         assert 'LEGACY-CA' in page.text
         assert 'Unknown Root / External Root' not in page.text
 

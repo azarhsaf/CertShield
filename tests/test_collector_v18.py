@@ -148,13 +148,41 @@ def test_template_validity_missing_is_not_treated_as_pass_or_hardcoded():
         'issued_certificates': [],
     }
     with TestClient(app) as client:
-        _ingest(client, payload)
+        result = _ingest(client, payload)
         _login(client)
-        page = client.get('/best-practices')
-        assert page.status_code == 200
-        assert 'NoValidityTemplate' in page.text
-        assert 'Not Assessed' in page.text
-        assert 'Not collected' in page.text
+
+        # Template inventory remains the customer-facing location.
+        template_page = client.get('/templates')
+        assert template_page.status_code == 200
+        assert 'NoValidityTemplate' in template_page.text
+
+        # Best-practice assessment remains in the backend/report even
+        # though detailed template controls are no longer repeated on
+        # the consolidated Posture governance view.
+        report = client.get(
+            f"/reports/{result['scan_id']}.json"
+        ).json()
+
+        validity = next(
+            item
+            for item in report['best_practices']['items']
+            if (
+                item['title']
+                == 'Avoid overly long validity periods'
+                and item['affected_object']
+                == 'NoValidityTemplate'
+            )
+        )
+
+        assert validity['status'] == 'Not Assessed'
+        assert (
+            validity['evidence']['validity_days_assessed']
+            is False
+        )
+        assert (
+            validity['evidence']['validity_days']
+            == 'Not collected'
+        )
 
 
 def test_offline_root_metadata_and_provider_mapping_feed_ui():
@@ -197,14 +225,42 @@ def test_offline_root_metadata_and_provider_mapping_feed_ui():
         'health_coverage': {'audit_collected': True, 'key_protection_collected': True},
     }
     with TestClient(app) as client:
-        _ingest(client, payload)
+        result = _ingest(client, payload)
         _login(client)
+
         hierarchy = client.get('/pki-hierarchy').text
-        practices = client.get('/best-practices').text
+
         assert 'HSM Protected' in hierarchy
         assert 'Utimaco SecurityServer CSP' in hierarchy
-        assert 'Root CA detected' in practices
-        assert 'Not Assessed - collector did not collect CA AuditFilter yet' not in practices
+
+        # Role classification is now represented by Hierarchy/Posture,
+        # not repeated as a Best Practices control.
+        report = client.get(
+            f"/reports/{result['scan_id']}.json"
+        ).json()
+
+        hierarchy_summary = (
+            report['evidence_summary']['hierarchy_summary']
+        )
+
+        assert hierarchy_summary['roots'] == 1
+        assert hierarchy_summary['unclassified'] == 0
+
+        audit_record = next(
+            record
+            for record in report['evidence_summary']['records']
+            if (
+                record['title'] == 'CA auditing evidence'
+                and record['object_name']
+                == 'OFFLINE-ROOT-CA-IR'
+            )
+        )
+
+        assert audit_record['original_status'] == 'Pass'
+        assert (
+            'collector did not collect CA AuditFilter'
+            not in str(audit_record)
+        )
 
 
 def test_key_protection_mapping_supports_hsm_software_unknown_provider_and_not_assessed():

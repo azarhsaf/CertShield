@@ -10,3 +10,14 @@ __pycache__/
 *.bak-*
 .env.pre-upgrade.*
 *.egg-info/
+
+# Local CertShield runtime and upgrade artifacts
+.env.*
+!.env.example
+*.orig
+*~
+**/__pycache__/
+certshield.egg-info/
+*.db
+*.sqlite
+*.sqlite3

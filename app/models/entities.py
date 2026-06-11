@@ -140,6 +140,63 @@ class RiskAcceptance(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class GovernanceEvidence(Base):
+    __tablename__ = "governance_evidence"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    control_key: Mapped[str] = mapped_column(
+        String(128),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+    category: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+    object_name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+    control_title: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+    state: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="implemented",
+    )
+    owner: Mapped[str] = mapped_column(
+        String(255),
+        default="",
+    )
+    details: Mapped[str] = mapped_column(
+        Text,
+        default="",
+    )
+    evidence_reference: Mapped[str] = mapped_column(
+        String(1000),
+        default="",
+    )
+    last_reviewed: Mapped[str] = mapped_column(
+        String(50),
+        default="",
+    )
+    next_review: Mapped[str] = mapped_column(
+        String(50),
+        default="",
+    )
+    updated_by: Mapped[str] = mapped_column(
+        String(100),
+        default="",
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+    )
+
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 
