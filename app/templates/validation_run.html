@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+{% from 'macros/evidence.html' import evidence_table, status_badge %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <div class="eyebrow">CertShield Exposure Validator</div>
+    <h1>Evidence Replay Run #{{run.id}}</h1>
+    <p>Mode: Evidence Replay · Live commands executed: No · Environment changes: None · This is not live validation</p>
+  </div>
+  <a class="btn btn-light btn-sm" href="/findings/{{finding.id}}/simulate">Back to Finding</a>
+</div>
+<div class="row g-3">
+  <div class="col-xl-8">
+    <div class="validation-terminal" aria-label="Evidence replay terminal output">
+      <div class="terminal-header">
+        <strong>CertShield Exposure Validator</strong>
+        <span>Mode: Evidence Replay</span>
+        <span>Recipe: {{run.recipe_id}} {{run.recipe_version}}</span>
+        <span>Target: {{run.target}}</span>
+      </div>
+      <div class="terminal-rule"></div>
+      <div class="terminal-lines">
+        {% for step in run.steps %}
+        <div class="terminal-line terminal-{{step.status}}" data-replay-step>
+          <span class="terminal-time">[{{(step.completed_at or step.started_at or run.created_at).strftime('%H:%M:%S')}}]</span>
+          <span class="terminal-name">{{step.step_name}}</span>
+          <span class="terminal-dots" aria-hidden="true"></span>
+          <span class="terminal-status">{{step.status|replace('_',' ')|upper}}</span>
+          <div class="terminal-message">{{step.message}}</div>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="terminal-result terminal-{{run.result}}">RESULT: {{result_label(run.result)|upper}}</div>
+      <p class="terminal-safety mb-0">This is an evidence replay, not live confirmation. No commands were executed and no environment changes were made.</p>
+    </div>
+  </div>
+  <div class="col-xl-4">
+    <div class="card card-panel"><div class="card-body compact-card">
+      <h2 class="section-title">Run Metadata</h2>
+      <div class="kv"><span>Status</span><strong>{{run.status}}</strong></div>
+      <div class="kv"><span>Result</span><strong>{{result_label(run.result)}}</strong></div>
+      <div class="kv"><span>Confidence</span><strong>{{run.confidence}}</strong></div>
+      <div class="kv"><span>Created</span><strong>{{run.created_at}}</strong></div>
+      <div class="kv"><span>Completed</span><strong>{{run.completed_at or '-'}}</strong></div>
+      <div class="kv"><span>Correlation</span><strong class="text-wrap-sm">{{run.correlation_id}}</strong></div>
+      <h2 class="section-title mt-3">Safety Statement</h2>
+      <ul class="compact-list safety-list">
+        <li><strong>Mode:</strong> Evidence Replay</li>
+        <li><strong>Live commands executed:</strong> No</li>
+        <li><strong>Certificate request submitted:</strong> No</li>
+        <li><strong>Authentication attempted:</strong> No</li>
+        <li><strong>Environment changes:</strong> None</li>
+        <li><strong>This is not live validation</strong></li>
+      </ul>
+    </div></div>
+  </div>
+</div>
+<div class="row g-3 mt-1">
+  <div class="col-xl-6"><div class="card card-panel"><div class="card-body compact-card"><h2 class="section-title">Evidence Summary</h2>{{evidence_table(run.evidence_json or {})}}</div></div></div>
+  <div class="col-xl-6"><div class="card card-panel"><div class="card-body compact-card"><h2 class="section-title">History for This Finding</h2><ul class="compact-list">{% for item in history %}<li><a href="/validations/{{item.id}}">Replay #{{item.id}}</a> · {{result_label(item.result)}} · {{item.status}}</li>{% else %}<li>No other replay history exists for this Finding.</li>{% endfor %}</ul></div></div></div>
+</div>
+<script src="/static/js/validation.js"></script>
+{% endblock %}

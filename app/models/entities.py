@@ -31,6 +31,9 @@ class Scan(Base):
     templates: Mapped[list["CertificateTemplate"]] = relationship(back_populates="scan")
     certificates: Mapped[list["IssuedCertificate"]] = relationship(back_populates="scan")
     findings: Mapped[list["Finding"]] = relationship(back_populates="scan")
+    validation_runs: Mapped[list["ValidationRun"]] = relationship(
+        back_populates="scan"
+    )
 
 
 class CertificateAuthority(Base):
@@ -117,6 +120,147 @@ class Finding(Base):
     reference: Mapped[str] = mapped_column(String(500), default="")
 
     scan: Mapped[Scan] = relationship(back_populates="findings")
+    validation_runs: Mapped[list["ValidationRun"]] = relationship(
+        back_populates="finding"
+    )
+
+
+class ValidationRun(Base):
+    __tablename__ = "validation_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    finding_id: Mapped[int] = mapped_column(
+        ForeignKey("findings.id"),
+        nullable=False,
+        index=True,
+    )
+    scan_id: Mapped[int] = mapped_column(
+        ForeignKey("scans.id"),
+        nullable=False,
+        index=True,
+    )
+    mode: Mapped[str] = mapped_column(
+        String(50),
+        default="evidence_replay",
+    )
+    recipe_id: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+    recipe_version: Mapped[str] = mapped_column(
+        String(20),
+        default="1.0",
+    )
+    recipe_hash: Mapped[str] = mapped_column(
+        String(128),
+        nullable=False,
+    )
+    target: Mapped[str] = mapped_column(
+        String(255),
+        default="",
+    )
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default="queued",
+    )
+    result: Mapped[str] = mapped_column(
+        String(50),
+        default="evidence_incomplete",
+    )
+    confidence: Mapped[str] = mapped_column(
+        String(20),
+        default="low",
+    )
+    summary: Mapped[str] = mapped_column(
+        Text,
+        default="",
+    )
+    requested_by: Mapped[str] = mapped_column(
+        String(100),
+        default="unknown",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        index=True,
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+    correlation_id: Mapped[str] = mapped_column(
+        String(64),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+    safety_json: Mapped[dict] = mapped_column(
+        JSON,
+        default=dict,
+    )
+    evidence_json: Mapped[dict] = mapped_column(
+        JSON,
+        default=dict,
+    )
+
+    finding: Mapped["Finding"] = relationship(
+        back_populates="validation_runs"
+    )
+    scan: Mapped[Scan] = relationship(
+        back_populates="validation_runs"
+    )
+    steps: Mapped[list["ValidationStep"]] = relationship(
+        back_populates="validation_run",
+        cascade="all, delete-orphan",
+        order_by="ValidationStep.sequence",
+    )
+
+
+class ValidationStep(Base):
+    __tablename__ = "validation_steps"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    validation_run_id: Mapped[int] = mapped_column(
+        ForeignKey("validation_runs.id"),
+        nullable=False,
+        index=True,
+    )
+    sequence: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+    step_name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default="info",
+    )
+    message: Mapped[str] = mapped_column(
+        Text,
+        default="",
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+    evidence_json: Mapped[dict] = mapped_column(
+        JSON,
+        default=dict,
+    )
+
+    validation_run: Mapped[ValidationRun] = relationship(
+        back_populates="steps"
+    )
 
 
 class RiskAcceptance(Base):

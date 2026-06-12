@@ -1,17 +1,65 @@
 {% extends 'base.html' %}
+{% from 'macros/evidence.html' import evidence_table, status_badge %}
 {% block content %}
-<h1 class="h3 mb-3">Validate Exposure (Safe Simulation)</h1>
-<div class="alert alert-info">Read-only analysis only. No certificate requests, no auth abuse, no privilege changes.</div>
-<div class="card card-panel"><div class="card-body">
-  <h2 class="h5">{{finding.title}}</h2>
-  <p><strong>Category:</strong> {{finding.esc_category}} · <strong>Severity:</strong> {{finding.severity}} · <strong>Confidence:</strong> {{finding.confidence}}</p>
-  <p><strong>Impact Preview:</strong> {{finding.simulation_summary}}</p>
-  <h3 class="h6">Preconditions Met</h3>
-  <ul>{% for p in simulation.preconditions_met or [] %}<li>{{p}}</li>{% endfor %}</ul>
-  <h3 class="h6">Missing / Not Confirmed</h3>
-  <ul>{% for m in simulation.missing_or_unconfirmed or [] %}<li>{{m}}</li>{% else %}<li>None.</li>{% endfor %}</ul>
-  <p><strong>Likely blast radius:</strong> {{simulation.blast_radius}}</p>
-  <p><strong>How to break this path:</strong> {{finding.remediation}}</p>
-  {% if finding.remediation_steps_json %}<ol>{% for s in finding.remediation_steps_json %}<li>{{s}}</li>{% endfor %}</ol>{% endif %}
+<div class="page-title">
+  <div>
+    <div class="eyebrow">Exposure Validation</div>
+    <h1>Validate Exposure</h1>
+    <p>Mode: Evidence Replay · Live commands executed: No · Environment changes: None · This is not live validation</p>
+  </div>
+</div>
+<div class="row g-3">
+  <div class="col-xl-7">
+    <div class="card card-panel"><div class="card-body compact-card">
+      <h2 class="section-title">Finding Summary</h2>
+      <div class="d-flex gap-2 flex-wrap mb-2">
+        <span class="badge sev-{{finding.severity|lower}}">{{finding.severity}}</span>
+        <span class="badge text-bg-dark">{{finding.esc_category}}</span>
+        <span class="badge text-bg-secondary">{{finding.confidence}}</span>
+        {{status_badge(finding.coverage_state|replace('_',' ')|title)}}
+      </div>
+      <h3 class="h5 mb-1">{{finding.title}}</h3>
+      <p class="mb-1"><strong>Target:</strong> {{finding.affected_object}}</p>
+      <p class="mb-1"><strong>Trigger:</strong> {{finding.trigger_conditions}}</p>
+      <p class="mb-0"><strong>Current evidence:</strong> {{finding.simulation_summary or finding.rationale}}</p>
+      <div class="evidence-box mt-3"><strong>Stored Finding Evidence</strong>{{evidence_table(finding.evidence_json or {})}}</div>
+    </div></div>
+  </div>
+  <div class="col-xl-5">
+    <div class="card card-panel evidence-replay-card"><div class="card-body compact-card">
+      <h2 class="section-title">Evidence Replay Mode</h2>
+      <p class="mb-2">Evidence Replay uses evidence already collected by CertShield.</p>
+      <ul class="compact-list safety-list">
+        <li><strong>Mode:</strong> Evidence Replay</li>
+        <li><strong>Live commands executed:</strong> No</li>
+        <li><strong>Certificate request submitted:</strong> No</li>
+        <li><strong>Authentication attempted:</strong> No</li>
+        <li><strong>Environment changes:</strong> None</li>
+        <li><strong>This is not live validation</strong></li>
+      </ul>
+      {% if latest_run %}
+      <div class="alert alert-info compact-alert mt-3 mb-2"><strong>Latest replay:</strong> {{result_label(latest_run.result)}} · {{latest_run.completed_at or latest_run.created_at}}</div>
+      {% endif %}
+      <form method="post" action="/findings/{{finding.id}}/validations" class="mt-3">
+        <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+        <input type="hidden" name="mode" value="evidence_replay">
+        <button class="btn btn-primary" type="submit">Start Evidence Replay</button>
+      </form>
+      <p class="small text-secondary mt-2 mb-0">The browser cannot provide commands, scripts, targets, or recipe parameters for Phase 1.</p>
+    </div></div>
+  </div>
+</div>
+<div class="card card-panel mt-3"><div class="card-body compact-card">
+  <h2 class="section-title">Previous Evidence Replays</h2>
+  <div class="table-responsive"><table class="table table-sm modern-table align-middle">
+    <thead><tr><th>ID</th><th>Mode</th><th>Result</th><th>Status</th><th>Requested By</th><th>Completed</th><th></th></tr></thead>
+    <tbody>
+    {% for run in history %}
+      <tr><td>#{{run.id}}</td><td>Evidence Replay</td><td>{{result_label(run.result)}}</td><td>{{run.status}}</td><td>{{run.requested_by}}</td><td>{{run.completed_at or '-'}}</td><td><a class="btn btn-sm btn-outline-primary" href="/validations/{{run.id}}">Open</a></td></tr>
+    {% else %}
+      <tr><td colspan="7" class="text-secondary">No evidence replay runs have been created for this exact Finding.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
 </div></div>
 {% endblock %}
