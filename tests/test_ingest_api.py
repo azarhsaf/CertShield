@@ -52,7 +52,7 @@ def test_ingest_and_dashboard_flow():
             assert "{'" not in page.text
 
         findings = client.get('/findings')
-        assert 'Validate Exposure (Safe)' in findings.text
+        assert 'Validate Exposure' in findings.text
         assert "{'" not in findings.text
 
         rep = client.get(f'/reports/{scan_id}.json')

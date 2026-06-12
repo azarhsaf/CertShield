@@ -1830,3 +1830,26 @@ body { background: var(--bg); color: var(--text); font-size: 14px; }
     width: min(330px, 90vw);
   }
 }
+
+/* Phase 1 Evidence Replay validation */
+.evidence-replay-card { border-color: #bfdbfe; background: linear-gradient(180deg,#ffffff,#eff6ff); }
+.safety-list li { margin-bottom: .2rem; }
+.validation-terminal { background:#07111f; color:#dbeafe; border:1px solid #1e3a5f; border-radius:14px; padding:1rem; box-shadow:0 16px 40px rgba(15,23,42,.25); font-family:'SFMono-Regular',Consolas,'Liberation Mono',monospace; }
+.terminal-header { display:grid; gap:.15rem; color:#bfdbfe; font-size:.88rem; }
+.terminal-rule { border-top:1px dashed #64748b; margin:.75rem 0; }
+.terminal-lines { display:grid; gap:.45rem; }
+.terminal-line { opacity:.92; transform:translateY(0); }
+.terminal-line.replay-visible { opacity:1; }
+.terminal-time { color:#93c5fd; margin-right:.35rem; }
+.terminal-name { color:#f8fafc; }
+.terminal-dots::after { content:'........................'; color:#475569; padding:0 .35rem; }
+.terminal-status { font-weight:800; }
+.terminal-message { color:#cbd5e1; font-size:.78rem; margin-left:5.9rem; overflow-wrap:anywhere; }
+.terminal-passed .terminal-status { color:#22c55e; }
+.terminal-exposed .terminal-status, .terminal-exposure_indicated { color:#f59e0b; }
+.terminal-missing .terminal-status, .terminal-evidence_incomplete { color:#fbbf24; }
+.terminal-skipped .terminal-status, .terminal-info .terminal-status { color:#94a3b8; }
+.terminal-failed .terminal-status, .terminal-replay_failed { color:#f87171; }
+.terminal-result { margin-top:1rem; font-weight:900; letter-spacing:.04em; }
+.terminal-safety { margin-top:.5rem; color:#bfdbfe; font-size:.84rem; }
+@media (max-width: 768px) { .terminal-message { margin-left:0; } .terminal-dots::after { content:'...'; } }

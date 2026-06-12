@@ -9,3 +9,10 @@ CREATE TABLE IF NOT EXISTS risk_acceptances (id INTEGER PRIMARY KEY, finding_id 
 CREATE TABLE IF NOT EXISTS audit_logs (id INTEGER PRIMARY KEY, actor TEXT, action TEXT, occurred_at TEXT, details_json TEXT);
 CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY);
 INSERT OR IGNORE INTO schema_migrations(version) VALUES ('001_init');
+CREATE TABLE IF NOT EXISTS validation_runs (id INTEGER PRIMARY KEY, finding_id INTEGER NOT NULL, scan_id INTEGER NOT NULL, mode TEXT, recipe_id TEXT, recipe_version TEXT, recipe_hash TEXT, target TEXT, status TEXT, result TEXT, confidence TEXT, summary TEXT, requested_by TEXT, created_at TEXT, started_at TEXT, completed_at TEXT, correlation_id TEXT UNIQUE, safety_json TEXT, evidence_json TEXT);
+CREATE TABLE IF NOT EXISTS validation_steps (id INTEGER PRIMARY KEY, validation_run_id INTEGER NOT NULL, sequence INTEGER NOT NULL, step_name TEXT, status TEXT, message TEXT, started_at TEXT, completed_at TEXT, evidence_json TEXT);
+CREATE INDEX IF NOT EXISTS ix_validation_runs_finding_id ON validation_runs(finding_id);
+CREATE INDEX IF NOT EXISTS ix_validation_runs_scan_id ON validation_runs(scan_id);
+CREATE INDEX IF NOT EXISTS ix_validation_runs_created_at ON validation_runs(created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS ix_validation_runs_correlation_id ON validation_runs(correlation_id);
+CREATE INDEX IF NOT EXISTS ix_validation_steps_validation_run_id ON validation_steps(validation_run_id);

@@ -2,6 +2,75 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 
+def _create_validation_tables(db: Session) -> None:
+    db.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS validation_runs ("
+            "id INTEGER PRIMARY KEY, "
+            "finding_id INTEGER NOT NULL, "
+            "scan_id INTEGER NOT NULL, "
+            "mode VARCHAR(50) DEFAULT 'evidence_replay', "
+            "recipe_id VARCHAR(100) NOT NULL, "
+            "recipe_version VARCHAR(20) DEFAULT '1.0', "
+            "recipe_hash VARCHAR(128) NOT NULL, "
+            "target VARCHAR(255) DEFAULT '', "
+            "status VARCHAR(30) DEFAULT 'queued', "
+            "result VARCHAR(50) DEFAULT 'evidence_incomplete', "
+            "confidence VARCHAR(20) DEFAULT 'low', "
+            "summary TEXT DEFAULT '', "
+            "requested_by VARCHAR(100) DEFAULT 'unknown', "
+            "created_at DATETIME, "
+            "started_at DATETIME, "
+            "completed_at DATETIME, "
+            "correlation_id VARCHAR(64) NOT NULL UNIQUE, "
+            "safety_json JSON DEFAULT '{}', "
+            "evidence_json JSON DEFAULT '{}', "
+            "FOREIGN KEY(finding_id) REFERENCES findings(id), "
+            "FOREIGN KEY(scan_id) REFERENCES scans(id)"
+            ")"
+        )
+    )
+
+    db.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS validation_steps ("
+            "id INTEGER PRIMARY KEY, "
+            "validation_run_id INTEGER NOT NULL, "
+            "sequence INTEGER NOT NULL, "
+            "step_name VARCHAR(255) NOT NULL, "
+            "status VARCHAR(30) DEFAULT 'info', "
+            "message TEXT DEFAULT '', "
+            "started_at DATETIME, "
+            "completed_at DATETIME, "
+            "evidence_json JSON DEFAULT '{}', "
+            "FOREIGN KEY(validation_run_id) "
+            "REFERENCES validation_runs(id)"
+            ")"
+        )
+    )
+
+    statements = (
+        "CREATE INDEX IF NOT EXISTS "
+        "ix_validation_runs_finding_id "
+        "ON validation_runs(finding_id)",
+        "CREATE INDEX IF NOT EXISTS "
+        "ix_validation_runs_scan_id "
+        "ON validation_runs(scan_id)",
+        "CREATE INDEX IF NOT EXISTS "
+        "ix_validation_runs_created_at "
+        "ON validation_runs(created_at)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS "
+        "ix_validation_runs_correlation_id "
+        "ON validation_runs(correlation_id)",
+        "CREATE INDEX IF NOT EXISTS "
+        "ix_validation_steps_validation_run_id "
+        "ON validation_steps(validation_run_id)",
+    )
+
+    for statement in statements:
+        db.execute(text(statement))
+
+
 def run_ddl_migrations(db: Session) -> None:
     # Lightweight additive migrations for SQLite and compatibility upgrades.
     columns = {row[1] for row in db.execute(text("PRAGMA table_info(scans)")).fetchall()}
@@ -45,5 +114,7 @@ def run_ddl_migrations(db: Session) -> None:
     acceptance_columns = {row[1] for row in db.execute(text("PRAGMA table_info(risk_acceptances)")).fetchall()}
     if "severity" not in acceptance_columns:
         db.execute(text("ALTER TABLE risk_acceptances ADD COLUMN severity VARCHAR(20) DEFAULT 'Medium'"))
+
+    _create_validation_tables(db)
 
     db.commit()

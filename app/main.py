@@ -31,6 +31,7 @@ from app.models.entities import (
     RiskAcceptance,
     Scan,
     User,
+    ValidationRun,
 )
 from app.schemas.collector import CollectorPayload
 from app.services.assessment_registry import (
@@ -50,6 +51,13 @@ from app.services.risk_acceptance import (
     active_acceptance_map,
     decorate_findings,
     finding_fingerprint,
+)
+from app.services.validation_engine import (
+    EVIDENCE_REPLAY_MODE,
+    create_evidence_replay,
+    get_validation_history,
+    result_label,
+    serialize_validation_run,
 )
 
 SEVERITY_ORDER = ["Critical", "High", "Medium", "Low"]
@@ -95,6 +103,32 @@ def _coverage_counts(db: Session, scan_id: int) -> dict[str, int]:
         .all()
     )
     return {k: v for k, v in rows}
+
+
+def _latest_validation_map(
+    db: Session,
+    finding_ids: list[int],
+) -> dict[int, ValidationRun]:
+    if not finding_ids:
+        return {}
+
+    runs = (
+        db.query(ValidationRun)
+        .filter(ValidationRun.finding_id.in_(finding_ids))
+        .order_by(
+            ValidationRun.finding_id,
+            ValidationRun.created_at.desc(),
+            ValidationRun.id.desc(),
+        )
+        .all()
+    )
+
+    latest: dict[int, ValidationRun] = {}
+
+    for run in runs:
+        latest.setdefault(run.finding_id, run)
+
+    return latest
 
 
 def _nav_context(request: Request) -> dict:
@@ -1242,6 +1276,18 @@ def findings_page(
         active_acceptance_map(db),
     )
 
+    latest_validations = _latest_validation_map(
+        db,
+        [finding.id for finding in records],
+    )
+
+    validation_badges = {
+        finding_id: (
+            f"Evidence Replay: {result_label(run.result)}"
+        )
+        for finding_id, run in latest_validations.items()
+    }
+
     ctx = _nav_context(request)
     ctx.update(
         {
@@ -1249,6 +1295,8 @@ def findings_page(
             "scan": latest_scan,
             "csrf_token": issue_csrf_token(request),
             "filter_template": filter_template,
+            "latest_validations": latest_validations,
+            "validation_badges": validation_badges,
         }
     )
 
@@ -1329,15 +1377,165 @@ def revoke_acceptance(
     return RedirectResponse("/findings", status_code=303)
 
 
-@app.get("/findings/{finding_id}/simulate", response_class=HTMLResponse)
-def finding_simulation_page(finding_id: int, request: Request, db: Session = Depends(get_db)):
+@app.get(
+    "/findings/{finding_id}/simulate",
+    response_class=HTMLResponse,
+)
+def finding_simulation_page(
+    finding_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
     ensure_authenticated(request)
-    finding = db.query(Finding).filter_by(id=finding_id).first()
+
+    finding = (
+        db.query(Finding)
+        .filter_by(id=finding_id)
+        .first()
+    )
+
     if not finding:
-        raise HTTPException(status_code=404, detail="Finding not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Finding not found",
+        )
+
+    history = get_validation_history(
+        db,
+        finding.id,
+        limit=10,
+    )
+
+    latest_run = history[0] if history else None
+
     ctx = _nav_context(request)
-    ctx.update({"finding": finding, "simulation": finding.simulation_json or {}})
-    return templates.TemplateResponse("simulation.html", ctx)
+    ctx.update(
+        {
+            "finding": finding,
+            "simulation": finding.simulation_json or {},
+            "history": history,
+            "latest_run": latest_run,
+            "csrf_token": issue_csrf_token(request),
+            "result_label": result_label,
+        }
+    )
+
+    return templates.TemplateResponse(
+        "simulation.html",
+        ctx,
+    )
+
+
+@app.post("/findings/{finding_id}/validations")
+def start_finding_validation(
+    finding_id: int,
+    request: Request,
+    mode: str = Form(EVIDENCE_REPLAY_MODE),
+    csrf_token: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    ensure_authenticated(request)
+    validate_csrf(request, csrf_token)
+
+    if mode != EVIDENCE_REPLAY_MODE:
+        raise HTTPException(
+            status_code=400,
+            detail="Only evidence_replay mode is supported",
+        )
+
+    finding = (
+        db.query(Finding)
+        .filter_by(id=finding_id)
+        .first()
+    )
+
+    if not finding:
+        raise HTTPException(
+            status_code=404,
+            detail="Finding not found",
+        )
+
+    run = create_evidence_replay(
+        db,
+        finding,
+        request.session.get("user", "unknown"),
+    )
+
+    return RedirectResponse(
+        f"/validations/{run.id}",
+        status_code=303,
+    )
+
+
+@app.get(
+    "/validations/{validation_id}",
+    response_class=HTMLResponse,
+)
+def validation_run_page(
+    validation_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    ensure_authenticated(request)
+
+    run = (
+        db.query(ValidationRun)
+        .filter_by(id=validation_id)
+        .first()
+    )
+
+    if not run:
+        raise HTTPException(
+            status_code=404,
+            detail="Validation run not found",
+        )
+
+    history = get_validation_history(
+        db,
+        run.finding_id,
+        limit=10,
+    )
+
+    ctx = _nav_context(request)
+    ctx.update(
+        {
+            "run": run,
+            "finding": run.finding,
+            "history": history,
+            "serialized_run": serialize_validation_run(run),
+            "result_label": result_label,
+        }
+    )
+
+    return templates.TemplateResponse(
+        "validation_run.html",
+        ctx,
+    )
+
+
+@app.get("/api/v1/validations/{validation_id}")
+def validation_run_status(
+    validation_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    ensure_authenticated(request)
+
+    run = (
+        db.query(ValidationRun)
+        .filter_by(id=validation_id)
+        .first()
+    )
+
+    if not run:
+        raise HTTPException(
+            status_code=404,
+            detail="Validation run not found",
+        )
+
+    return JSONResponse(
+        serialize_validation_run(run)
+    )
 
 
 @app.get("/certificates", response_class=HTMLResponse)
@@ -1403,6 +1601,40 @@ def export_json(scan_id: int, request: Request, db: Session = Depends(get_db)):
         acceptances,
     )
     summary["registry"] = current_registry
+    validation_runs = (
+        db.query(ValidationRun)
+        .filter_by(scan_id=scan.id)
+        .all()
+    )
+
+    latest_validations = _latest_validation_map(
+        db,
+        [finding.id for finding in findings],
+    )
+
+    validation_summary = {
+        "total_runs": len(validation_runs),
+        "exposure_indicated": sum(
+            1
+            for run in validation_runs
+            if run.result == "exposure_indicated"
+        ),
+        "evidence_incomplete": sum(
+            1
+            for run in validation_runs
+            if run.result == "evidence_incomplete"
+        ),
+        "no_exposure_indicated": sum(
+            1
+            for run in validation_runs
+            if run.result == "no_exposure_indicated"
+        ),
+        "replay_failed": sum(
+            1
+            for run in validation_runs
+            if run.result == "replay_failed"
+        ),
+    }
     payload = {
         "scan": summary,
         "executive_summary": {
@@ -1443,6 +1675,7 @@ def export_json(scan_id: int, request: Request, db: Session = Depends(get_db)):
             if item.get("status") in {"Fail", "Warning", "Not Assessed"}
         ],
         "cas": [c.name for c in db.query(CertificateAuthority).filter_by(scan_id=scan.id).all()],
+        "validation_summary": validation_summary,
         "findings": [
             {
                 "title": f.title,
@@ -1463,6 +1696,42 @@ def export_json(scan_id: int, request: Request, db: Session = Depends(get_db)):
                     for key, value in (f.evidence_json or {}).items()
                     if key not in {"business_impact", "technical_impact", "score_breakdown"}
                 },
+                "validation": (
+                    {
+                        "validation_id": latest_validations[f.id].id,
+                        "mode": latest_validations[f.id].mode,
+                        "recipe_id": latest_validations[f.id].recipe_id,
+                        "recipe_version": (
+                            latest_validations[f.id].recipe_version
+                        ),
+                        "result": latest_validations[f.id].result,
+                        "confidence": (
+                            latest_validations[f.id].confidence
+                        ),
+                        "completed_at": (
+                            latest_validations[f.id]
+                            .completed_at.isoformat()
+                            if latest_validations[f.id].completed_at
+                            else None
+                        ),
+                        "live_commands_executed": (
+                            latest_validations[f.id]
+                            .safety_json.get(
+                                "live_commands_executed",
+                                False,
+                            )
+                        ),
+                        "environment_changes": (
+                            latest_validations[f.id]
+                            .safety_json.get(
+                                "environment_changes",
+                                False,
+                            )
+                        ),
+                    }
+                    if f.id in latest_validations
+                    else None
+                ),
             }
             for f in findings
         ],
