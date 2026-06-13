@@ -67,9 +67,13 @@ def test_validation_routes_start_show_json_and_findings_badge():
         run_page = client.get(validation_path)
         assert "CertShield Exposure Console" in run_page.text
         assert "SIMULATION · NO CHANGES" in run_page.text
+        assert "exposure-console-terminal" in run_page.text
         assert "data-validation-walkthrough" in run_page.text
         assert "validation-run-data" in run_page.text
+        assert "data-console-restart" in run_page.text
+        assert "data-console-restart disabled" not in run_page.text
         assert "Evidence Summary" not in run_page.text
+        assert "Prompts are simulated. No commands execute. User input is display text only." not in run_page.text
         assert "walkthrough_script" in run_page.text
         assert "PS&gt;" not in run_page.text
         assert "cmd&gt;" not in run_page.text

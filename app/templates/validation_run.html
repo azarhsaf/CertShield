@@ -4,20 +4,27 @@
   <div class="exposure-console-titlebar">
     <div>
       <h1>CertShield Exposure Console</h1>
-      <p>Simulated walkthrough using collected customer evidence</p>
+      <p>SIMULATION · NO CHANGES · NO CERTIFICATE REQUEST · NO AUTHENTICATION</p>
     </div>
     <div class="exposure-console-actions">
       <button class="btn btn-sm btn-outline-light" type="button" data-console-restart>Restart</button>
       <a class="btn btn-sm btn-light" href="/findings/{{finding.id}}/simulate">Back to Finding</a>
     </div>
   </div>
-  <div class="exposure-console-strip">SIMULATION · NO CHANGES · NO CERTIFICATE REQUEST · NO AUTHENTICATION</div>
-  <div class="validation-terminal exposure-console" aria-label="CertShield Exposure Console" data-validation-walkthrough data-validation-id="{{run.id}}" data-csrf-token="{{csrf_token}}">
+  <div
+    id="exposure-console-terminal"
+    class="validation-terminal exposure-console"
+    aria-label="CertShield Exposure Console"
+    data-validation-walkthrough
+    data-validation-id="{{run.id}}"
+    data-csrf-token="{{csrf_token}}"
+  >
     <div class="console-screen" data-walkthrough-lines></div>
-    <div class="console-controls" data-walkthrough-controls></div>
-    <div class="console-footer">Prompts are simulated. No commands execute. User input is display text only.</div>
+    <div class="console-controls" data-walkthrough-controls hidden></div>
   </div>
 </div>
-<script id="validation-run-data" type="application/json">{{ serialized_run|tojson }}</script>
+<script id="validation-run-data" type="application/json">
+{{ serialized_run|tojson }}
+</script>
 <script src="/static/js/validation.js"></script>
 {% endblock %}
