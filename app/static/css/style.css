@@ -1853,3 +1853,22 @@ body { background: var(--bg); color: var(--text); font-size: 14px; }
 .terminal-result { margin-top:1rem; font-weight:900; letter-spacing:.04em; }
 .terminal-safety { margin-top:.5rem; color:#bfdbfe; font-size:.84rem; }
 @media (max-width: 768px) { .terminal-message { margin-left:0; } .terminal-dots::after { content:'...'; } }
+
+/* Guided Exposure Walkthrough */
+.walkthrough-landing-card { border:1px solid rgba(37,99,235,.22); box-shadow:0 18px 42px rgba(37,99,235,.12); }
+.safety-card { background:#eff6ff; border:1px solid #bfdbfe; border-radius:12px; padding:.85rem; color:#1e3a8a; }
+.guided-terminal { min-height:520px; position:relative; overflow:hidden; background:radial-gradient(circle at top left, rgba(37,99,235,.18), transparent 32%), #020617; color:#dbeafe; }
+.guided-terminal .terminal-lines { min-height:330px; max-height:430px; overflow:auto; padding:.35rem 0; }
+.guided-line { opacity:0; transform:translateY(8px); display:flex; gap:.65rem; align-items:flex-start; padding:.45rem .25rem; border-bottom:1px solid rgba(148,163,184,.08); }
+.guided-line.replay-visible { opacity:1; transform:translateY(0); transition:opacity .22s ease, transform .22s ease; }
+.terminal-speaker { color:#93c5fd; font-weight:800; white-space:nowrap; }
+.terminal-message-inline { color:#e5e7eb; line-height:1.45; }
+.guided-result .terminal-message-inline, .guided-banner .terminal-message-inline { color:#bbf7d0; font-weight:800; }
+.terminal-controls { min-height:58px; display:flex; gap:.65rem; flex-wrap:wrap; align-items:center; padding:.75rem 0 .25rem; }
+.terminal-action, .terminal-choice { border:1px solid #38bdf8; color:#e0f2fe; background:rgba(14,165,233,.14); border-radius:999px; padding:.48rem .9rem; font-weight:800; box-shadow:0 0 18px rgba(14,165,233,.18); }
+.terminal-action:focus, .terminal-choice:focus { outline:2px solid #93c5fd; outline-offset:2px; }
+.terminal-input-form { display:flex; gap:.6rem; width:100%; align-items:center; }
+.terminal-input-form input { flex:1; min-width:220px; background:#0f172a; color:#dbeafe; border:1px solid #334155; border-radius:10px; padding:.55rem .75rem; }
+.terminal-input-form input::placeholder { color:#94a3b8; }
+.guided-terminal::after { content:""; display:inline-block; width:9px; height:1.15rem; background:#93c5fd; margin-left:.25rem; animation:guidedCursor 1s steps(2, start) infinite; position:absolute; left:1rem; bottom:1.15rem; }
+@keyframes guidedCursor { 0%, 45% { opacity:1; } 46%, 100% { opacity:0; } }
