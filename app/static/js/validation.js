@@ -1,48 +1,43 @@
 document.addEventListener('DOMContentLoaded', () => {
   const host = document.getElementById('exposure-console-terminal') || document.querySelector('[data-validation-walkthrough]');
   const dataNode = document.getElementById('validation-run-data');
-  if (!host || !dataNode) {
-    document.querySelectorAll('[data-replay-step]').forEach((line, index) => {
-      line.style.transitionDelay = `${Math.min(index * 80, 800)}ms`;
-      line.classList.add('replay-visible');
-    });
-    return;
-  }
+  if (!host || !dataNode) return;
 
   const lines = host.querySelector('[data-walkthrough-lines]') || host;
   const controls = host.querySelector('[data-walkthrough-controls]') || document.createElement('div');
   const restart = document.querySelector('[data-console-restart]');
-  const validationId = host.dataset.validationId;
-  const csrfToken = host.dataset.csrfToken;
-  const inputValues = {};
+  const allowedControls = new Set(['ANALYZE', 'REQUEST', 'AUTH', 'FIX', 'RESTART']);
   let run = {};
   let script = [];
   let index = 0;
   let typing = false;
 
-  const cleanDisplayText = (value) => String(value || '')
+  const cleanControlText = (value) => String(value || '')
     .replace(/<[^>]*>/g, '')
     .replace(/[\x00-\x1f\x7f]/g, '')
-    .slice(0, 80);
-
-  const errorLine = (message) => ({ speaker: 'certshield', type: 'line', text: message });
+    .trim()
+    .toUpperCase()
+    .slice(0, 16);
 
   const fallbackScript = (sourceRun) => {
     const evidence = sourceRun.evidence || {};
-    const nested = evidence.evidence_json || {};
     const result = sourceRun.result_label || sourceRun.result || 'Evidence Incomplete';
-    const target = sourceRun.target || nested.template_name || nested.name || 'collected finding';
-    const title = evidence.simulation_summary || sourceRun.summary || 'Finding loaded from validation history';
+    const target = sourceRun.target || 'incomplete';
     return [
-      { speaker: 'certshield', type: 'line', text: 'finding loaded' },
-      { speaker: 'certshield', type: 'line', text: `target: ${target}` },
-      { speaker: 'certshield', type: 'line', text: `evidence summary: ${title}` },
-      { speaker: 'input', type: 'input', name: 'demo_identity', text: 'type demo identity label:' },
-      { speaker: '', type: 'simulated', text: '[SIMULATED] build request preview using collected evidence' },
-      { speaker: '', type: 'simulated', text: '[SIMULATED] identity label: {{demo_identity}}' },
-      { speaker: 'certshield', type: 'line', text: 'no certificate was requested' },
-      { speaker: 'certshield', type: 'line', text: 'no authentication was attempted' },
+      { speaker: 'operator', type: 'command', text: 'operator@certshield:~$ certipy-ad find --replay-from-certshield-evidence' },
+      { speaker: '', type: 'line', text: '[+] Domain loaded' },
+      { speaker: '', type: 'line', text: `    Target                         : ${target}` },
+      { speaker: '', type: 'line', text: `    Evidence summary               : ${evidence.simulation_summary || sourceRun.summary || 'incomplete'}` },
+      { speaker: 'input', type: 'control', expected: 'ANALYZE', text: 'Type ANALYZE to inspect the collected finding evidence:' },
+      { speaker: '', type: 'replay', text: '[REPLAY] Risk calculation evaluated from stored evidence only' },
+      { speaker: 'input', type: 'control', expected: 'REQUEST', text: 'Type REQUEST to replay risk calculation:' },
+      { speaker: '', type: 'replay', text: '[REPLAY] Request status  : not sent' },
+      { speaker: '', type: 'replay', text: '[REPLAY] Certificate     : not created' },
+      { speaker: 'input', type: 'control', expected: 'AUTH', text: 'Type AUTH to replay authentication impact:' },
+      { speaker: '', type: 'replay', text: '[REPLAY] Authentication attempt : not performed' },
       { speaker: 'certshield', type: 'banner', text: `RESULT: ${String(result).toUpperCase()}` },
+      { speaker: 'input', type: 'control', expected: 'FIX', text: 'Type FIX to view remediation:' },
+      { speaker: 'certshield', type: 'final', text: 'Replay complete. No certificate was requested, no authentication was attempted, and no environment change was made.' },
     ];
   };
 
@@ -52,8 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (error) {
       run = {};
       script = [
-        errorLine('console error: validation-run-data could not be parsed'),
-        errorLine('fallback simulation started without executing anything'),
+        { speaker: 'console', type: 'line', text: 'validation-run-data could not be parsed; using fallback replay' },
         ...fallbackScript({ result_label: 'Evidence Incomplete' }),
       ];
       return;
@@ -62,15 +56,13 @@ document.addEventListener('DOMContentLoaded', () => {
     script = supplied.length >= 5 ? supplied : fallbackScript(run);
   };
 
-  const withInputs = (text) => String(text || '').replace(/\{\{([A-Za-z0-9_.@-]+)\}\}/g, (_match, name) => inputValues[name] || '[not provided]');
-
   const promptFor = (item) => {
-    if (item.type === 'simulated') return '';
-    return `${(item.speaker || 'certshield').toLowerCase()}>`;
+    if (['command', 'replay', 'warning'].includes(item.type)) return '';
+    return `${(item.speaker || 'console').toLowerCase()}>`;
   };
 
   const typeInto = (node, value, done) => {
-    const text = withInputs(value);
+    const text = String(value || '');
     let offset = 0;
     typing = true;
     const tick = () => {
@@ -78,7 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
       offset += 1;
       lines.scrollTop = lines.scrollHeight;
       if (offset <= text.length) {
-        window.setTimeout(tick, Math.min(22, 7 + Math.floor(text.length / 12)));
+        window.setTimeout(tick, Math.min(18, 6 + Math.floor(text.length / 18)));
         return;
       }
       typing = false;
@@ -111,14 +103,13 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const finish = () => {
-    clearControls();
     showControls();
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'terminal-action';
-    button.textContent = 'Restart simulation';
+    button.textContent = 'Restart';
     button.addEventListener('click', startTerminal);
-    controls.appendChild(button);
+    controls.replaceChildren(button);
   };
 
   const advance = () => {
@@ -133,82 +124,54 @@ document.addEventListener('DOMContentLoaded', () => {
     appendLine(item, () => showControl(item));
   };
 
-  const submitInput = async (item, rawValue) => {
-    const sanitized = cleanDisplayText(rawValue).trim();
-    if (!sanitized) {
-      appendLine({ speaker: 'operator', type: 'line', text: 'input was empty after sanitization; type a demo label only' }, () => showControl(item));
+  const submitControl = (item, rawValue) => {
+    const value = cleanControlText(rawValue);
+    if (value === 'RESTART') {
+      startTerminal();
       return;
     }
-    inputValues[item.name || 'walkthrough_note'] = sanitized;
-    const body = new URLSearchParams();
-    body.set('csrf_token', csrfToken || '');
-    body.set('name', item.name || 'walkthrough_note');
-    body.set('value', sanitized);
-    try {
-      const response = await fetch(`/api/v1/validations/${validationId}/walkthrough-input`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body,
-      });
-      if (!response.ok) {
-        appendLine({ speaker: 'operator', type: 'line', text: 'input was rejected because it looked like a secret; use a demo label only' }, () => showControl(item));
-        return;
-      }
-    } catch (error) {
-      appendLine({ speaker: 'operator', type: 'line', text: 'input stayed in browser memory; simulation continues without execution' });
+    if (!allowedControls.has(value) || value !== item.expected) {
+      appendLine({ speaker: 'console', type: 'line', text: 'Unknown replay control. Use ANALYZE, REQUEST, AUTH, or FIX.' }, () => showControl(item));
+      return;
     }
-    appendLine({ speaker: 'input', type: 'line', text: sanitized }, advance);
+    appendLine({ speaker: 'input', type: 'line', text: value }, advance);
   };
 
   const showControl = (item) => {
-    if (item.type === 'continue') {
-      showControls();
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'terminal-action';
-      button.textContent = 'Press Enter';
-      button.addEventListener('click', advance);
-      controls.appendChild(button);
-      button.focus();
+    if (item.type !== 'control') {
+      window.setTimeout(advance, ['command', 'replay'].includes(item.type) ? 420 : 220);
       return;
     }
-
-    if (item.type === 'input') {
-      showControls();
-      const form = document.createElement('form');
-      form.className = 'terminal-input-form';
-      const prompt = document.createElement('span');
-      prompt.className = 'console-prompt';
-      prompt.textContent = `${(item.speaker || 'input').toLowerCase()}>`;
-      const input = document.createElement('input');
-      input.type = 'text';
-      input.name = 'value';
-      input.maxLength = 80;
-      input.autocomplete = 'off';
-      input.placeholder = 'Type demo value only — not executed';
-      const button = document.createElement('button');
-      button.type = 'submit';
-      button.className = 'terminal-action';
-      button.textContent = 'Enter';
-      form.append(prompt, input, button);
-      form.addEventListener('submit', (event) => {
-        event.preventDefault();
-        clearControls();
-        submitInput(item, input.value);
-      });
-      controls.appendChild(form);
-      input.focus();
-      return;
-    }
-
-    window.setTimeout(advance, item.type === 'simulated' ? 520 : 240);
+    showControls();
+    const form = document.createElement('form');
+    form.className = 'terminal-input-form';
+    const prompt = document.createElement('span');
+    prompt.className = 'console-prompt';
+    prompt.textContent = 'input>';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.name = 'replay_control';
+    input.maxLength = 16;
+    input.autocomplete = 'off';
+    input.placeholder = item.expected;
+    const button = document.createElement('button');
+    button.type = 'submit';
+    button.className = 'terminal-action';
+    button.textContent = 'Enter';
+    form.append(prompt, input, button);
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      clearControls();
+      submitControl(item, input.value);
+    });
+    controls.replaceChildren(form);
+    input.focus();
   };
 
   function startTerminal() {
     loadScript();
     index = 0;
     typing = false;
-    Object.keys(inputValues).forEach((key) => delete inputValues[key]);
     lines.replaceChildren();
     clearControls();
     advance();

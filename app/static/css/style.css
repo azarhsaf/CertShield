@@ -1906,3 +1906,10 @@ body { background: var(--bg); color: var(--text); font-size: 14px; }
 .exposure-console .console-controls[hidden] { display:none; }
 .exposure-console .terminal-input-form { display:grid; grid-template-columns:auto minmax(220px, 1fr) auto; width:100%; gap:.65rem; align-items:center; }
 .console-footer { display:none; }
+
+/* ADCS operator replay tone */
+.exposure-console-titlebar p.console-safety-strip { margin-top:.25rem; color:#fca5a5; }
+.console-command .console-text { color:#f8fafc; font-weight:800; }
+.console-replay .console-text { color:#93c5fd; }
+.console-warning .console-text { color:#f87171; font-weight:900; }
+.console-control .console-text { color:#fde68a; }

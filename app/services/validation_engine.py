@@ -60,9 +60,9 @@ def sanitize_replay_value(value, depth: int = 0):
                 sanitized[key_text] = sanitize_replay_value(item, depth + 1)
         return sanitized
     if isinstance(value, list):
-        return [sanitize_replay_value(item, depth + 1) for item in value[:25]]
+        return [sanitize_replay_value(item, depth + 1) for item in value[:100]]
     if isinstance(value, tuple):
-        return [sanitize_replay_value(item, depth + 1) for item in value[:25]]
+        return [sanitize_replay_value(item, depth + 1) for item in value[:100]]
     if value is None or isinstance(value, bool | int | float):
         return value
     text = str(value).replace("\x00", "").strip()
@@ -210,27 +210,113 @@ def _remediation_bullets(finding: Finding) -> list[str]:
     return (parts or [remediation])[:3]
 
 
+def _bool_state(value: object, true_label: str = "detected", false_label: str = "not detected") -> str:
+    if value is None:
+        return "incomplete"
+    return true_label if bool(value) else false_label
+
+
+def _matching_template(finding: Finding):
+    scan = finding.scan
+    if not scan:
+        return None
+    candidates = list(getattr(scan, "templates", []) or [])
+    if not candidates:
+        return None
+    needles = {
+        str(finding.affected_object or "").casefold(),
+        str((finding.evidence_json or {}).get("template") or "").casefold(),
+        str((finding.evidence_json or {}).get("template_name") or "").casefold(),
+        str((finding.evidence_json or {}).get("name") or "").casefold(),
+    }
+    needles = {item for item in needles if item}
+    for template in candidates:
+        names = {str(template.name or "").casefold(), str(template.display_name or "").casefold()}
+        if needles & names:
+            return template
+    for template in candidates:
+        if str(template.name or "").casefold() in str(finding.affected_object or "").casefold():
+            return template
+    return candidates[0]
+
+
+def _ca_for_template(finding: Finding, template) -> object | None:
+    scan = finding.scan
+    if not scan:
+        return None
+    cas = list(getattr(scan, "cas", []) or [])
+    if not cas:
+        return None
+    published = {str(item).casefold() for item in _as_list(getattr(template, "published_to", [])) if _meaningful(item)} if template else set()
+    for ca in cas:
+        if str(ca.name or "").casefold() in published:
+            return ca
+    evidence_ca = str((finding.evidence_json or {}).get("ca") or (finding.evidence_json or {}).get("ca_name") or "").casefold()
+    for ca in cas:
+        if evidence_ca and evidence_ca == str(ca.name or "").casefold():
+            return ca
+    return cas[0]
+
+
+def _enrollment_principals(template) -> str:
+    if not template:
+        return "incomplete"
+    principals = [perm.principal for perm in getattr(template, "permissions", []) if getattr(perm, "can_enroll", False) or getattr(perm, "can_autoenroll", False)]
+    return ", ".join(principals[:5]) if principals else "incomplete"
+
+
+def _dangerous_acl(template, finding: Finding) -> tuple[str, str]:
+    raw = getattr(template, "raw_json", {}) if template else {}
+    details = _as_list(raw.get("acl_details") if isinstance(raw, dict) else [])
+    for item in details:
+        if isinstance(item, dict):
+            principal = _display_value(item.get("principal"), "incomplete")
+            rights = _display_value(item.get("rights"), "incomplete")
+            if principal != "incomplete" or rights != "incomplete":
+                return principal, rights
+    evidence = finding.evidence_json or {}
+    return _display_value(evidence.get("principal"), "incomplete"), _display_value(evidence.get("rights") or evidence.get("permission"), "incomplete")
+
+
 def _environment_snapshot(finding: Finding) -> dict[str, str]:
     evidence = finding.evidence_json or {}
     simulation = finding.simulation_json or {}
     flat = _flatten_evidence({"evidence": evidence, "simulation": simulation})
-    target = _display_value(finding.affected_object, "affected object not collected")
+    template = _matching_template(finding)
+    ca = _ca_for_template(finding, template)
+    dangerous_principal, dangerous_permission = _dangerous_acl(template, finding)
+    published_to = _as_list(getattr(template, "published_to", [])) if template else []
+    eku = _as_list(getattr(template, "eku", [])) if template else _as_list(evidence.get("eku") or evidence.get("purpose"))
+    client_auth = any("client authentication" in str(item).casefold() or "1.3.6.1.5.5.7.3.2" in str(item) for item in eku)
+    manager_approval = getattr(template, "manager_approval", None) if template else _first_evidence_value(flat, ("manager", "approval"))
+    authorized_signatures = getattr(template, "authorized_signatures", None) if template else _first_evidence_value(flat, ("authorized", "signature"))
+    supplies_subject = getattr(template, "enrollee_supplies_subject", None) if template else _first_evidence_value(flat, ("subject",))
+    ca_config = getattr(ca, "config_json", {}) if ca else {}
+    policy_flag = _first_text_match(_flatten_evidence(ca_config), ("san",), "incomplete") if ca_config else _first_text_match(flat, ("san",), "incomplete")
     return {
-        "title": _display_value(finding.title, "finding title not collected"),
-        "target": target,
-        "template": _first_text_match(flat, ("template", "name"), target),
-        "ca": _first_text_match(flat, ("ca", "name"), _first_text_match(flat, ("published",), "not collected")),
-        "dns": _first_text_match(flat, ("dns",), "not collected"),
-        "eku": _first_text_match(flat, ("eku",), _first_text_match(flat, ("purpose",), "not collected")),
-        "approval": _first_text_match(flat, ("manager", "approval"), "not collected"),
-        "subject": _first_text_match(flat, ("subject",), "not collected"),
-        "san": _first_text_match(flat, ("san",), "not collected"),
-        "permissions": _first_text_match(flat, ("permission",), _first_text_match(flat, ("principal",), "not collected")),
-        "severity": _display_value(finding.severity, "not collected"),
-        "confidence": _display_value(finding.confidence, "not collected"),
-        "summary": _display_value(finding.simulation_summary or finding.rationale, "not collected"),
-        "missing": _display_value(simulation.get("missing_or_unconfirmed"), "none recorded"),
-        "trigger": _display_value(finding.trigger_conditions, "not collected"),
+        "domain": _display_value(getattr(getattr(finding, "scan", None), "domain_name", None), "incomplete"),
+        "title": _display_value(finding.title, "incomplete"),
+        "target": _display_value(finding.affected_object, "incomplete"),
+        "template": _display_value(getattr(template, "name", None), _display_value(finding.affected_object, "incomplete")),
+        "template_display": _display_value(getattr(template, "display_name", None), "incomplete"),
+        "ca": _display_value(getattr(ca, "name", None), "incomplete"),
+        "dns": _display_value(getattr(ca, "dns_name", None), "incomplete"),
+        "published": "yes" if published_to else "incomplete",
+        "eku": _display_value(eku, "incomplete"),
+        "client_auth": _bool_state(client_auth if eku else None),
+        "approval": "required" if manager_approval is True else "not required" if manager_approval is False else "incomplete",
+        "authorized_signatures": "required" if (authorized_signatures or 0) > 0 else "not required" if authorized_signatures is not None else "incomplete",
+        "subject": _bool_state(supplies_subject),
+        "san": _first_text_match(flat, ("san",), _bool_state(supplies_subject)),
+        "permissions": _enrollment_principals(template),
+        "dangerous_principal": dangerous_principal,
+        "dangerous_permission": dangerous_permission,
+        "policy_flag": policy_flag,
+        "severity": _display_value(finding.severity, "incomplete"),
+        "confidence": _display_value(finding.confidence, "incomplete"),
+        "summary": _display_value(finding.simulation_summary or finding.rationale, "incomplete"),
+        "missing": _display_value(simulation.get("missing_or_unconfirmed"), "incomplete"),
+        "trigger": _display_value(finding.trigger_conditions, "incomplete"),
     }
 
 
@@ -240,15 +326,35 @@ def _line(speaker: str, line_type: str, text: str, **extra) -> dict:
     return item
 
 
+def _cmd(command: str) -> dict:
+    return _line("operator", "command", f"operator@certshield:~$ {command}")
+
+
+def _kv(label: str, value: str) -> dict:
+    return _line("", "line", f"    {label:<31}: {value}")
+
+
+def _control(expected: str, text: str) -> dict:
+    return _line("input", "control", text, expected=expected)
+
+
 def build_walkthrough_script(finding: Finding, result: str | None = None) -> list[dict]:
     text = _evidence_text(finding)
     result_value = result or calculate_replay_result(finding)[0]
+    result_badge = _result_badge(result_value)
     env = _environment_snapshot(finding)
     script: list[dict] = [
-        _line("certshield", "line", "Loading finding from CertShield database."),
-        _line("certshield", "line", f"Finding: {env['title']}"),
-        _line("certshield", "line", f"Severity: {env['severity']} · Confidence: {env['confidence']}"),
-        _line("operator", "continue", "Press Enter to load collected environment evidence."),
+        _cmd("certipy-ad find --replay-from-certshield-evidence"),
+        _line("", "line", "[+] Domain loaded"),
+        _kv("Domain", env["domain"]),
+        _kv("CA", env["ca"]),
+        _kv("CA DNS", env["dns"]),
+        _kv("Template", env["template"]),
+        _kv("Published on CA", env["published"]),
+        _kv("Enrollment principal", env["permissions"]),
+        _line("", "line", "[+] Finding context"),
+        _kv("Severity", env["severity"]),
+        _kv("Confidence", env["confidence"]),
     ]
 
     is_esc1 = any(term in text for term in ("esc1", "subject", "san", "client authentication", "requester-controlled", "supply in request"))
@@ -259,96 +365,123 @@ def build_walkthrough_script(finding: Finding, result: str | None = None) -> lis
     if is_esc1:
         script.extend(
             [
-                _line("certshield", "line", f"Template loaded: {env['template']}"),
-                _line("certshield", "line", f"CA: {env['ca']}"),
-                _line("certshield", "line", f"CA DNS: {env['dns']}"),
-                _line("certshield", "line", f"EKU: {env['eku']}"),
-                _line("certshield", "line", f"Manager approval: {env['approval']}"),
-                _line("certshield", "line", f"Requester-controlled subject: {env['subject']}"),
-                _line("certshield", "line", f"Requester-controlled SAN: {env['san']}"),
-                _line("certshield", "line", f"Enrollment access: {env['permissions']}"),
-                _line("input", "input", "Type a demo identity label to test the exposure path:", name="demo_identity"),
-                _line("certshield", "line", "Demo identity accepted for simulation only."),
-                _line("certshield", "line", "Nothing was sent to the CA."),
-                _line("operator", "continue", "Press Enter to preview the simulated operator intent."),
-                _line("", "simulated", f"[SIMULATED] Build request preview for template {env['template']}"),
-                _line("", "simulated", "[SIMULATED] Requested identity label: {{demo_identity}}"),
-                _line("", "simulated", f"[SIMULATED] Approval check: {env['approval']}"),
-                _line("", "simulated", f"[SIMULATED] Enrollment check: {env['permissions']}"),
-                _line("", "simulated", f"[SIMULATED] Evaluate client authentication capability from EKU: {env['eku']}"),
-                _line("certshield", "line", "Exposure path indicated."),
+                _line("", "line", "[+] Template indicators"),
+                _kv("Client Authentication EKU", env["client_auth"]),
+                _kv("EKU", env["eku"]),
+                _kv("Enrollee supplies subject", env["subject"]),
+                _kv("Requester-controlled SAN", env["san"]),
+                _kv("Manager approval", env["approval"]),
+                _kv("Authorized signatures", env["authorized_signatures"]),
+                _control("ANALYZE", "Type ANALYZE to inspect the template abuse path:"),
+                _cmd("certipy-ad analyze-template --replay-from-certshield-evidence"),
+                _line("", "line", "[+] Abuse preconditions"),
+                _kv("Enrollment allowed", "detected" if env["permissions"] != "incomplete" else "incomplete"),
+                _kv("Identity can be influenced", "detected" if env["subject"] == "detected" or env["san"] == "detected" else "incomplete"),
+                _kv("Auth-capable certificate", env["client_auth"]),
+                _kv("Approval barrier", "not detected" if env["approval"] == "not required" else "detected" if env["approval"] == "required" else "incomplete"),
+                _line("", "warning", "[!] Exposure path indicated"),
+                _line("", "line", "    Collected evidence suggests this template may allow identity-bearing certificate misuse."),
+                _control("REQUEST", "Type REQUEST to replay the certificate request stage:"),
+                _cmd(f"certipy-ad req --replay-from-certshield-evidence --template {env['template']} --ca {env['ca']}"),
+                _line("", "replay", f"[REPLAY] Target CA       : {env['ca']}"),
+                _line("", "replay", f"[REPLAY] Template        : {env['template']}"),
+                _line("", "replay", "[REPLAY] Identity field  : requester-controlled evidence indicated"),
+                _line("", "replay", "[REPLAY] Request status  : not sent"),
+                _line("", "replay", "[REPLAY] Certificate     : not created"),
+                _line("", "replay", "[REPLAY] Private key     : not created"),
+                _control("AUTH", "Type AUTH to replay the authentication impact stage:"),
+                _cmd("certipy-ad auth --replay-from-certshield-evidence"),
+                _line("", "replay", "[REPLAY] Certificate authentication path evaluated from collected evidence"),
+                _line("", "replay", "[REPLAY] Authentication attempt : not performed"),
+                _line("", "replay", "[REPLAY] Logon session          : not created"),
             ]
         )
     elif is_esc4:
         script.extend(
             [
-                _line("certshield", "line", f"Template loaded: {env['template']}"),
-                _line("certshield", "line", f"Dangerous template ACL evidence: {env['permissions']}"),
-                _line("input", "input", "Type a demo change label for the simulated preview:", name="demo_change"),
-                _line("certshield", "line", "Demo change label accepted for simulation only."),
-                _line("", "simulated", f"[SIMULATED] Inspect write permission on template {env['template']}"),
-                _line("", "simulated", "[SIMULATED] Preview dangerous template change label: {{demo_change}}"),
-                _line("", "simulated", "[SIMULATED] Evaluate whether write access could create an exposure path"),
-                _line("certshield", "line", "No AD object was modified."),
+                _control("ANALYZE", "Type ANALYZE to inspect the template ACL path:"),
+                _cmd("certipy-ad template --replay-from-certshield-evidence"),
+                _line("", "line", "[+] Template ACL indicators"),
+                _kv("Template", env["template"]),
+                _kv("Dangerous principal", env["dangerous_principal"]),
+                _kv("Dangerous permission", env["dangerous_permission"]),
+                _line("", "warning", "[!] Template-control exposure may be possible from collected ACL evidence."),
+                _control("REQUEST", "Type REQUEST to replay a template-change preview:"),
+                _line("", "replay", "[REPLAY] Template change preview : not written"),
+                _line("", "replay", "[REPLAY] AD modification         : not performed"),
+                _control("AUTH", "Type AUTH to replay downstream impact evaluation:"),
+                _line("", "replay", "[REPLAY] Downstream authentication impact evaluated from evidence only"),
             ]
         )
     elif is_esc6:
         script.extend(
             [
-                _line("certshield", "line", f"CA loaded: {env['ca']}"),
-                _line("certshield", "line", f"CA DNS: {env['dns']}"),
-                _line("certshield", "line", f"Requester-supplied SAN policy evidence: {env['san']}"),
-                _line("operator", "continue", "Press Enter to preview SAN influence risk."),
-                _line("", "simulated", f"[SIMULATED] Inspect CA policy for {env['ca']}"),
-                _line("", "simulated", "[SIMULATED] Preview requester-controlled SAN influence risk"),
-                _line("", "simulated", "[SIMULATED] Evaluate impact without submitting a CA request"),
-                _line("certshield", "line", "No CA request was made."),
+                _control("ANALYZE", "Type ANALYZE to inspect CA SAN policy:"),
+                _cmd("certipy-ad ca --replay-from-certshield-evidence"),
+                _line("", "line", "[+] CA policy indicators"),
+                _kv("CA", env["ca"]),
+                _kv("Policy flag", env["policy_flag"]),
+                _kv("Requester-supplied SAN", env["san"]),
+                _line("", "warning", "[!] CA policy may amplify requester-controlled SAN risk."),
+                _control("REQUEST", "Type REQUEST to replay a CA request preview:"),
+                _line("", "replay", "[REPLAY] CA request      : not sent"),
+                _line("", "replay", "[REPLAY] Certificate     : not created"),
+                _control("AUTH", "Type AUTH to replay authentication impact evaluation:"),
+                _line("", "replay", "[REPLAY] Authentication attempt : not performed"),
             ]
         )
     elif is_esc8:
         script.extend(
             [
-                _line("certshield", "line", f"Endpoint evidence: {env['target']}"),
-                _line("certshield", "line", f"CA: {env['ca']}"),
-                _line("certshield", "line", f"DNS: {env['dns']}"),
-                _line("operator", "continue", "Press Enter to preview relay-prone posture."),
-                _line("", "simulated", "[SIMULATED] Inspect endpoint posture from collected evidence"),
-                _line("", "simulated", "[SIMULATED] Preview relay-prone condition"),
-                _line("", "simulated", "[SIMULATED] Evaluate risk without network traffic or authentication"),
-                _line("certshield", "line", "No relay was attempted."),
+                _control("ANALYZE", "Type ANALYZE to inspect relay-prone posture:"),
+                _cmd("certipy-ad relay --replay-from-certshield-evidence"),
+                _line("", "line", "[+] Endpoint indicators"),
+                _kv("Endpoint", env["target"]),
+                _kv("CA", env["ca"]),
+                _kv("DNS", env["dns"]),
+                _line("", "warning", "[!] Relay-prone condition evaluated from collected endpoint posture."),
+                _control("REQUEST", "Type REQUEST to replay endpoint request impact:"),
+                _line("", "replay", "[REPLAY] Network traffic : not generated"),
+                _line("", "replay", "[REPLAY] Relay attempt   : not performed"),
+                _control("AUTH", "Type AUTH to replay authentication impact evaluation:"),
+                _line("", "replay", "[REPLAY] Authentication attempt : not performed"),
             ]
         )
     else:
         script.extend(
             [
-                _line("certshield", "line", f"Affected object: {env['target']}"),
-                _line("certshield", "line", f"Trigger: {env['trigger']}"),
-                _line("certshield", "line", f"Evidence summary: {env['summary']}"),
-                _line("certshield", "line", f"Missing evidence: {env['missing']}"),
-                _line("operator", "continue", "Press Enter to preview the simulated risk result."),
-                _line("", "simulated", "[SIMULATED] Evaluate finding using collected evidence only"),
-                _line("", "simulated", f"[SIMULATED] Result calculation: {_result_badge(result_value)}"),
+                _control("ANALYZE", "Type ANALYZE to inspect the collected finding evidence:"),
+                _line("", "line", "[+] Generic finding indicators"),
+                _kv("Affected object", env["target"]),
+                _kv("Trigger", env["trigger"]),
+                _kv("Evidence summary", env["summary"]),
+                _kv("Missing evidence", env["missing"]),
+                _control("REQUEST", "Type REQUEST to replay risk calculation:"),
+                _line("", "replay", "[REPLAY] Risk calculation evaluated from stored evidence only"),
+                _control("AUTH", "Type AUTH to replay possible authentication impact:"),
+                _line("", "replay", "[REPLAY] Authentication attempt : not performed"),
             ]
         )
 
     script.extend(
         [
-            _line("certshield", "line", "Based on collected evidence, a similar sequence could potentially allow identity misuse if performed by an authorized requester."),
-            _line("certshield", "line", "CertShield did not request a certificate."),
-            _line("certshield", "line", "CertShield did not authenticate."),
-            _line("certshield", "line", "No environment changes were made."),
-            _line("certshield", "final", "Nothing was executed. This was a simulation using your collected PKI evidence."),
-            _line(
-                "certshield",
-                "final",
-                "However, the names, template settings, CA evidence, and permission indicators shown above came from your environment. "
-                "If a real attacker or authorized requester followed a similar abuse path outside CertShield, this configuration could be risky.",
-            ),
+            _line("certshield", "banner", f"RESULT: {result_badge}"),
+            _control("FIX", "Type FIX to view remediation:"),
         ]
     )
     for bullet in _remediation_bullets(finding):
-        script.append(_line("certshield", "remediation", f"Remediation: {bullet}"))
-    script.append(_line("certshield", "banner", f"RESULT: {_result_badge(result_value)}"))
+        script.append(_line("certshield", "remediation", f"- {bullet}"))
+    script.extend(
+        [
+            _line("certshield", "final", "Replay complete. No certificate was requested, no authentication was attempted, and no environment change was made."),
+            _line(
+                "certshield",
+                "final",
+                "The CA, template, EKU, approval, and permission indicators shown above came from this environment. "
+                "A real attacker or authorized requester following a similar path outside CertShield may be able to misuse this configuration.",
+            ),
+        ]
+    )
     return script
 
 

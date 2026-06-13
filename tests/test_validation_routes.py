@@ -75,6 +75,14 @@ def test_validation_routes_start_show_json_and_findings_badge():
         assert "Evidence Summary" not in run_page.text
         assert "Prompts are simulated. No commands execute. User input is display text only." not in run_page.text
         assert "walkthrough_script" in run_page.text
+        assert "certipy-ad" in run_page.text
+        assert "--replay-from-certshield-evidence" in run_page.text
+        assert "UserClientAuth" in run_page.text
+        assert "CORP-CA" in run_page.text
+        assert "not sent" in run_page.text
+        assert "not created" in run_page.text
+        assert "not performed" in run_page.text
+        assert "Type a demo identity label" not in run_page.text
         assert "PS&gt;" not in run_page.text
         assert "cmd&gt;" not in run_page.text
         assert "certreq" not in run_page.text.lower()

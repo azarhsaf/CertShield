@@ -77,9 +77,14 @@ def test_create_replay_persists_run_steps_and_separate_history():
         assert len(run.steps) >= 4
         serialized = serialize_validation_run(run)
         assert serialized["evidence"]["walkthrough_script"]
-        assert serialized["evidence"]["walkthrough_script"][0]["speaker"] == "certshield"
+        assert serialized["evidence"]["walkthrough_script"][0]["speaker"] == "operator"
         assert len(serialized["evidence"]["walkthrough_script"]) >= 5
-        assert any(item["type"] == "simulated" for item in serialized["evidence"]["walkthrough_script"])
+        script_text = "\n".join(item["text"] for item in serialized["evidence"]["walkthrough_script"])
+        assert "certipy-ad" in script_text
+        assert "--replay-from-certshield-evidence" in script_text
+        assert "not sent" in script_text
+        assert "not created" in script_text
+        assert "not performed" in script_text
         sanitized, accepted = store_walkthrough_input(run, "demo_identity", "privileged-user-demo; bad")
         assert accepted is True
         assert sanitized == "privileged-user-demo; bad"

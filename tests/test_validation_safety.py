@@ -48,3 +48,8 @@ def test_exposure_console_js_autostarts_and_has_dynamic_fallback():
     assert "fallbackScript" in text
     assert "validation-run-data could not be parsed" in text
     assert "exposure-console-terminal" in text
+    assert "allowedControls" in text
+    assert "ANALYZE" in text
+    assert "REQUEST" in text
+    assert "AUTH" in text
+    assert "FIX" in text
