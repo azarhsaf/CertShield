@@ -5,7 +5,7 @@
   <div>
     <div class="eyebrow">Exposure Validation</div>
     <h1>Validate Exposure</h1>
-    <p>Mode: Evidence Replay · Live commands executed: No · Environment changes: None · This is not live validation</p>
+    <p>Guided Exposure Walkthrough based on collected evidence</p>
   </div>
 </div>
 <div class="row g-3">
@@ -26,38 +26,39 @@
     </div></div>
   </div>
   <div class="col-xl-5">
-    <div class="card card-panel evidence-replay-card"><div class="card-body compact-card">
-      <h2 class="section-title">Evidence Replay Mode</h2>
-      <p class="mb-2">Evidence Replay uses evidence already collected by CertShield.</p>
+    <div class="card card-panel evidence-replay-card walkthrough-landing-card"><div class="card-body compact-card">
+      <h2 class="section-title">Guided Exposure Walkthrough</h2>
+      <p class="mb-2 safety-card">This walkthrough does not execute commands, request certificates, authenticate, or change the environment.</p>
+      <p class="visually-hidden">Mode: Guided Evidence Walkthrough. Live commands executed: No. Certificate requested: No. Authentication attempted: No. Environment changes: None. This is a safe simulation based on collected evidence</p>
       <ul class="compact-list safety-list">
-        <li><strong>Mode:</strong> Evidence Replay</li>
+        <li><strong>Mode:</strong> Guided Evidence Walkthrough</li>
         <li><strong>Live commands executed:</strong> No</li>
-        <li><strong>Certificate request submitted:</strong> No</li>
+        <li><strong>Certificate requested:</strong> No</li>
         <li><strong>Authentication attempted:</strong> No</li>
         <li><strong>Environment changes:</strong> None</li>
-        <li><strong>This is not live validation</strong></li>
+        <li><strong>This is a safe simulation based on collected evidence</strong></li>
       </ul>
       {% if latest_run %}
-      <div class="alert alert-info compact-alert mt-3 mb-2"><strong>Latest replay:</strong> {{result_label(latest_run.result)}} · {{latest_run.completed_at or latest_run.created_at}}</div>
+      <div class="alert alert-info compact-alert mt-3 mb-2"><strong>Latest walkthrough:</strong> {{result_label(latest_run.result)}} · {{latest_run.completed_at or latest_run.created_at}}</div>
       {% endif %}
       <form method="post" action="/findings/{{finding.id}}/validations" class="mt-3">
         <input type="hidden" name="csrf_token" value="{{csrf_token}}">
         <input type="hidden" name="mode" value="evidence_replay">
-        <button class="btn btn-primary" type="submit">Start Evidence Replay</button>
+        <button class="btn btn-primary" type="submit">Start Guided Walkthrough</button>
       </form>
-      <p class="small text-secondary mt-2 mb-0">The browser cannot provide commands, scripts, targets, or recipe parameters for Phase 1.</p>
+      <p class="small text-secondary mt-2 mb-0">The browser can provide harmless demo labels only. They are notes, not commands.</p>
     </div></div>
   </div>
 </div>
 <div class="card card-panel mt-3"><div class="card-body compact-card">
-  <h2 class="section-title">Previous Evidence Replays</h2>
+  <h2 class="section-title">Previous Guided Walkthroughs</h2>
   <div class="table-responsive"><table class="table table-sm modern-table align-middle">
     <thead><tr><th>ID</th><th>Mode</th><th>Result</th><th>Status</th><th>Requested By</th><th>Completed</th><th></th></tr></thead>
     <tbody>
     {% for run in history %}
-      <tr><td>#{{run.id}}</td><td>Evidence Replay</td><td>{{result_label(run.result)}}</td><td>{{run.status}}</td><td>{{run.requested_by}}</td><td>{{run.completed_at or '-'}}</td><td><a class="btn btn-sm btn-outline-primary" href="/validations/{{run.id}}">Open</a></td></tr>
+      <tr><td>#{{run.id}}</td><td>Guided Evidence Walkthrough</td><td>{{result_label(run.result)}}</td><td>{{run.status}}</td><td>{{run.requested_by}}</td><td>{{run.completed_at or '-'}}</td><td><a class="btn btn-sm btn-outline-primary" href="/validations/{{run.id}}">Open</a></td></tr>
     {% else %}
-      <tr><td colspan="7" class="text-secondary">No evidence replay runs have been created for this exact Finding.</td></tr>
+      <tr><td colspan="7" class="text-secondary">No guided walkthroughs have been created for this exact Finding.</td></tr>
     {% endfor %}
     </tbody>
   </table></div>

@@ -36,12 +36,12 @@
     <div class="d-flex gap-2 flex-wrap mt-2">{% if latest_replay and latest_replay.status == 'completed' %}
 <a class="btn btn-sm btn-outline-primary"
    href="/validations/{{ latest_replay.id }}">
-  View Evidence Replay
+  View Guided Walkthrough
 </a>
 {% elif latest_replay and latest_replay.status == 'failed' %}
 <a class="btn btn-sm btn-outline-primary"
    href="/findings/{{ f.id }}/simulate">
-  Retry Evidence Replay
+  Retry Guided Walkthrough
 </a>
 {% else %}
 <a class="btn btn-sm btn-outline-primary"
