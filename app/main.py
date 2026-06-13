@@ -57,7 +57,9 @@ from app.services.validation_engine import (
     create_evidence_replay,
     get_validation_history,
     result_label,
+    sanitize_walkthrough_input,
     serialize_validation_run,
+    store_walkthrough_input,
 )
 
 SEVERITY_ORDER = ["Critical", "High", "Medium", "Low"]
@@ -1283,7 +1285,7 @@ def findings_page(
 
     validation_badges = {
         finding_id: (
-            f"Evidence Replay: {result_label(run.result)}"
+            f"Guided Walkthrough: {result_label(run.result)}"
         )
         for finding_id, run in latest_validations.items()
     }
@@ -1503,6 +1505,7 @@ def validation_run_page(
             "finding": run.finding,
             "history": history,
             "serialized_run": serialize_validation_run(run),
+            "csrf_token": issue_csrf_token(request),
             "result_label": result_label,
         }
     )
@@ -1535,6 +1538,49 @@ def validation_run_status(
 
     return JSONResponse(
         serialize_validation_run(run)
+    )
+
+
+@app.post("/api/v1/validations/{validation_id}/walkthrough-input")
+def save_walkthrough_input(
+    validation_id: int,
+    request: Request,
+    name: str = Form("walkthrough_note"),
+    value: str = Form(""),
+    csrf_token: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    ensure_authenticated(request)
+    validate_csrf(request, csrf_token)
+
+    run = (
+        db.query(ValidationRun)
+        .filter_by(id=validation_id)
+        .first()
+    )
+
+    if not run:
+        raise HTTPException(
+            status_code=404,
+            detail="Validation run not found",
+        )
+
+    sanitized, accepted = store_walkthrough_input(run, name, value)
+    flag_modified(run, "evidence_json")
+    db.commit()
+
+    if not accepted:
+        raise HTTPException(
+            status_code=400,
+            detail="Walkthrough input must be a non-secret label using letters, numbers, dash, underscore, dot, or at sign.",
+        )
+
+    return JSONResponse(
+        {
+            "accepted": True,
+            "name": sanitize_walkthrough_input(name),
+            "value": sanitized,
+        }
     )
 
 

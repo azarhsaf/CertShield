@@ -21,7 +21,11 @@ def test_phase1_implementation_has_no_live_execution_primitives():
         "os." + "system",
         "Invoke" + "-Expression",
         "power" + "shell.exe",
-        "cmd.exe" + " /c",
+        "cmd" + ".exe",
+        "cert" + "req",
+        "Rube" + "us",
+        "Cert" + "ipy",
+        "Pass" + "TheCert",
         "shell" + "=True",
     ]
     files = [
