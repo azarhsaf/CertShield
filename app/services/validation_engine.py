@@ -25,8 +25,22 @@ SAFETY_METADATA = {
     "configuration_changed": False,
     "arbitrary_command_execution": False,
 }
-SECRET_MARKERS = ("password", "secret", "token", "credential", "private key", "private_key", "ticket", "hash", "cookie", "authorization", "bearer")
-WALKTHROUGH_INPUT_PATTERN = re.compile(r"[^A-Za-z0-9_.@-]+")
+SECRET_MARKERS = (
+    "password",
+    "secret",
+    "token",
+    "credential",
+    "private key",
+    "private_key",
+    "ticket",
+    "hash",
+    "cookie",
+    "authorization",
+    "bearer",
+)
+HTML_TAG_PATTERN = re.compile(r"<[^>]*>")
+CONTROL_CHAR_PATTERN = re.compile(r"[\x00-\x1f\x7f]+")
+
 
 
 def result_label(result: str | None) -> str:
@@ -56,16 +70,13 @@ def sanitize_replay_value(value, depth: int = 0):
 
 
 def sanitize_walkthrough_input(value: object) -> str:
-    """Return a safe, non-secret walkthrough note value.
-
-    Walkthrough values are labels only. They are never interpreted as commands,
-    targets, credentials, or live validation parameters.
-    """
-    text = str(value or "").replace("\x00", "").strip()[:100]
+    """Return a safe display-only walkthrough note value."""
+    text = CONTROL_CHAR_PATTERN.sub("", str(value or ""))
+    text = HTML_TAG_PATTERN.sub("", text).strip()[:80]
     lowered = text.lower()
     if any(marker in lowered for marker in SECRET_MARKERS):
         return ""
-    return WALKTHROUGH_INPUT_PATTERN.sub("", text)[:100]
+    return text
 
 
 def store_walkthrough_input(run: ValidationRun, name: str, value: object) -> tuple[str, bool]:
@@ -146,33 +157,98 @@ def _evidence_text(finding: Finding) -> str:
     return " ".join(str(chunk or "") for chunk in chunks).lower()
 
 
-def _evidence_state(text: str, positive_terms: tuple[str, ...], negative_terms: tuple[str, ...] = ()) -> str:
-    if any(term in text for term in negative_terms):
-        return "not indicated"
-    if any(term in text for term in positive_terms):
-        return "indicated"
-    return "incomplete"
+def _display_value(value: object, fallback: str = "not collected") -> str:
+    if value in (None, "", [], {}, ()):
+        return fallback
+    if isinstance(value, bool):
+        return "present" if value else "not present"
+    if isinstance(value, list | tuple | set):
+        items = [str(sanitize_replay_value(item)) for item in value if _meaningful(item)]
+        return ", ".join(items[:5]) if items else fallback
+    return str(sanitize_replay_value(value))
+
+
+def _flatten_evidence(value: object, prefix: str = "") -> dict[str, object]:
+    flattened: dict[str, object] = {}
+    if isinstance(value, dict):
+        for key, item in value.items():
+            key_text = f"{prefix}.{key}" if prefix else str(key)
+            flattened[key_text.lower()] = item
+            flattened.update(_flatten_evidence(item, key_text))
+    elif isinstance(value, list | tuple):
+        for index, item in enumerate(value[:20]):
+            flattened.update(_flatten_evidence(item, f"{prefix}.{index}" if prefix else str(index)))
+    return flattened
+
+
+def _first_evidence_value(flattened: dict[str, object], terms: tuple[str, ...], fallback: object = None) -> object:
+    for key, value in flattened.items():
+        if all(term in key for term in terms) and _meaningful(value):
+            return value
+    return fallback
+
+
+def _first_text_match(flattened: dict[str, object], terms: tuple[str, ...], fallback: str = "not collected") -> str:
+    value = _first_evidence_value(flattened, terms)
+    return _display_value(value, fallback)
+
+
+def _result_badge(result: str) -> str:
+    return {
+        "exposure_indicated": "POTENTIALLY VULNERABLE",
+        "evidence_incomplete": "EVIDENCE INCOMPLETE",
+        "no_exposure_indicated": "NO EXPOSURE INDICATED",
+    }.get(result, result_label(result).upper())
+
+
+def _remediation_bullets(finding: Finding) -> list[str]:
+    steps = [str(sanitize_replay_value(item)) for item in _as_list(finding.remediation_steps_json) if _meaningful(item)]
+    if steps:
+        return steps[:3]
+    remediation = str(sanitize_replay_value(finding.remediation or "Review and remediate the configuration shown above."))
+    parts = [part.strip(" -.") for part in re.split(r"[\n;]+", remediation) if part.strip()]
+    return (parts or [remediation])[:3]
+
+
+def _environment_snapshot(finding: Finding) -> dict[str, str]:
+    evidence = finding.evidence_json or {}
+    simulation = finding.simulation_json or {}
+    flat = _flatten_evidence({"evidence": evidence, "simulation": simulation})
+    target = _display_value(finding.affected_object, "affected object not collected")
+    return {
+        "title": _display_value(finding.title, "finding title not collected"),
+        "target": target,
+        "template": _first_text_match(flat, ("template", "name"), target),
+        "ca": _first_text_match(flat, ("ca", "name"), _first_text_match(flat, ("published",), "not collected")),
+        "dns": _first_text_match(flat, ("dns",), "not collected"),
+        "eku": _first_text_match(flat, ("eku",), _first_text_match(flat, ("purpose",), "not collected")),
+        "approval": _first_text_match(flat, ("manager", "approval"), "not collected"),
+        "subject": _first_text_match(flat, ("subject",), "not collected"),
+        "san": _first_text_match(flat, ("san",), "not collected"),
+        "permissions": _first_text_match(flat, ("permission",), _first_text_match(flat, ("principal",), "not collected")),
+        "severity": _display_value(finding.severity, "not collected"),
+        "confidence": _display_value(finding.confidence, "not collected"),
+        "summary": _display_value(finding.simulation_summary or finding.rationale, "not collected"),
+        "missing": _display_value(simulation.get("missing_or_unconfirmed"), "none recorded"),
+        "trigger": _display_value(finding.trigger_conditions, "not collected"),
+    }
+
+
+def _line(speaker: str, line_type: str, text: str, **extra) -> dict:
+    item = {"type": line_type, "speaker": speaker, "text": sanitize_replay_value(text)}
+    item.update(extra)
+    return item
 
 
 def build_walkthrough_script(finding: Finding, result: str | None = None) -> list[dict]:
     text = _evidence_text(finding)
     result_value = result or calculate_replay_result(finding)[0]
-    result_text = result_label(result_value)
-    title = sanitize_replay_value(finding.title or "Finding")
-    target = sanitize_replay_value(finding.affected_object or "Affected object not specified")
-    trigger = sanitize_replay_value(finding.trigger_conditions or "Trigger conditions were not fully described.")
-    summary = sanitize_replay_value(finding.simulation_summary or finding.rationale or "Collected evidence was loaded for review.")
-    missing = [sanitize_replay_value(item) for item in _as_list((finding.simulation_json or {}).get("missing_or_unconfirmed")) if _meaningful(item)]
-    preconditions = [sanitize_replay_value(item) for item in _as_list((finding.simulation_json or {}).get("preconditions_met")) if _meaningful(item)]
-
-    def line(speaker: str, line_type: str, message: str, **extra) -> dict:
-        item = {"type": line_type, "speaker": speaker, "text": sanitize_replay_value(message)}
-        item.update(extra)
-        return item
-
+    env = _environment_snapshot(finding)
     script: list[dict] = [
-        line("CertShield", "line", f"Finding loaded: {title}."),
-        line("Walkthrough", "continue", "Press Enter to inspect why this matters."),
+        _line("certshield", "line", "Loading finding from CertShield database."),
+        _line("certshield", "line", f"Finding: {env['title']}"),
+        _line("certshield", "line", f"Severity: {env['severity']} · Confidence: {env['confidence']}"),
+        _line("operator", "continue", "Press Enter to load collected environment evidence."),
     ]
 
     is_esc1 = any(term in text for term in ("esc1", "subject", "san", "client authentication", "requester-controlled", "supply in request"))
@@ -183,76 +259,96 @@ def build_walkthrough_script(finding: Finding, result: str | None = None) -> lis
     if is_esc1:
         script.extend(
             [
-                line("CertShield", "line", "Evidence shows this template may allow a requester to influence subject or SAN values."),
-                line(
-                    "Input required",
-                    "input",
-                    "Type a harmless example identity label to use in this walkthrough. Example: privileged-user-demo",
-                    name="demo_identity",
-                    placeholder="Type demo value only — not executed",
-                    validation="safe_text_only",
-                ),
-                line("CertShield", "line", "Demo identity recorded as walkthrough input only. Nothing was sent to ADCS."),
-                line("CertShield", "line", f"Evidence check: Client Authentication capable template: {_evidence_state(text, ('client authentication', 'smart card logon', 'pkinit'), ('no client authentication',))}."),
-                line("CertShield", "line", f"Evidence check: Manager approval requirement: {_evidence_state(text, ('manager approval required', 'approval required'), ('no manager approval', 'manager approval disabled'))}."),
-                line("CertShield", "line", f"Evidence check: Enrollment permission: {_evidence_state(text, ('enroll', 'autoenroll', 'enrollment permission'), ())}."),
-                line("Walkthrough", "continue", "Press Enter to view the simulated risk outcome."),
-                line(
-                    "CertShield",
-                    "result",
-                    "Simulated outcome: If an authorized requester abused this configuration, "
-                    "the collected evidence indicates a certificate request could potentially represent another identity. "
-                    "CertShield did not request a certificate and did not attempt authentication.",
-                ),
+                _line("certshield", "line", f"Template loaded: {env['template']}"),
+                _line("certshield", "line", f"CA: {env['ca']}"),
+                _line("certshield", "line", f"CA DNS: {env['dns']}"),
+                _line("certshield", "line", f"EKU: {env['eku']}"),
+                _line("certshield", "line", f"Manager approval: {env['approval']}"),
+                _line("certshield", "line", f"Requester-controlled subject: {env['subject']}"),
+                _line("certshield", "line", f"Requester-controlled SAN: {env['san']}"),
+                _line("certshield", "line", f"Enrollment access: {env['permissions']}"),
+                _line("input", "input", "Type a demo identity label to test the exposure path:", name="demo_identity"),
+                _line("certshield", "line", "Demo identity accepted for simulation only."),
+                _line("certshield", "line", "Nothing was sent to the CA."),
+                _line("operator", "continue", "Press Enter to preview the simulated operator intent."),
+                _line("", "simulated", f"[SIMULATED] Build request preview for template {env['template']}"),
+                _line("", "simulated", "[SIMULATED] Requested identity label: {{demo_identity}}"),
+                _line("", "simulated", f"[SIMULATED] Approval check: {env['approval']}"),
+                _line("", "simulated", f"[SIMULATED] Enrollment check: {env['permissions']}"),
+                _line("", "simulated", f"[SIMULATED] Evaluate client authentication capability from EKU: {env['eku']}"),
+                _line("certshield", "line", "Exposure path indicated."),
             ]
         )
     elif is_esc4:
         script.extend(
             [
-                line("CertShield", "line", f"Template control path reviewed for {target}."),
-                line("CertShield", "line", "Collected evidence indicates dangerous template write or ownership permissions may exist."),
-                line("Walkthrough", "choice", "Choose a safe explanation path.", options=["Why write access matters", "What evidence is missing", "Remediation focus"]),
-                line("CertShield", "line", "In theory, dangerous template control could alter issuance settings. CertShield made no AD object modifications."),
-                line(
-                    "CertShield",
-                    "result",
-                    "Simulated outcome: collected evidence suggests a possible privilege impact if authorized template administrators or delegated principals misused dangerous write permissions. No directory changes were made.",
-                ),
+                _line("certshield", "line", f"Template loaded: {env['template']}"),
+                _line("certshield", "line", f"Dangerous template ACL evidence: {env['permissions']}"),
+                _line("input", "input", "Type a demo change label for the simulated preview:", name="demo_change"),
+                _line("certshield", "line", "Demo change label accepted for simulation only."),
+                _line("", "simulated", f"[SIMULATED] Inspect write permission on template {env['template']}"),
+                _line("", "simulated", "[SIMULATED] Preview dangerous template change label: {{demo_change}}"),
+                _line("", "simulated", "[SIMULATED] Evaluate whether write access could create an exposure path"),
+                _line("certshield", "line", "No AD object was modified."),
             ]
         )
     elif is_esc6:
         script.extend(
             [
-                line("CertShield", "line", "CA policy evidence reviewed for requester-supplied SAN behavior."),
-                line("CertShield", "line", "Requester-supplied SAN policy can increase abuse potential when combined with permissive templates."),
-                line("Walkthrough", "continue", "Press Enter to review the safe simulated impact."),
-                line("CertShield", "result", "Simulated outcome: collected evidence suggests requester-controlled SAN policy could amplify identity misuse risk. CertShield made no CA request and changed no CA configuration."),
+                _line("certshield", "line", f"CA loaded: {env['ca']}"),
+                _line("certshield", "line", f"CA DNS: {env['dns']}"),
+                _line("certshield", "line", f"Requester-supplied SAN policy evidence: {env['san']}"),
+                _line("operator", "continue", "Press Enter to preview SAN influence risk."),
+                _line("", "simulated", f"[SIMULATED] Inspect CA policy for {env['ca']}"),
+                _line("", "simulated", "[SIMULATED] Preview requester-controlled SAN influence risk"),
+                _line("", "simulated", "[SIMULATED] Evaluate impact without submitting a CA request"),
+                _line("certshield", "line", "No CA request was made."),
             ]
         )
     elif is_esc8:
         script.extend(
             [
-                line("CertShield", "line", "Web enrollment or endpoint posture evidence was loaded."),
-                line("CertShield", "line", "Relay-prone posture can matter when authentication protections are incomplete."),
-                line("Walkthrough", "continue", "Press Enter to view the defensive outcome."),
-                line("CertShield", "result", "Simulated outcome: collected evidence suggests relay exposure may be present. CertShield attempted no relay and attempted no authentication."),
+                _line("certshield", "line", f"Endpoint evidence: {env['target']}"),
+                _line("certshield", "line", f"CA: {env['ca']}"),
+                _line("certshield", "line", f"DNS: {env['dns']}"),
+                _line("operator", "continue", "Press Enter to preview relay-prone posture."),
+                _line("", "simulated", "[SIMULATED] Inspect endpoint posture from collected evidence"),
+                _line("", "simulated", "[SIMULATED] Preview relay-prone condition"),
+                _line("", "simulated", "[SIMULATED] Evaluate risk without network traffic or authentication"),
+                _line("certshield", "line", "No relay was attempted."),
             ]
         )
     else:
         script.extend(
             [
-                line("CertShield", "line", f"Affected object: {target}."),
-                line("CertShield", "line", f"Trigger conditions: {trigger}."),
-                line("CertShield", "line", f"Evidence summary: {summary}."),
-                line("CertShield", "line", "Missing evidence: " + ("; ".join(str(item) for item in missing) if missing else "No material missing evidence recorded.")),
-                line("Walkthrough", "choice", "Choose a safe review focus.", options=["Simulated impact", "Evidence gaps", "Remediation steps"]),
-                line("CertShield", "result", "Simulated outcome: collected evidence suggests risk may exist, but this remains a defensive, non-executing walkthrough with no live confirmation."),
+                _line("certshield", "line", f"Affected object: {env['target']}"),
+                _line("certshield", "line", f"Trigger: {env['trigger']}"),
+                _line("certshield", "line", f"Evidence summary: {env['summary']}"),
+                _line("certshield", "line", f"Missing evidence: {env['missing']}"),
+                _line("operator", "continue", "Press Enter to preview the simulated risk result."),
+                _line("", "simulated", "[SIMULATED] Evaluate finding using collected evidence only"),
+                _line("", "simulated", f"[SIMULATED] Result calculation: {_result_badge(result_value)}"),
             ]
         )
 
-    if preconditions:
-        script.insert(2, line("CertShield", "line", "Stored trigger evidence: " + "; ".join(str(item) for item in preconditions[:3]) + "."))
-    script.append(line("CertShield", "banner", f"RESULT: {result_text}"))
+    script.extend(
+        [
+            _line("certshield", "line", "Based on collected evidence, a similar sequence could potentially allow identity misuse if performed by an authorized requester."),
+            _line("certshield", "line", "CertShield did not request a certificate."),
+            _line("certshield", "line", "CertShield did not authenticate."),
+            _line("certshield", "line", "No environment changes were made."),
+            _line("certshield", "final", "Nothing was executed. This was a simulation using your collected PKI evidence."),
+            _line(
+                "certshield",
+                "final",
+                "However, the names, template settings, CA evidence, and permission indicators shown above came from your environment. "
+                "If a real attacker or authorized requester followed a similar abuse path outside CertShield, this configuration could be risky.",
+            ),
+        ]
+    )
+    for bullet in _remediation_bullets(finding):
+        script.append(_line("certshield", "remediation", f"Remediation: {bullet}"))
+    script.append(_line("certshield", "banner", f"RESULT: {_result_badge(result_value)}"))
     return script
 
 

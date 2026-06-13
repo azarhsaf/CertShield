@@ -77,10 +77,11 @@ def test_create_replay_persists_run_steps_and_separate_history():
         assert len(run.steps) >= 4
         serialized = serialize_validation_run(run)
         assert serialized["evidence"]["walkthrough_script"]
-        assert serialized["evidence"]["walkthrough_script"][0]["speaker"] == "CertShield"
+        assert serialized["evidence"]["walkthrough_script"][0]["speaker"] == "certshield"
+        assert any(item["type"] == "simulated" for item in serialized["evidence"]["walkthrough_script"])
         sanitized, accepted = store_walkthrough_input(run, "demo_identity", "privileged-user-demo; bad")
         assert accepted is True
-        assert sanitized == "privileged-user-demobad"
+        assert sanitized == "privileged-user-demo; bad"
         rejected, rejected_ok = store_walkthrough_input(run, "demo_identity", "password-token")
         assert rejected == ""
         assert rejected_ok is False
@@ -90,6 +91,7 @@ def test_create_replay_persists_run_steps_and_separate_history():
 
 def test_walkthrough_input_sanitizer_strips_dangerous_values():
     assert sanitize_walkthrough_input("safe.name@example-demo") == "safe.name@example-demo"
-    assert sanitize_walkthrough_input("bad value; rm") == "badvaluerm"
+    assert sanitize_walkthrough_input("bad value; rm") == "bad value; rm"
     assert sanitize_walkthrough_input("Bearer token secret") == ""
-    assert len(sanitize_walkthrough_input("a" * 150)) == 100
+    assert sanitize_walkthrough_input("<b>demo</b>\x00 value") == "demo value"
+    assert len(sanitize_walkthrough_input("a" * 150)) == 80

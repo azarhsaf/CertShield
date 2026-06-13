@@ -13,39 +13,71 @@ document.addEventListener('DOMContentLoaded', () => {
   const script = (run.evidence && run.evidence.walkthrough_script) || [];
   const lines = host.querySelector('[data-walkthrough-lines]');
   const controls = host.querySelector('[data-walkthrough-controls]');
-  const result = host.querySelector('[data-walkthrough-result]');
+  const restart = document.querySelector('[data-console-restart]');
   const validationId = host.dataset.validationId;
   const csrfToken = host.dataset.csrfToken;
+  const inputValues = {};
   let index = 0;
+  let typing = false;
 
-  const safeText = (value) => String(value || '').replace(/[^A-Za-z0-9_.@-]/g, '').slice(0, 100);
+  const cleanDisplayText = (value) => String(value || '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/[\x00-\x1f\x7f]/g, '')
+    .slice(0, 80);
 
-  const appendLine = (item, echoValue) => {
+  const withInputs = (text) => String(text || '').replace(/\{\{([A-Za-z0-9_.@-]+)\}\}/g, (_match, name) => inputValues[name] || '[not provided]');
+
+  const promptFor = (item) => {
+    if (item.type === 'simulated') return '';
+    return `${(item.speaker || 'certshield').toLowerCase()}>`;
+  };
+
+  const typeInto = (node, value, done) => {
+    const text = withInputs(value);
+    let offset = 0;
+    typing = true;
+    const tick = () => {
+      node.textContent = text.slice(0, offset);
+      offset += 1;
+      lines.scrollTop = lines.scrollHeight;
+      if (offset <= text.length) {
+        window.setTimeout(tick, Math.min(24, 8 + text.length));
+        return;
+      }
+      typing = false;
+      done();
+    };
+    tick();
+  };
+
+  const appendLine = (item, done = () => {}) => {
     const row = document.createElement('div');
-    row.className = `terminal-line guided-line guided-${item.type || 'line'}`;
-    const speaker = document.createElement('span');
-    speaker.className = 'terminal-speaker';
-    speaker.textContent = `${item.speaker || 'CertShield'}>`;
+    row.className = `console-line console-${item.type || 'line'}`;
+    const prompt = document.createElement('span');
+    prompt.className = 'console-prompt';
+    prompt.textContent = promptFor(item);
     const text = document.createElement('span');
-    text.className = 'terminal-message-inline';
-    text.textContent = echoValue ? `${item.text} ${echoValue}` : item.text;
-    row.append(speaker, text);
+    text.className = 'console-text';
+    row.append(prompt, text);
     lines.appendChild(row);
     requestAnimationFrame(() => row.classList.add('replay-visible'));
-    lines.scrollTop = lines.scrollHeight;
+    typeInto(text, item.text, done);
   };
 
-  const clearControls = () => {
-    controls.replaceChildren();
-  };
+  const clearControls = () => controls.replaceChildren();
 
   const finish = () => {
     clearControls();
-    result.hidden = false;
-    result.classList.add('replay-visible');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'terminal-action';
+    button.textContent = 'Restart simulation';
+    button.addEventListener('click', reset);
+    controls.appendChild(button);
   };
 
   const advance = () => {
+    if (typing) return;
     clearControls();
     if (index >= script.length) {
       finish();
@@ -53,13 +85,42 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const item = script[index];
     index += 1;
-    appendLine(item);
+    appendLine(item, () => showControl(item));
+  };
 
+  const submitInput = async (item, rawValue) => {
+    const sanitized = cleanDisplayText(rawValue).trim();
+    if (!sanitized) {
+      appendLine({ speaker: 'operator', type: 'line', text: 'Input was empty after sanitization. Type a demo label only.' });
+      return;
+    }
+    inputValues[item.name || 'walkthrough_note'] = sanitized;
+    const body = new URLSearchParams();
+    body.set('csrf_token', csrfToken);
+    body.set('name', item.name || 'walkthrough_note');
+    body.set('value', sanitized);
+    try {
+      const response = await fetch(`/api/v1/validations/${validationId}/walkthrough-input`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      });
+      if (!response.ok) {
+        appendLine({ speaker: 'operator', type: 'line', text: 'Input was rejected because it looked like a secret. Use a demo label only.' });
+        return;
+      }
+    } catch (error) {
+      appendLine({ speaker: 'operator', type: 'line', text: 'Input stayed in browser memory. Simulation can continue without execution.' });
+    }
+    appendLine({ speaker: 'input', type: 'line', text: sanitized }, advance);
+  };
+
+  const showControl = (item) => {
     if (item.type === 'continue') {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'terminal-action';
-      button.textContent = 'Press Enter to continue';
+      button.textContent = 'Press Enter';
       button.addEventListener('click', advance);
       controls.appendChild(button);
       button.focus();
@@ -72,66 +133,35 @@ document.addEventListener('DOMContentLoaded', () => {
       const input = document.createElement('input');
       input.type = 'text';
       input.name = 'value';
-      input.maxLength = 100;
+      input.maxLength = 80;
       input.autocomplete = 'off';
-      input.placeholder = item.placeholder || 'Type demo value only — not executed';
+      input.placeholder = 'Type demo value only — not executed';
       const button = document.createElement('button');
       button.type = 'submit';
       button.className = 'terminal-action';
-      button.textContent = 'Record demo note';
+      button.textContent = 'Enter';
       form.append(input, button);
-      form.addEventListener('submit', async (event) => {
+      form.addEventListener('submit', (event) => {
         event.preventDefault();
-        const sanitized = safeText(input.value);
-        if (!sanitized) {
-          appendLine({ speaker: 'Walkthrough', type: 'line', text: 'Input rejected. Use a harmless non-secret label with safe characters only.' });
-          input.value = '';
-          input.focus();
-          return;
-        }
-        const body = new URLSearchParams();
-        body.set('csrf_token', csrfToken);
-        body.set('name', item.name || 'walkthrough_note');
-        body.set('value', sanitized);
-        try {
-          const response = await fetch(`/api/v1/validations/${validationId}/walkthrough-input`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body,
-          });
-          if (!response.ok) {
-            appendLine({ speaker: 'Walkthrough', type: 'line', text: 'Input rejected by safety filter. Continue with a harmless label only.' });
-            return;
-          }
-        } catch (error) {
-          appendLine({ speaker: 'Walkthrough', type: 'line', text: 'Demo note stayed in this browser session. The walkthrough remains non-executing.' });
-        }
-        appendLine({ speaker: 'Input required', type: 'line', text: 'Demo value accepted as note only:' }, sanitized);
-        advance();
+        clearControls();
+        submitInput(item, input.value);
       });
       controls.appendChild(form);
       input.focus();
       return;
     }
 
-    if (item.type === 'choice') {
-      const choices = item.options || ['Continue'];
-      choices.forEach((choice) => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'terminal-choice';
-        button.textContent = choice;
-        button.addEventListener('click', () => {
-          appendLine({ speaker: 'Walkthrough', type: 'line', text: 'Safe review selection recorded:' }, choice);
-          advance();
-        });
-        controls.appendChild(button);
-      });
-      return;
-    }
-
-    window.setTimeout(advance, 450);
+    window.setTimeout(advance, item.type === 'simulated' ? 650 : 350);
   };
+
+  function reset() {
+    index = 0;
+    typing = false;
+    Object.keys(inputValues).forEach((key) => delete inputValues[key]);
+    lines.replaceChildren();
+    clearControls();
+    advance();
+  }
 
   host.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && controls.querySelector('.terminal-action')) {
@@ -143,5 +173,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  advance();
+  if (restart) restart.addEventListener('click', reset);
+  reset();
 });

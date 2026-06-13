@@ -65,15 +65,16 @@ def test_validation_routes_start_show_json_and_findings_badge():
         assert start.status_code == 303
         validation_path = start.headers["location"]
         run_page = client.get(validation_path)
-        assert "Guided Exposure Walkthrough" in run_page.text
+        assert "CertShield Exposure Console" in run_page.text
+        assert "SIMULATION · NO CHANGES" in run_page.text
         assert "data-validation-walkthrough" in run_page.text
-        assert "Live commands executed: No" in run_page.text
-        assert "Certificate requested: No" in run_page.text
-        assert "Environment changes: None" in run_page.text
-        assert "This is a safe simulation based on collected evidence" in run_page.text
+        assert "validation-run-data" in run_page.text
+        assert "Evidence Summary" not in run_page.text
+        assert "walkthrough_script" in run_page.text
         assert "PS&gt;" not in run_page.text
         assert "cmd&gt;" not in run_page.text
-        assert "$" not in run_page.text
+        assert "certreq" not in run_page.text.lower()
+        assert "login successful" not in run_page.text.lower()
         validation_id = int(validation_path.rsplit("/", 1)[1])
         status = client.get(f"/api/v1/validations/{validation_id}")
         data = status.json()
@@ -87,7 +88,7 @@ def test_validation_routes_start_show_json_and_findings_badge():
             data={"csrf_token": input_csrf, "name": "demo_identity", "value": "safe-demo;bad"},
         )
         assert saved.status_code == 200
-        assert saved.json()["value"] == "safe-demobad"
+        assert saved.json()["value"] == "safe-demo;bad"
         rejected = client.post(
             f"/api/v1/validations/{validation_id}/walkthrough-input",
             data={"csrf_token": input_csrf, "name": "demo_identity", "value": "password-token"},
