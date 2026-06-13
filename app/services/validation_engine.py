@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from uuid import uuid4
 
@@ -24,7 +25,22 @@ SAFETY_METADATA = {
     "configuration_changed": False,
     "arbitrary_command_execution": False,
 }
-SECRET_MARKERS = ("password", "secret", "token", "credential", "private_key")
+SECRET_MARKERS = (
+    "password",
+    "secret",
+    "token",
+    "credential",
+    "private key",
+    "private_key",
+    "ticket",
+    "hash",
+    "cookie",
+    "authorization",
+    "bearer",
+)
+HTML_TAG_PATTERN = re.compile(r"<[^>]*>")
+CONTROL_CHAR_PATTERN = re.compile(r"[\x00-\x1f\x7f]+")
+
 
 
 def result_label(result: str | None) -> str:
@@ -51,6 +67,29 @@ def sanitize_replay_value(value, depth: int = 0):
         return value
     text = str(value).replace("\x00", "").strip()
     return text[:500]
+
+
+def sanitize_walkthrough_input(value: object) -> str:
+    """Return a safe display-only walkthrough note value."""
+    text = CONTROL_CHAR_PATTERN.sub("", str(value or ""))
+    text = HTML_TAG_PATTERN.sub("", text).strip()[:80]
+    lowered = text.lower()
+    if any(marker in lowered for marker in SECRET_MARKERS):
+        return ""
+    return text
+
+
+def store_walkthrough_input(run: ValidationRun, name: str, value: object) -> tuple[str, bool]:
+    safe_name = sanitize_walkthrough_input(name) or "walkthrough_note"
+    sanitized = sanitize_walkthrough_input(value)
+    evidence = dict(run.evidence_json or {})
+    inputs = dict(evidence.get("walkthrough_inputs") or {})
+    accepted = bool(sanitized)
+    if accepted:
+        inputs[safe_name[:60]] = sanitized
+    evidence["walkthrough_inputs"] = inputs
+    run.evidence_json = evidence
+    return sanitized, accepted
 
 
 def _as_list(value) -> list:
@@ -110,6 +149,209 @@ def calculate_replay_result(finding: Finding) -> tuple[str, str, str]:
     )
 
 
+def _evidence_text(finding: Finding) -> str:
+    chunks = [finding.title, finding.esc_category, finding.rule_id, finding.trigger_conditions, finding.simulation_summary]
+    chunks.extend(str(item) for item in _as_list((finding.simulation_json or {}).get("preconditions_met")))
+    chunks.extend(str(item) for item in _as_list((finding.simulation_json or {}).get("missing_or_unconfirmed")))
+    chunks.append(str(finding.evidence_json or {}))
+    return " ".join(str(chunk or "") for chunk in chunks).lower()
+
+
+def _display_value(value: object, fallback: str = "not collected") -> str:
+    if value in (None, "", [], {}, ()):
+        return fallback
+    if isinstance(value, bool):
+        return "present" if value else "not present"
+    if isinstance(value, list | tuple | set):
+        items = [str(sanitize_replay_value(item)) for item in value if _meaningful(item)]
+        return ", ".join(items[:5]) if items else fallback
+    return str(sanitize_replay_value(value))
+
+
+def _flatten_evidence(value: object, prefix: str = "") -> dict[str, object]:
+    flattened: dict[str, object] = {}
+    if isinstance(value, dict):
+        for key, item in value.items():
+            key_text = f"{prefix}.{key}" if prefix else str(key)
+            flattened[key_text.lower()] = item
+            flattened.update(_flatten_evidence(item, key_text))
+    elif isinstance(value, list | tuple):
+        for index, item in enumerate(value[:20]):
+            flattened.update(_flatten_evidence(item, f"{prefix}.{index}" if prefix else str(index)))
+    return flattened
+
+
+def _first_evidence_value(flattened: dict[str, object], terms: tuple[str, ...], fallback: object = None) -> object:
+    for key, value in flattened.items():
+        if all(term in key for term in terms) and _meaningful(value):
+            return value
+    return fallback
+
+
+def _first_text_match(flattened: dict[str, object], terms: tuple[str, ...], fallback: str = "not collected") -> str:
+    value = _first_evidence_value(flattened, terms)
+    return _display_value(value, fallback)
+
+
+def _result_badge(result: str) -> str:
+    return {
+        "exposure_indicated": "POTENTIALLY VULNERABLE",
+        "evidence_incomplete": "EVIDENCE INCOMPLETE",
+        "no_exposure_indicated": "NO EXPOSURE INDICATED",
+    }.get(result, result_label(result).upper())
+
+
+def _remediation_bullets(finding: Finding) -> list[str]:
+    steps = [str(sanitize_replay_value(item)) for item in _as_list(finding.remediation_steps_json) if _meaningful(item)]
+    if steps:
+        return steps[:3]
+    remediation = str(sanitize_replay_value(finding.remediation or "Review and remediate the configuration shown above."))
+    parts = [part.strip(" -.") for part in re.split(r"[\n;]+", remediation) if part.strip()]
+    return (parts or [remediation])[:3]
+
+
+def _environment_snapshot(finding: Finding) -> dict[str, str]:
+    evidence = finding.evidence_json or {}
+    simulation = finding.simulation_json or {}
+    flat = _flatten_evidence({"evidence": evidence, "simulation": simulation})
+    target = _display_value(finding.affected_object, "affected object not collected")
+    return {
+        "title": _display_value(finding.title, "finding title not collected"),
+        "target": target,
+        "template": _first_text_match(flat, ("template", "name"), target),
+        "ca": _first_text_match(flat, ("ca", "name"), _first_text_match(flat, ("published",), "not collected")),
+        "dns": _first_text_match(flat, ("dns",), "not collected"),
+        "eku": _first_text_match(flat, ("eku",), _first_text_match(flat, ("purpose",), "not collected")),
+        "approval": _first_text_match(flat, ("manager", "approval"), "not collected"),
+        "subject": _first_text_match(flat, ("subject",), "not collected"),
+        "san": _first_text_match(flat, ("san",), "not collected"),
+        "permissions": _first_text_match(flat, ("permission",), _first_text_match(flat, ("principal",), "not collected")),
+        "severity": _display_value(finding.severity, "not collected"),
+        "confidence": _display_value(finding.confidence, "not collected"),
+        "summary": _display_value(finding.simulation_summary or finding.rationale, "not collected"),
+        "missing": _display_value(simulation.get("missing_or_unconfirmed"), "none recorded"),
+        "trigger": _display_value(finding.trigger_conditions, "not collected"),
+    }
+
+
+def _line(speaker: str, line_type: str, text: str, **extra) -> dict:
+    item = {"type": line_type, "speaker": speaker, "text": sanitize_replay_value(text)}
+    item.update(extra)
+    return item
+
+
+def build_walkthrough_script(finding: Finding, result: str | None = None) -> list[dict]:
+    text = _evidence_text(finding)
+    result_value = result or calculate_replay_result(finding)[0]
+    env = _environment_snapshot(finding)
+    script: list[dict] = [
+        _line("certshield", "line", "Loading finding from CertShield database."),
+        _line("certshield", "line", f"Finding: {env['title']}"),
+        _line("certshield", "line", f"Severity: {env['severity']} · Confidence: {env['confidence']}"),
+        _line("operator", "continue", "Press Enter to load collected environment evidence."),
+    ]
+
+    is_esc1 = any(term in text for term in ("esc1", "subject", "san", "client authentication", "requester-controlled", "supply in request"))
+    is_esc4 = any(term in text for term in ("esc4", "template acl", "write owner", "write dacl", "genericall", "dangerous write"))
+    is_esc6 = any(term in text for term in ("esc6", "requester supplied san", "editf_attributesubjectaltname2", "ca policy"))
+    is_esc8 = any(term in text for term in ("esc8", "web enrollment", "relay", "http endpoint", "ntlm"))
+
+    if is_esc1:
+        script.extend(
+            [
+                _line("certshield", "line", f"Template loaded: {env['template']}"),
+                _line("certshield", "line", f"CA: {env['ca']}"),
+                _line("certshield", "line", f"CA DNS: {env['dns']}"),
+                _line("certshield", "line", f"EKU: {env['eku']}"),
+                _line("certshield", "line", f"Manager approval: {env['approval']}"),
+                _line("certshield", "line", f"Requester-controlled subject: {env['subject']}"),
+                _line("certshield", "line", f"Requester-controlled SAN: {env['san']}"),
+                _line("certshield", "line", f"Enrollment access: {env['permissions']}"),
+                _line("input", "input", "Type a demo identity label to test the exposure path:", name="demo_identity"),
+                _line("certshield", "line", "Demo identity accepted for simulation only."),
+                _line("certshield", "line", "Nothing was sent to the CA."),
+                _line("operator", "continue", "Press Enter to preview the simulated operator intent."),
+                _line("", "simulated", f"[SIMULATED] Build request preview for template {env['template']}"),
+                _line("", "simulated", "[SIMULATED] Requested identity label: {{demo_identity}}"),
+                _line("", "simulated", f"[SIMULATED] Approval check: {env['approval']}"),
+                _line("", "simulated", f"[SIMULATED] Enrollment check: {env['permissions']}"),
+                _line("", "simulated", f"[SIMULATED] Evaluate client authentication capability from EKU: {env['eku']}"),
+                _line("certshield", "line", "Exposure path indicated."),
+            ]
+        )
+    elif is_esc4:
+        script.extend(
+            [
+                _line("certshield", "line", f"Template loaded: {env['template']}"),
+                _line("certshield", "line", f"Dangerous template ACL evidence: {env['permissions']}"),
+                _line("input", "input", "Type a demo change label for the simulated preview:", name="demo_change"),
+                _line("certshield", "line", "Demo change label accepted for simulation only."),
+                _line("", "simulated", f"[SIMULATED] Inspect write permission on template {env['template']}"),
+                _line("", "simulated", "[SIMULATED] Preview dangerous template change label: {{demo_change}}"),
+                _line("", "simulated", "[SIMULATED] Evaluate whether write access could create an exposure path"),
+                _line("certshield", "line", "No AD object was modified."),
+            ]
+        )
+    elif is_esc6:
+        script.extend(
+            [
+                _line("certshield", "line", f"CA loaded: {env['ca']}"),
+                _line("certshield", "line", f"CA DNS: {env['dns']}"),
+                _line("certshield", "line", f"Requester-supplied SAN policy evidence: {env['san']}"),
+                _line("operator", "continue", "Press Enter to preview SAN influence risk."),
+                _line("", "simulated", f"[SIMULATED] Inspect CA policy for {env['ca']}"),
+                _line("", "simulated", "[SIMULATED] Preview requester-controlled SAN influence risk"),
+                _line("", "simulated", "[SIMULATED] Evaluate impact without submitting a CA request"),
+                _line("certshield", "line", "No CA request was made."),
+            ]
+        )
+    elif is_esc8:
+        script.extend(
+            [
+                _line("certshield", "line", f"Endpoint evidence: {env['target']}"),
+                _line("certshield", "line", f"CA: {env['ca']}"),
+                _line("certshield", "line", f"DNS: {env['dns']}"),
+                _line("operator", "continue", "Press Enter to preview relay-prone posture."),
+                _line("", "simulated", "[SIMULATED] Inspect endpoint posture from collected evidence"),
+                _line("", "simulated", "[SIMULATED] Preview relay-prone condition"),
+                _line("", "simulated", "[SIMULATED] Evaluate risk without network traffic or authentication"),
+                _line("certshield", "line", "No relay was attempted."),
+            ]
+        )
+    else:
+        script.extend(
+            [
+                _line("certshield", "line", f"Affected object: {env['target']}"),
+                _line("certshield", "line", f"Trigger: {env['trigger']}"),
+                _line("certshield", "line", f"Evidence summary: {env['summary']}"),
+                _line("certshield", "line", f"Missing evidence: {env['missing']}"),
+                _line("operator", "continue", "Press Enter to preview the simulated risk result."),
+                _line("", "simulated", "[SIMULATED] Evaluate finding using collected evidence only"),
+                _line("", "simulated", f"[SIMULATED] Result calculation: {_result_badge(result_value)}"),
+            ]
+        )
+
+    script.extend(
+        [
+            _line("certshield", "line", "Based on collected evidence, a similar sequence could potentially allow identity misuse if performed by an authorized requester."),
+            _line("certshield", "line", "CertShield did not request a certificate."),
+            _line("certshield", "line", "CertShield did not authenticate."),
+            _line("certshield", "line", "No environment changes were made."),
+            _line("certshield", "final", "Nothing was executed. This was a simulation using your collected PKI evidence."),
+            _line(
+                "certshield",
+                "final",
+                "However, the names, template settings, CA evidence, and permission indicators shown above came from your environment. "
+                "If a real attacker or authorized requester followed a similar abuse path outside CertShield, this configuration could be risky.",
+            ),
+        ]
+    )
+    for bullet in _remediation_bullets(finding):
+        script.append(_line("certshield", "remediation", f"Remediation: {bullet}"))
+    script.append(_line("certshield", "banner", f"RESULT: {_result_badge(result_value)}"))
+    return script
+
+
 def build_replay_steps(finding: Finding) -> list[dict]:
     simulation = finding.simulation_json or {}
     evidence = finding.evidence_json or {}
@@ -162,7 +404,7 @@ def build_replay_steps(finding: Finding) -> list[dict]:
     add(
         "Apply safety boundary",
         "skipped",
-        "Mode: Evidence Replay. Live commands executed: No. Environment changes: None. This is not live validation.",
+        "Mode: Guided Evidence Walkthrough. Live commands executed: No. Certificate requested: No. Authentication attempted: No. Environment changes: None. This is a safe simulation based on collected evidence.",
         {"actions_performed": actions, **SAFETY_METADATA},
     )
     add("Calculate final replay result", "info", result_label(result), {"result": result, "summary": summary})
@@ -185,6 +427,8 @@ def _audit_details(run: ValidationRun, requested_by: str, final_result: str | No
 def create_evidence_replay(db: Session, finding: Finding, requested_by: str) -> ValidationRun:
     recipe = get_recipe_for_finding(finding)
     now = datetime.utcnow()
+    result, confidence, summary = calculate_replay_result(finding)
+    walkthrough_script = build_walkthrough_script(finding, result)
     run = ValidationRun(
         finding_id=finding.id,
         scan_id=finding.scan_id,
@@ -209,6 +453,8 @@ def create_evidence_replay(db: Session, finding: Finding, requested_by: str) -> 
                 "simulation_summary": finding.simulation_summary,
                 "simulation_json": finding.simulation_json or {},
                 "evidence_json": finding.evidence_json or {},
+                "walkthrough_script": walkthrough_script,
+                "walkthrough_inputs": {},
             }
         ),
     )
@@ -220,7 +466,6 @@ def create_evidence_replay(db: Session, finding: Finding, requested_by: str) -> 
         run.status = "running"
         run.started_at = started
         db.add(AuditLog(actor=requested_by, action="validation_replay_started", details_json=_audit_details(run, requested_by)))
-        result, confidence, summary = calculate_replay_result(finding)
         steps = build_replay_steps(finding)
         for step in steps:
             db.add(
@@ -257,13 +502,7 @@ def create_evidence_replay(db: Session, finding: Finding, requested_by: str) -> 
 
 
 def get_validation_history(db: Session, finding_id: int, limit: int = 10) -> list[ValidationRun]:
-    return (
-        db.query(ValidationRun)
-        .filter_by(finding_id=finding_id)
-        .order_by(ValidationRun.created_at.desc(), ValidationRun.id.desc())
-        .limit(limit)
-        .all()
-    )
+    return db.query(ValidationRun).filter_by(finding_id=finding_id).order_by(ValidationRun.created_at.desc(), ValidationRun.id.desc()).limit(limit).all()
 
 
 def serialize_validation_run(run: ValidationRun) -> dict:
