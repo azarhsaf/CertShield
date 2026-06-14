@@ -565,6 +565,7 @@ def create_evidence_replay(db: Session, finding: Finding, requested_by: str) -> 
     run = ValidationRun(
         finding_id=finding.id,
         scan_id=finding.scan_id,
+        environment_id=finding.scan.environment_id if finding.scan else None,
         mode=EVIDENCE_REPLAY_MODE,
         recipe_id=recipe.recipe_id,
         recipe_version=recipe.version,

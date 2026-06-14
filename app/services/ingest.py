@@ -10,6 +10,7 @@ from app.models.entities import (
     CertificateTemplate,
     Finding,
     IssuedCertificate,
+    PkiEnvironment,
     Scan,
     TemplatePermission,
 )
@@ -23,10 +24,78 @@ from app.services.risk_acceptance import active_acceptance_map
 from app.services.risk_engine import evaluate_templates
 
 
+def _normalize_key(value: str) -> str:
+    return str(value or "").strip().lower().replace(" ", "-")
+
+
+def _environment_key(payload: CollectorPayload) -> str:
+    if payload.environment_key.strip():
+        return _normalize_key(payload.environment_key)
+    if payload.environment_name.strip():
+        return f"{_normalize_key(payload.collector_type)}:{_normalize_key(payload.environment_name)}"
+    ca_names = sorted(_normalize_key(ca.name) for ca in payload.cas if ca.name)
+    ca_part = ",".join(ca_names) if ca_names else _normalize_key(payload.source_host or "unknown")
+    if payload.collector_type == "ejbca":
+        label = _normalize_key(payload.pki_label or payload.domain_name or payload.source_host or "ejbca")
+        return f"ejbca:{label}:{ca_part}"
+    domain = _normalize_key(payload.domain_name or payload.forest_name or payload.source_host or "unknown")
+    return f"{_normalize_key(payload.collector_type or 'generic')}:{domain}:{ca_part}"
+
+
+def _is_demo_payload(payload: CollectorPayload) -> bool:
+    markers = " ".join([payload.environment_name, payload.environment_key, payload.domain_name, payload.pki_label, payload.source_host]).lower()
+    return any(marker in markers for marker in ("demo", "sample", "fixture")) or payload.domain_name.lower() in {"corp.local", "corp"}
+
+
+def _resolve_environment(db: Session, payload: CollectorPayload) -> PkiEnvironment:
+    key = _environment_key(payload)
+    env = db.query(PkiEnvironment).filter_by(environment_key=key).first()
+    now = datetime.utcnow()
+    if env:
+        env.updated_at = now
+        return env
+    name = payload.environment_name.strip() or payload.pki_label.strip() or payload.domain_name or key
+    if _is_demo_payload(payload) and not name.lower().startswith("demo"):
+        name = f"Demo - {name}"
+    env = PkiEnvironment(
+        name=name,
+        environment_key=key,
+        collector_type=payload.collector_type or "generic",
+        domain_name=payload.domain_name or "",
+        forest_name=payload.forest_name or "",
+        pki_label=payload.pki_label or name,
+        is_demo=_is_demo_payload(payload),
+        is_active=True,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(env)
+    db.flush()
+    return env
+
+
 class IngestService:
     @staticmethod
     def ingest(db: Session, payload: CollectorPayload, actor: str = "collector") -> Scan:
-        scan = Scan(domain_name=payload.domain_name, source=payload.source_host, started_at=datetime.utcnow())
+        environment = _resolve_environment(db, payload)
+        previous = db.query(Scan).filter_by(environment_id=environment.id, is_current_for_environment=True).order_by(Scan.id.desc()).first()
+        sequence = (previous.scan_sequence + 1) if previous else 1
+        scan = Scan(
+            domain_name=payload.domain_name,
+            source=payload.source_host,
+            source_host=payload.source_host,
+            collector_type=payload.collector_type or "generic",
+            collector_version=payload.collector_version,
+            schema_version=payload.schema_version,
+            collection_mode=payload.collection_mode or "full",
+            environment_id=environment.id,
+            scan_sequence=sequence,
+            previous_scan_id=previous.id if previous else None,
+            is_current_for_environment=True,
+            started_at=datetime.utcnow(),
+        )
+        if previous:
+            previous.is_current_for_environment = False
         db.add(scan)
         db.flush()
 
@@ -119,6 +188,9 @@ class IngestService:
             persisted_findings.append(finding_row)
 
         scan.completed_at = datetime.utcnow()
+        environment.last_scan_id = scan.id
+        environment.last_scan_at = scan.completed_at
+        environment.updated_at = scan.completed_at
         scan.coverage_json = coverage
         base_summary = {
             "cas": len(payload.cas),
@@ -178,6 +250,7 @@ class IngestService:
                 action="scan_ingested",
                 details_json={
                     "scan_id": scan.id,
+                    "environment_id": environment.id,
                     "domain": payload.domain_name,
                     "collector_type": payload.collector_type,
                     "collector_version": payload.collector_version,

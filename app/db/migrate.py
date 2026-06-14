@@ -71,8 +71,80 @@ def _create_validation_tables(db: Session) -> None:
         db.execute(text(statement))
 
 
+
+def _ensure_environment_schema(db: Session) -> None:
+    db.execute(text(
+        "CREATE TABLE IF NOT EXISTS pki_environments ("
+        "id INTEGER PRIMARY KEY, "
+        "name VARCHAR(255) NOT NULL, "
+        "environment_key VARCHAR(255) NOT NULL UNIQUE, "
+        "collector_type VARCHAR(50) DEFAULT 'adcs', "
+        "domain_name VARCHAR(255) DEFAULT '', "
+        "forest_name VARCHAR(255) DEFAULT '', "
+        "pki_label VARCHAR(255) DEFAULT '', "
+        "description TEXT DEFAULT '', "
+        "is_demo BOOLEAN DEFAULT 0, "
+        "is_active BOOLEAN DEFAULT 1, "
+        "created_at DATETIME, "
+        "updated_at DATETIME, "
+        "last_scan_id INTEGER, "
+        "last_scan_at DATETIME"
+        ")"
+    ))
+    db.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_pki_environments_environment_key ON pki_environments(environment_key)"))
+    scan_columns = {row[1] for row in db.execute(text("PRAGMA table_info(scans)")).fetchall()}
+    scan_alters = {
+        "environment_id": "ALTER TABLE scans ADD COLUMN environment_id INTEGER",
+        "collector_type": "ALTER TABLE scans ADD COLUMN collector_type VARCHAR(50) DEFAULT 'adcs'",
+        "scan_sequence": "ALTER TABLE scans ADD COLUMN scan_sequence INTEGER DEFAULT 1",
+        "previous_scan_id": "ALTER TABLE scans ADD COLUMN previous_scan_id INTEGER",
+        "is_current_for_environment": "ALTER TABLE scans ADD COLUMN is_current_for_environment BOOLEAN DEFAULT 1",
+        "collection_mode": "ALTER TABLE scans ADD COLUMN collection_mode VARCHAR(50) DEFAULT 'full'",
+        "source_host": "ALTER TABLE scans ADD COLUMN source_host VARCHAR(255) DEFAULT ''",
+        "collector_version": "ALTER TABLE scans ADD COLUMN collector_version VARCHAR(100) DEFAULT 'legacy'",
+        "schema_version": "ALTER TABLE scans ADD COLUMN schema_version VARCHAR(50) DEFAULT 'legacy'",
+    }
+    for col, stmt in scan_alters.items():
+        if col not in scan_columns:
+            db.execute(text(stmt))
+    validation_columns = {row[1] for row in db.execute(text("PRAGMA table_info(validation_runs)")).fetchall()}
+    if "environment_id" not in validation_columns:
+        db.execute(text("ALTER TABLE validation_runs ADD COLUMN environment_id INTEGER"))
+    db.execute(text("CREATE INDEX IF NOT EXISTS ix_scans_environment_id ON scans(environment_id)"))
+    db.execute(text("CREATE INDEX IF NOT EXISTS ix_scans_environment_created ON scans(environment_id, completed_at)"))
+    db.execute(text("CREATE INDEX IF NOT EXISTS ix_scans_environment_current ON scans(environment_id, is_current_for_environment)"))
+    db.execute(text("CREATE INDEX IF NOT EXISTS ix_validation_runs_environment_id ON validation_runs(environment_id)"))
+
+    existing = db.execute(text("SELECT COUNT(*) FROM pki_environments")).scalar() or 0
+    scans = db.execute(text("SELECT id, domain_name, source, completed_at FROM scans WHERE environment_id IS NULL ORDER BY id")).fetchall()
+    if scans and existing == 0:
+        domain = scans[-1][1] or "migrated"
+        key = f"migrated:{str(domain).lower()}"
+        is_demo = 1 if "corp" in str(domain).lower() or "sample" in str(domain).lower() or "demo" in str(domain).lower() else 0
+        name = "Demo - CORP Lab" if is_demo else "Migrated Environment"
+        db.execute(
+            text(
+                "INSERT INTO pki_environments "
+                "(name, environment_key, collector_type, domain_name, forest_name, pki_label, description, "
+                "is_demo, is_active, created_at, updated_at) "
+                "VALUES (:name, :key, 'adcs', :domain, '', :name, '', :is_demo, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            ),
+            {"name": name, "key": key, "domain": domain, "is_demo": is_demo},
+        )
+    env_id = db.execute(text("SELECT id FROM pki_environments ORDER BY id LIMIT 1")).scalar()
+    if env_id:
+        db.execute(text("UPDATE scans SET environment_id = :env WHERE environment_id IS NULL"), {"env": env_id})
+        latest = db.execute(text("SELECT id, completed_at FROM scans WHERE environment_id = :env ORDER BY id DESC LIMIT 1"), {"env": env_id}).fetchone()
+        if latest:
+            db.execute(text("UPDATE scans SET is_current_for_environment = 0 WHERE environment_id = :env"), {"env": env_id})
+            db.execute(text("UPDATE scans SET is_current_for_environment = 1 WHERE id = :scan"), {"scan": latest[0]})
+            db.execute(text("UPDATE pki_environments SET last_scan_id = :scan, last_scan_at = :at WHERE id = :env"), {"scan": latest[0], "at": latest[1], "env": env_id})
+        db.execute(text("UPDATE validation_runs SET environment_id = (SELECT environment_id FROM scans WHERE scans.id = validation_runs.scan_id) WHERE environment_id IS NULL"))
+
 def run_ddl_migrations(db: Session) -> None:
     # Lightweight additive migrations for SQLite and compatibility upgrades.
+    _create_validation_tables(db)
+    _ensure_environment_schema(db)
     columns = {row[1] for row in db.execute(text("PRAGMA table_info(scans)")).fetchall()}
     if "coverage_json" not in columns:
         db.execute(text("ALTER TABLE scans ADD COLUMN coverage_json JSON DEFAULT '{}'"))
@@ -114,7 +186,5 @@ def run_ddl_migrations(db: Session) -> None:
     acceptance_columns = {row[1] for row in db.execute(text("PRAGMA table_info(risk_acceptances)")).fetchall()}
     if "severity" not in acceptance_columns:
         db.execute(text("ALTER TABLE risk_acceptances ADD COLUMN severity VARCHAR(20) DEFAULT 'Medium'"))
-
-    _create_validation_tables(db)
 
     db.commit()

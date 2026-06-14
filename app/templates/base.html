@@ -168,6 +168,19 @@
       </div>
       <!-- utility-menu-end -->
 
+
+      {% if current_user and environments %}
+      <form class="environment-selector me-2" method="get" action="{{ request.url.path }}">
+        <label class="small text-light me-1" for="environment_id">Environment:</label>
+        <select id="environment_id" name="environment_id" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">Select PKI Environment</option>
+          {% for env in environments %}
+          <option value="{{env.id}}" {% if selected_environment and selected_environment.id == env.id %}selected{% endif %}>{{env.name}}{% if env.is_demo %} · Demo{% endif %} · {{env.collector_type|upper}} · {{env.domain_name or env.pki_label}}{% if env.last_scan_at %} · {{env.last_scan_at}}{% endif %}</option>
+          {% endfor %}
+        </select>
+      </form>
+      {% endif %}
+
       {% if current_user %}<div class="user-area"><span>Signed in as <strong>{{ current_user }}</strong></span><a class="btn btn-sm btn-outline-light" href="/logout">Logout</a></div>{% endif %}
     </div>
   </div>

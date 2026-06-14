@@ -1913,3 +1913,6 @@ body { background: var(--bg); color: var(--text); font-size: 14px; }
 .console-replay .console-text { color:#93c5fd; }
 .console-warning .console-text { color:#f87171; font-weight:900; }
 .console-control .console-text { color:#fde68a; }
+.environment-selector { display:flex; align-items:center; gap:.25rem; max-width:520px; }
+.environment-selector select { min-width:260px; background:#0f172a; color:#e5e7eb; border-color:#334155; }
+.environment-empty-state { border:1px dashed #94a3b8; border-radius:14px; padding:1.5rem; background:#f8fafc; }

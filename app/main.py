@@ -28,6 +28,7 @@ from app.models.entities import (
     Finding,
     GovernanceEvidence,
     IssuedCertificate,
+    PkiEnvironment,
     RiskAcceptance,
     Scan,
     User,
@@ -133,13 +134,54 @@ def _latest_validation_map(
     return latest
 
 
-def _nav_context(request: Request) -> dict:
+def _environment_options(db: Session) -> list[PkiEnvironment]:
+    return db.query(PkiEnvironment).filter_by(is_active=True).order_by(PkiEnvironment.is_demo, PkiEnvironment.name).all()
+
+
+def _selected_environment(request: Request, db: Session) -> PkiEnvironment | None:
+    envs = _environment_options(db)
+    if not envs:
+        return None
+    requested = request.query_params.get("environment_id")
+    if requested and requested.isdigit():
+        env = db.query(PkiEnvironment).filter_by(id=int(requested), is_active=True).first()
+        if env:
+            request.session["environment_id"] = env.id
+            return env
+    session_id = request.session.get("environment_id")
+    if session_id:
+        env = db.query(PkiEnvironment).filter_by(id=session_id, is_active=True).first()
+        if env:
+            return env
+    real_envs = [env for env in envs if not env.is_demo]
+    if real_envs:
+        selected = sorted(real_envs, key=lambda env: (env.last_scan_at is not None, env.last_scan_at, env.id), reverse=True)[0]
+        request.session["environment_id"] = selected.id
+        return selected
+    if len(envs) == 1 and not envs[0].is_demo:
+        request.session["environment_id"] = envs[0].id
+        return envs[0]
+    return None
+
+
+def _selected_scan(request: Request, db: Session) -> Scan | None:
+    env = _selected_environment(request, db)
+    if not env:
+        return None
+    return db.query(Scan).filter_by(environment_id=env.id, is_current_for_environment=True).order_by(Scan.id.desc()).first()
+
+
+def _nav_context(request: Request, db: Session | None = None) -> dict:
+    envs = _environment_options(db) if db else []
+    selected_env = _selected_environment(request, db) if db else None
     return {
         "request": request,
         "current_user": request.session.get("user"),
         "app_version": settings.app_version,
         "build_name": settings.build_name,
         "build_label": settings.build_label,
+        "environments": envs,
+        "selected_environment": selected_env,
     }
 
 
@@ -232,7 +274,7 @@ def _refresh_posture_for_scan(db: Session, scan_id: int) -> None:
 
 
 def _latest_scan(db: Session) -> Scan | None:
-    return db.query(Scan).order_by(Scan.id.desc()).first()
+    return db.query(Scan).filter_by(is_current_for_environment=True).order_by(Scan.id.desc()).first()
 
 
 @contextmanager
@@ -316,7 +358,7 @@ def logout(request: Request, db: Session = Depends(get_db)):
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, db: Session = Depends(get_db)):
     ensure_authenticated(request)
-    latest_scan = _latest_scan(db)
+    latest_scan = _selected_scan(request, db)
     severity = {sev: 0 for sev in SEVERITY_ORDER}
     by_category = {}
     coverage_counts = {}
@@ -341,10 +383,12 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             .limit(10)
             .all()
         )
-    ctx = _nav_context(request)
+    ctx = _nav_context(request, db)
     posture = _assessment(latest_scan, "posture", {})
     registry = _assessment(latest_scan, "registry", {})
     assurance = registry.get("assurance", posture.get("assurance", {})) if isinstance(registry, dict) else {}
+    if isinstance(assurance, dict):
+        assurance.setdefault("why", [])
     health_assessment = _assessment(latest_scan, "health", {})
     best_practices = _assessment(latest_scan, "best_practices", {})
     expiring = (health_assessment.get("items", [{}])[-2].get("evidence", {}) if health_assessment.get("items") else {})
@@ -370,9 +414,9 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
 
 def render_page(request: Request, name: str, query, key: str, db: Session):
     ensure_authenticated(request)
-    latest_scan = _latest_scan(db)
+    latest_scan = _selected_scan(request, db)
     records = query.filter_by(scan_id=latest_scan.id).all() if latest_scan else []
-    ctx = _nav_context(request)
+    ctx = _nav_context(request, db)
     ctx.update({key: records, "scan": latest_scan})
     return templates.TemplateResponse(name, ctx)
 
@@ -380,11 +424,11 @@ def render_page(request: Request, name: str, query, key: str, db: Session):
 @app.get("/pki-hierarchy", response_class=HTMLResponse)
 def pki_hierarchy_page(request: Request, db: Session = Depends(get_db)):
     ensure_authenticated(request)
-    latest_scan = _latest_scan(db)
+    latest_scan = _selected_scan(request, db)
     cas = db.query(CertificateAuthority).filter_by(scan_id=latest_scan.id).all() if latest_scan else []
     health = _assessment(latest_scan, "health", {})
     best_practices = _assessment(latest_scan, "best_practices", {})
-    ctx = _nav_context(request)
+    ctx = _nav_context(request, db)
     ctx.update({"scan": latest_scan, "hierarchy": build_pki_hierarchy(cas, health, best_practices)})
     return templates.TemplateResponse("pki_hierarchy.html", ctx)
 
@@ -491,7 +535,7 @@ def pki_posture_page(
     db: Session = Depends(get_db),
 ):
     ensure_authenticated(request)
-    latest_scan = _latest_scan(db)
+    latest_scan = _selected_scan(request, db)
 
     if latest_scan:
         stored_registry = _assessment(
@@ -830,7 +874,7 @@ def pki_posture_page(
     if not isinstance(hierarchy_summary, dict):
         hierarchy_summary = {}
 
-    ctx = _nav_context(request)
+    ctx = _nav_context(request, db)
     ctx.update(
         {
             "scan": latest_scan,
@@ -861,8 +905,8 @@ def pki_posture_page(
 @app.get("/pki-health", response_class=HTMLResponse)
 def pki_health_page(request: Request, db: Session = Depends(get_db)):
     ensure_authenticated(request)
-    latest_scan = _latest_scan(db)
-    ctx = _nav_context(request)
+    latest_scan = _selected_scan(request, db)
+    ctx = _nav_context(request, db)
     ctx.update({"scan": latest_scan, "health": _assessment(latest_scan, "health", {}), "registry": _assessment(latest_scan, "registry", {})})
     return templates.TemplateResponse("pki_health.html", ctx)
 
@@ -955,7 +999,7 @@ def save_best_practice_evidence(
 
     db.flush()
 
-    latest_scan = _latest_scan(db)
+    latest_scan = _selected_scan(request, db)
     if latest_scan:
         _refresh_posture_for_scan(db, latest_scan.id)
 
@@ -1048,7 +1092,7 @@ def accept_best_practice_risk(
         )
     )
 
-    latest_scan = _latest_scan(db)
+    latest_scan = _selected_scan(request, db)
     if latest_scan:
         _refresh_posture_for_scan(db, latest_scan.id)
 
@@ -1064,7 +1108,7 @@ def accept_best_practice_risk(
 def reports_page(request: Request, db: Session = Depends(get_db)):
     ensure_authenticated(request)
     scans = db.query(Scan).order_by(Scan.id.desc()).all()
-    ctx = _nav_context(request)
+    ctx = _nav_context(request, db)
     ctx.update({"scans": scans})
     return templates.TemplateResponse("reports.html", ctx)
 
@@ -1085,7 +1129,7 @@ def template_page(
     db: Session = Depends(get_db),
 ):
     ensure_authenticated(request)
-    latest_scan = _latest_scan(db)
+    latest_scan = _selected_scan(request, db)
 
     records = (
         db.query(CertificateTemplate)
@@ -1196,7 +1240,7 @@ def template_page(
                 }
             )
 
-    ctx = _nav_context(request)
+    ctx = _nav_context(request, db)
     ctx.update(
         {
             "templates_data": records,
@@ -1218,7 +1262,7 @@ def findings_page(
     db: Session = Depends(get_db),
 ):
     ensure_authenticated(request)
-    latest_scan = _latest_scan(db)
+    latest_scan = _selected_scan(request, db)
 
     records = []
     filter_template = template.strip()
@@ -1290,7 +1334,7 @@ def findings_page(
         for finding_id, run in latest_validations.items()
     }
 
-    ctx = _nav_context(request)
+    ctx = _nav_context(request, db)
     ctx.update(
         {
             "findings": records,
@@ -1324,6 +1368,8 @@ def accept_finding_risk(
     finding = db.query(Finding).filter_by(id=finding_id).first()
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
+    if finding.scan and finding.scan.environment_id:
+        request.session["environment_id"] = finding.scan.environment_id
     fingerprint = finding_fingerprint(finding)
     acceptance = (
         db.query(RiskAcceptance)
@@ -1401,6 +1447,8 @@ def finding_simulation_page(
             status_code=404,
             detail="Finding not found",
         )
+    if finding.scan and finding.scan.environment_id:
+        request.session["environment_id"] = finding.scan.environment_id
 
     history = get_validation_history(
         db,
@@ -1410,7 +1458,7 @@ def finding_simulation_page(
 
     latest_run = history[0] if history else None
 
-    ctx = _nav_context(request)
+    ctx = _nav_context(request, db)
     ctx.update(
         {
             "finding": finding,
@@ -1491,6 +1539,8 @@ def validation_run_page(
             status_code=404,
             detail="Validation run not found",
         )
+    if run.environment_id:
+        request.session["environment_id"] = run.environment_id
 
     history = get_validation_history(
         db,
@@ -1498,7 +1548,7 @@ def validation_run_page(
         limit=10,
     )
 
-    ctx = _nav_context(request)
+    ctx = _nav_context(request, db)
     ctx.update(
         {
             "run": run,
@@ -1587,9 +1637,9 @@ def save_walkthrough_input(
 @app.get("/certificates", response_class=HTMLResponse)
 def certs_page(request: Request, db: Session = Depends(get_db)):
     ensure_authenticated(request)
-    latest_scan = _latest_scan(db)
+    latest_scan = _selected_scan(request, db)
     records = db.query(IssuedCertificate).filter_by(scan_id=latest_scan.id).all() if latest_scan else []
-    ctx = _nav_context(request)
+    ctx = _nav_context(request, db)
     ctx.update({"certificates": records, "scan": latest_scan})
     return templates.TemplateResponse("certificates.html", ctx)
 
@@ -1598,7 +1648,7 @@ def certs_page(request: Request, db: Session = Depends(get_db)):
 def history_page(request: Request, db: Session = Depends(get_db)):
     ensure_authenticated(request)
     scans = db.query(Scan).order_by(Scan.id.desc()).all()
-    ctx = _nav_context(request)
+    ctx = _nav_context(request, db)
     ctx["scans"] = scans
     return templates.TemplateResponse("history.html", ctx)
 
@@ -1606,9 +1656,9 @@ def history_page(request: Request, db: Session = Depends(get_db)):
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request, db: Session = Depends(get_db)):
     ensure_authenticated(request)
-    latest_scan = _latest_scan(db)
+    latest_scan = _selected_scan(request, db)
     masked = settings.collector_api_token[:4] + "..." + settings.collector_api_token[-4:]
-    ctx = _nav_context(request)
+    ctx = _nav_context(request, db)
     ctx.update(
         {
             "collector_token": masked,
@@ -1627,12 +1677,28 @@ def settings_page(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("settings.html", ctx)
 
 
+@app.get("/reports/environment/{environment_id}/latest.json")
+def export_environment_latest_json(environment_id: int, request: Request, db: Session = Depends(get_db)):
+    ensure_authenticated(request)
+    scan = (
+        db.query(Scan)
+        .filter_by(environment_id=environment_id, is_current_for_environment=True)
+        .order_by(Scan.id.desc())
+        .first()
+    )
+    if not scan:
+        raise HTTPException(status_code=404, detail="Environment scan not found")
+    return export_json(scan.id, request, db)
+
+
 @app.get("/reports/{scan_id}.json")
 def export_json(scan_id: int, request: Request, db: Session = Depends(get_db)):
     ensure_authenticated(request)
     scan = db.query(Scan).filter_by(id=scan_id).first()
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
+    if scan.environment_id:
+        request.session["environment_id"] = scan.environment_id
     findings = db.query(Finding).filter_by(scan_id=scan.id).all()
     acceptances = active_acceptance_map(db)
     findings = decorate_findings(findings, acceptances)
@@ -1681,7 +1747,26 @@ def export_json(scan_id: int, request: Request, db: Session = Depends(get_db)):
             if run.result == "replay_failed"
         ),
     }
+    env = scan.environment
     payload = {
+        "environment": (
+            {
+                "id": env.id,
+                "name": env.name,
+                "collector_type": env.collector_type,
+                "environment_key": env.environment_key,
+                "is_demo": env.is_demo,
+            }
+            if env
+            else None
+        ),
+        "scan_metadata": {
+            "id": scan.id,
+            "scan_sequence": scan.scan_sequence,
+            "previous_scan_id": scan.previous_scan_id,
+            "is_current_for_environment": scan.is_current_for_environment,
+            "environment_id": scan.environment_id,
+        },
         "scan": summary,
         "executive_summary": {
             "pki_assurance_level": summary.get("registry", {}).get("assurance", {}).get("assurance_level"),
@@ -1804,7 +1889,7 @@ def report_html(scan_id: int, request: Request, db: Session = Depends(get_db)):
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
     findings = db.query(Finding).filter_by(scan_id=scan_id).all()
-    ctx = _nav_context(request)
+    ctx = _nav_context(request, db)
     ctx.update({"scan": scan, "findings": findings})
     return templates.TemplateResponse("report.html", ctx)
 
@@ -1825,7 +1910,7 @@ def collector_ingest(
 @app.get("/evidence-gaps", response_class=HTMLResponse)
 def evidence_gaps_page(request: Request, db: Session = Depends(get_db)):
     ensure_authenticated(request)
-    latest_scan = _latest_scan(db)
+    latest_scan = _selected_scan(request, db)
     registry = _assessment(latest_scan, "registry", {})
 
     gaps = []
@@ -2009,7 +2094,7 @@ def evidence_gaps_page(request: Request, db: Session = Depends(get_db)):
                 }
             )
 
-    ctx = _nav_context(request)
+    ctx = _nav_context(request, db)
     ctx.update(
         {
             "scan": latest_scan,
