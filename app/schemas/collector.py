@@ -41,6 +41,11 @@ class CertIn(BaseModel):
 
 class CollectorPayload(BaseModel):
     collector_type: str = "adcs"
+    environment_name: str = ""
+    environment_key: str = ""
+    forest_name: str = ""
+    pki_label: str = ""
+    collection_mode: str = "full"
     schema_version: str = "1.2"
     domain_name: str
     source_host: str

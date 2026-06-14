@@ -6,6 +6,9 @@ from app.services.validation_engine import (
     calculate_replay_result,
     create_evidence_replay,
     get_validation_history,
+    sanitize_walkthrough_input,
+    serialize_validation_run,
+    store_walkthrough_input,
 )
 
 
@@ -72,5 +75,29 @@ def test_create_replay_persists_run_steps_and_separate_history():
         assert run.result == "exposure_indicated"
         assert run.safety_json == SAFETY_METADATA
         assert len(run.steps) >= 4
+        serialized = serialize_validation_run(run)
+        assert serialized["evidence"]["walkthrough_script"]
+        assert serialized["evidence"]["walkthrough_script"][0]["speaker"] == "operator"
+        assert len(serialized["evidence"]["walkthrough_script"]) >= 5
+        script_text = "\n".join(item["text"] for item in serialized["evidence"]["walkthrough_script"])
+        assert "certipy-ad" in script_text
+        assert "--replay-from-certshield-evidence" in script_text
+        assert "not sent" in script_text
+        assert "not created" in script_text
+        assert "not performed" in script_text
+        sanitized, accepted = store_walkthrough_input(run, "demo_identity", "privileged-user-demo; bad")
+        assert accepted is True
+        assert sanitized == "privileged-user-demo; bad"
+        rejected, rejected_ok = store_walkthrough_input(run, "demo_identity", "password-token")
+        assert rejected == ""
+        assert rejected_ok is False
         assert get_validation_history(db, first.id)[0].id == run.id
         assert get_validation_history(db, second.id) == []
+
+
+def test_walkthrough_input_sanitizer_strips_dangerous_values():
+    assert sanitize_walkthrough_input("safe.name@example-demo") == "safe.name@example-demo"
+    assert sanitize_walkthrough_input("bad value; rm") == "bad value; rm"
+    assert sanitize_walkthrough_input("Bearer token secret") == ""
+    assert sanitize_walkthrough_input("<b>demo</b>\x00 value") == "demo value"
+    assert len(sanitize_walkthrough_input("a" * 150)) == 80
