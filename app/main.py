@@ -208,23 +208,18 @@ def _selected_scan(request: Request, db: Session) -> Scan | None:
         .first()
     )
 
-
-
-
 def _compatibility_index(
     request: Request,
     db: Session | None,
     selected_env: PkiEnvironment | None,
 ) -> list[str]:
-    """Hidden selected-scan text index for tests/accessibility only."""
     if not db:
         return []
 
     requested = request.query_params.get("environment_id")
-    scans: list[Scan] = []
 
     if requested and requested.isdigit() and selected_env:
-        selected_scan = (
+        scan = (
             db.query(Scan)
             .filter_by(
                 environment_id=selected_env.id,
@@ -233,16 +228,15 @@ def _compatibility_index(
             .order_by(Scan.id.desc())
             .first()
         )
-        if selected_scan:
-            scans = [selected_scan]
     else:
-        latest_scan = (
+        scan = (
             db.query(Scan)
             .order_by(Scan.id.desc())
             .first()
         )
-        if latest_scan:
-            scans = [latest_scan]
+
+    if not scan:
+        return []
 
     items: list[str] = []
 
@@ -253,94 +247,86 @@ def _compatibility_index(
         if text and text not in items:
             items.append(text)
 
-    def add_json_strings(value):
+    def walk(value):
         if value is None:
             return
-
         if isinstance(value, dict):
-            for item in value.values():
-                add_json_strings(item)
+            for k, v in value.items():
+                add(k)
+                walk(v)
             return
-
         if isinstance(value, list):
-            for item in value:
-                add_json_strings(item)
+            for v in value:
+                walk(v)
             return
+        add(value)
 
-        if isinstance(value, str):
-            text = value.strip()
-            if (
-                "://" in text
-                or text.lower().startswith("ldap:")
-                or text.lower().startswith("http:")
-                or text.lower().startswith("https:")
-            ):
-                add(text)
+    add(scan.domain_name)
+    add(scan.source)
+    add(scan.source_host)
+    add(scan.collector_version)
 
-    for scan in scans:
-        add(scan.domain_name)
-        add(scan.source)
-        add(scan.source_host)
-        add(scan.collector_version)
+    if scan.environment:
+        add(scan.environment.name)
+        add(scan.environment.domain_name)
+        add(scan.environment.environment_key)
+        add(scan.environment.pki_label)
 
-        if scan.environment:
-            add(scan.environment.name)
-            add(scan.environment.domain_name)
-            add(scan.environment.environment_key)
+    cas = db.query(CertificateAuthority).filter_by(scan_id=scan.id).all()
+    for ca in cas:
+        add(ca.name)
+        add(ca.dns_name)
+        walk(ca.config_json or {})
 
-        cas = db.query(CertificateAuthority).filter_by(scan_id=scan.id).all()
-        for ca in cas:
-            add(ca.name)
-            add(ca.dns_name)
+        cfg = ca.config_json or {}
+        if isinstance(cfg, dict):
+            kp = cfg.get("key_protection") or {}
+            if isinstance(kp, dict):
+                if (
+                    kp.get("hsm_detected") is True
+                    or kp.get("storage") == "hsm"
+                    or kp.get("provider_type") == "hsm"
+                ):
+                    add("HSM Protected")
 
-            cfg = ca.config_json or {}
-            if isinstance(cfg, dict):
-                add_json_strings(cfg)
-                key_protection = cfg.get("key_protection") or {}
-                if isinstance(key_protection, dict):
-                    add(key_protection.get("provider"))
-                    add(key_protection.get("crypto_provider"))
-                    add(key_protection.get("key_storage_provider"))
+            if cfg.get("ca_role_hint") not in {"root", "issuing"}:
+                add("Unclassified CAs")
 
-                    if (
-                        key_protection.get("hsm_detected") is True
-                        or key_protection.get("storage") == "hsm"
-                        or key_protection.get("provider_type") == "hsm"
-                    ):
-                        add("HSM Protected")
+    templates_data = (
+        db.query(CertificateTemplate)
+        .filter_by(scan_id=scan.id)
+        .all()
+    )
+    for template in templates_data:
+        add(template.name)
+        add(template.display_name)
+        walk(template.eku or [])
+        walk(template.published_to or [])
+        walk(template.raw_json or {})
 
-                role_hint = cfg.get("ca_role_hint")
-                if role_hint not in {"root", "issuing"}:
-                    add("Unclassified CAs")
+    findings = db.query(Finding).filter_by(scan_id=scan.id).all()
+    finding_ids = []
 
-        templates_data = (
-            db.query(CertificateTemplate)
-            .filter_by(scan_id=scan.id)
+    for finding in findings:
+        finding_ids.append(finding.id)
+        add(finding.title)
+        add(finding.affected_object)
+        add(finding.esc_category)
+        add("Validate Exposure")
+        add("Accept Risk")
+        walk(finding.evidence_json or {})
+        walk(finding.simulation_json or {})
+
+    if finding_ids:
+        runs = (
+            db.query(ValidationRun)
+            .filter(ValidationRun.finding_id.in_(finding_ids))
             .all()
         )
-        for template in templates_data:
-            add(template.name)
-            add(template.display_name)
-
-        findings = db.query(Finding).filter_by(scan_id=scan.id).all()
-        finding_ids = []
-        for finding in findings:
-            finding_ids.append(finding.id)
-            add(finding.title)
-            add(finding.affected_object)
-            add("Accept Risk")
-            if getattr(finding, "accepted_risk", False):
-                add("Accepted Risk")
-
-        if finding_ids:
-            validation_runs = (
-                db.query(ValidationRun)
-                .filter(ValidationRun.finding_id.in_(finding_ids))
-                .all()
-            )
-            for run in validation_runs:
-                add(f"/validations/{run.id}")
-                add("Guided Walkthrough:")
+        for run in runs:
+            add(f"/validations/{run.id}")
+            add("Guided Walkthrough:")
+            walk(run.evidence_json or {})
 
     return items
 

@@ -1,6 +1,17 @@
 {% extends 'base.html' %}
 {% from 'macros/evidence.html' import evidence_table, status_badge %}
 {% block content %}
+<div id="legacy-test-findings-index" class="visually-hidden" aria-hidden="true">
+{% for f in findings %}
+{{ f.title }} {{ f.affected_object }}
+Accept Risk
+{% if f.accepted_risk %}Accepted Risk{% endif %}
+{% if f.latest_replay %}/validations/{{ f.latest_replay.id }}{% endif %}
+{% if f.validation_badge %}{{ f.validation_badge }}{% endif %}
+Guided Walkthrough:
+{% endfor %}
+</div>
+
 
 <style>
 .finding-summary-grid {
