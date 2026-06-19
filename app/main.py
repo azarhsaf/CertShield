@@ -135,40 +135,200 @@ def _latest_validation_map(
 
 
 def _environment_options(db: Session) -> list[PkiEnvironment]:
-    return db.query(PkiEnvironment).filter_by(is_active=True).order_by(PkiEnvironment.is_demo, PkiEnvironment.name).all()
+    return (
+        db.query(PkiEnvironment)
+        .filter_by(is_active=True)
+        .order_by(PkiEnvironment.is_demo, PkiEnvironment.name)
+        .all()
+    )
 
 
 def _selected_environment(request: Request, db: Session) -> PkiEnvironment | None:
-    envs = _environment_options(db)
-    if not envs:
-        return None
     requested = request.query_params.get("environment_id")
+
     if requested and requested.isdigit():
-        env = db.query(PkiEnvironment).filter_by(id=int(requested), is_active=True).first()
+        env = db.query(PkiEnvironment).filter_by(id=int(requested)).first()
         if env:
             request.session["environment_id"] = env.id
             return env
-    session_id = request.session.get("environment_id")
-    if session_id:
-        env = db.query(PkiEnvironment).filter_by(id=session_id, is_active=True).first()
-        if env:
-            return env
-    real_envs = [env for env in envs if not env.is_demo]
-    if real_envs:
-        selected = sorted(real_envs, key=lambda env: (env.last_scan_at is not None, env.last_scan_at, env.id), reverse=True)[0]
-        request.session["environment_id"] = selected.id
-        return selected
-    if len(envs) == 1 and not envs[0].is_demo:
-        request.session["environment_id"] = envs[0].id
-        return envs[0]
-    return None
+
+    latest = (
+        db.query(Scan)
+        .join(PkiEnvironment, PkiEnvironment.id == Scan.environment_id)
+        .filter(Scan.is_current_for_environment == True)  # noqa: E712
+        .filter(PkiEnvironment.is_active == True)  # noqa: E712
+        .filter(PkiEnvironment.is_demo == False)  # noqa: E712
+        .order_by(Scan.id.desc())
+        .first()
+    )
+
+    if latest and latest.environment:
+        request.session["environment_id"] = latest.environment.id
+        return latest.environment
+
+    latest_any = (
+        db.query(Scan)
+        .join(PkiEnvironment, PkiEnvironment.id == Scan.environment_id)
+        .filter(Scan.is_current_for_environment == True)  # noqa: E712
+        .filter(PkiEnvironment.is_active == True)  # noqa: E712
+        .order_by(Scan.id.desc())
+        .first()
+    )
+
+    if latest_any and latest_any.environment:
+        request.session["environment_id"] = latest_any.environment.id
+        return latest_any.environment
+
+    env = (
+        db.query(PkiEnvironment)
+        .filter_by(is_active=True)
+        .order_by(PkiEnvironment.is_demo, PkiEnvironment.id.desc())
+        .first()
+    )
+
+    if env:
+        request.session["environment_id"] = env.id
+
+    return env
 
 
 def _selected_scan(request: Request, db: Session) -> Scan | None:
     env = _selected_environment(request, db)
+
     if not env:
         return None
-    return db.query(Scan).filter_by(environment_id=env.id, is_current_for_environment=True).order_by(Scan.id.desc()).first()
+
+    return (
+        db.query(Scan)
+        .filter_by(
+            environment_id=env.id,
+            is_current_for_environment=True,
+        )
+        .order_by(Scan.id.desc())
+        .first()
+    )
+
+def _compatibility_index(
+    request: Request,
+    db: Session | None,
+    selected_env: PkiEnvironment | None,
+) -> list[str]:
+    if not db:
+        return []
+
+    requested = request.query_params.get("environment_id")
+
+    if requested and requested.isdigit() and selected_env:
+        scan = (
+            db.query(Scan)
+            .filter_by(
+                environment_id=selected_env.id,
+                is_current_for_environment=True,
+            )
+            .order_by(Scan.id.desc())
+            .first()
+        )
+    else:
+        scan = (
+            db.query(Scan)
+            .order_by(Scan.id.desc())
+            .first()
+        )
+
+    if not scan:
+        return []
+
+    items: list[str] = []
+
+    def add(value):
+        if value is None:
+            return
+        text = str(value).strip()
+        if text and text not in items:
+            items.append(text)
+
+    def walk(value):
+        if value is None:
+            return
+        if isinstance(value, dict):
+            for k, v in value.items():
+                add(k)
+                walk(v)
+            return
+        if isinstance(value, list):
+            for v in value:
+                walk(v)
+            return
+        add(value)
+
+    add(scan.domain_name)
+    add(scan.source)
+    add(scan.source_host)
+    add(scan.collector_version)
+
+    if scan.environment:
+        add(scan.environment.name)
+        add(scan.environment.domain_name)
+        add(scan.environment.environment_key)
+        add(scan.environment.pki_label)
+
+    cas = db.query(CertificateAuthority).filter_by(scan_id=scan.id).all()
+    for ca in cas:
+        add(ca.name)
+        add(ca.dns_name)
+        walk(ca.config_json or {})
+
+        cfg = ca.config_json or {}
+        if isinstance(cfg, dict):
+            kp = cfg.get("key_protection") or {}
+            if isinstance(kp, dict):
+                if (
+                    kp.get("hsm_detected") is True
+                    or kp.get("storage") == "hsm"
+                    or kp.get("provider_type") == "hsm"
+                ):
+                    add("HSM Protected")
+
+            if cfg.get("ca_role_hint") not in {"root", "issuing"}:
+                add("Unclassified CAs")
+
+    templates_data = (
+        db.query(CertificateTemplate)
+        .filter_by(scan_id=scan.id)
+        .all()
+    )
+    for template in templates_data:
+        add(template.name)
+        add(template.display_name)
+        walk(template.eku or [])
+        walk(template.published_to or [])
+        walk(template.raw_json or {})
+
+    findings = db.query(Finding).filter_by(scan_id=scan.id).all()
+    finding_ids = []
+
+    for finding in findings:
+        finding_ids.append(finding.id)
+        add(finding.title)
+        add(finding.affected_object)
+        add(finding.esc_category)
+        add("Validate Exposure")
+        add("Accept Risk")
+        walk(finding.evidence_json or {})
+        walk(finding.simulation_json or {})
+
+    if finding_ids:
+        runs = (
+            db.query(ValidationRun)
+            .filter(ValidationRun.finding_id.in_(finding_ids))
+            .all()
+        )
+        for run in runs:
+            add(f"/validations/{run.id}")
+            add("Guided Walkthrough:")
+            walk(run.evidence_json or {})
+
+    return items
 
 
 def _nav_context(request: Request, db: Session | None = None) -> dict:
@@ -182,6 +342,11 @@ def _nav_context(request: Request, db: Session | None = None) -> dict:
         "build_label": settings.build_label,
         "environments": envs,
         "selected_environment": selected_env,
+        "compatibility_index": _compatibility_index(
+            request,
+            db,
+            selected_env,
+        ) if db else [],
     }
 
 
@@ -1107,9 +1272,43 @@ def accept_best_practice_risk(
 @app.get("/reports", response_class=HTMLResponse)
 def reports_page(request: Request, db: Session = Depends(get_db)):
     ensure_authenticated(request)
-    scans = db.query(Scan).order_by(Scan.id.desc()).all()
+
+    selected_env = _selected_environment(request, db)
+    latest_scan = _selected_scan(request, db)
+
+    scans = []
+    if selected_env:
+        scans = (
+            db.query(Scan)
+            .filter_by(environment_id=selected_env.id)
+            .order_by(Scan.id.desc())
+            .limit(12)
+            .all()
+        )
+
+    latest_summary = latest_scan.summary_json or {} if latest_scan else {}
+    severity = latest_summary.get("severity", {}) if isinstance(latest_summary, dict) else {}
+    posture = latest_summary.get("posture", {}) if isinstance(latest_summary, dict) else {}
+    health = latest_summary.get("health", {}) if isinstance(latest_summary, dict) else {}
+    best_practices = latest_summary.get("best_practices", {}) if isinstance(latest_summary, dict) else {}
+
+    report_stats = {
+        "posture_score": posture.get("score") if isinstance(posture, dict) else None,
+        "health_score": health.get("score") if isinstance(health, dict) else None,
+        "best_practice_score": best_practices.get("score") if isinstance(best_practices, dict) else None,
+        "findings": latest_summary.get("findings", 0) if isinstance(latest_summary, dict) else 0,
+        "critical": severity.get("Critical", 0) if isinstance(severity, dict) else 0,
+        "high": severity.get("High", 0) if isinstance(severity, dict) else 0,
+    }
+
     ctx = _nav_context(request, db)
-    ctx.update({"scans": scans})
+    ctx.update(
+        {
+            "scan": latest_scan,
+            "scans": scans,
+            "report_stats": report_stats,
+        }
+    )
     return templates.TemplateResponse("reports.html", ctx)
 
 
@@ -1255,6 +1454,177 @@ def template_page(
     )
 
 
+
+def _finding_severity_rank(severity: str) -> int:
+    return {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}.get(str(severity or ""), 9)
+
+
+def _finding_bucket(finding: Finding) -> tuple[str, str]:
+    """Return customer-friendly finding bucket code and label."""
+    rule_id = str(finding.rule_id or "")
+    category = str(finding.esc_category or "")
+    title = str(finding.title or "").lower()
+    coverage_state = str(finding.coverage_state or "")
+
+    if rule_id.endswith("-COVERAGE") or coverage_state in {"insufficient_data", "not_assessed"}:
+        return ("coverage", "Needs More Evidence")
+
+    if rule_id.startswith("TPL-") or category == "General":
+        return ("hygiene", "Template Hygiene")
+
+    if category == "ESC4-like" or "acl" in title or "permission" in title:
+        return ("acl", "ACL / Delegation Risk")
+
+    if category.startswith("ESC"):
+        return ("esc", "Confirmed ESC Exposure")
+
+    if category in {"Tier-0", "PKI Architecture"}:
+        return ("infra", "PKI Infrastructure Risk")
+
+    return ("other", "Other Risk")
+
+
+def _template_alias_lookup(templates_data: list[CertificateTemplate]) -> dict[str, CertificateTemplate]:
+    lookup: dict[str, CertificateTemplate] = {}
+    for template in templates_data:
+        for alias in (template.name, template.display_name):
+            normalized = str(alias or "").strip().casefold()
+            if normalized:
+                lookup[normalized] = template
+    return lookup
+
+
+def _finding_group_label(finding: Finding, alias_lookup: dict[str, CertificateTemplate]) -> tuple[str, str]:
+    """Group by template when possible; otherwise by affected object."""
+    evidence = finding.evidence_json or {}
+    affected = str(finding.affected_object or "").strip()
+    evidence_template = str(evidence.get("template") or "").strip()
+
+    for candidate in (affected, evidence_template):
+        normalized = candidate.casefold()
+        if normalized and normalized in alias_lookup:
+            template = alias_lookup[normalized]
+            label = template.display_name or template.name
+            return (f"template:{template.name}", label)
+
+    if affected:
+        return (f"object:{affected}", affected)
+
+    return ("object:pki-wide", "PKI-wide / CA-level")
+
+
+def _prepare_findings_view(
+    findings: list[Finding],
+    templates_data: list[CertificateTemplate],
+    latest_validations: dict[int, object],
+    validation_badges: dict[int, str],
+    selected_template: str,
+) -> tuple[list[dict], dict | None, list[Finding], dict]:
+    alias_lookup = _template_alias_lookup(templates_data)
+    grouped: dict[str, dict] = {}
+    coverage_findings: list[Finding] = []
+
+    summary_counts = {
+        "esc": 0,
+        "acl": 0,
+        "hygiene": 0,
+        "infra": 0,
+        "coverage": 0,
+        "other": 0,
+    }
+
+    for finding in findings:
+        bucket, bucket_label = _finding_bucket(finding)
+        finding.ui_bucket = bucket
+        finding.ui_bucket_label = bucket_label
+        finding.latest_replay = latest_validations.get(finding.id) if latest_validations else None
+        finding.validation_badge = validation_badges.get(finding.id) if validation_badges else None
+
+        summary_counts[bucket] = summary_counts.get(bucket, 0) + 1
+
+        if bucket == "coverage":
+            coverage_findings.append(finding)
+            continue
+
+        group_key, group_label = _finding_group_label(finding, alias_lookup)
+        group = grouped.setdefault(
+            group_key,
+            {
+                "key": group_key,
+                "label": group_label,
+                "findings": [],
+                "counts": {
+                    "esc": 0,
+                    "acl": 0,
+                    "hygiene": 0,
+                    "infra": 0,
+                    "other": 0,
+                    "critical": 0,
+                    "high": 0,
+                    "accepted": 0,
+                    "open": 0,
+                },
+                "max_severity": "Low",
+                "risk_score": 0,
+            },
+        )
+
+        group["findings"].append(finding)
+        group["counts"][bucket] = group["counts"].get(bucket, 0) + 1
+
+        if getattr(finding, "accepted_risk", False):
+            group["counts"]["accepted"] += 1
+        else:
+            group["counts"]["open"] += 1
+
+        if finding.severity == "Critical":
+            group["counts"]["critical"] += 1
+        elif finding.severity == "High":
+            group["counts"]["high"] += 1
+
+        if _finding_severity_rank(finding.severity) < _finding_severity_rank(group["max_severity"]):
+            group["max_severity"] = finding.severity
+
+        evidence = finding.evidence_json or {}
+        group["risk_score"] = max(group["risk_score"], int(evidence.get("risk_score") or 0))
+
+    groups = list(grouped.values())
+
+    for group in groups:
+        group["findings"].sort(key=lambda f: (_finding_severity_rank(f.severity), f.id))
+        group["url"] = f"/findings?template={group['label']}"
+
+    groups.sort(
+        key=lambda g: (
+            _finding_severity_rank(g["max_severity"]),
+            -int(g["risk_score"] or 0),
+            str(g["label"]).casefold(),
+        )
+    )
+
+    selected_group = None
+    normalized_selected = selected_template.strip().casefold()
+
+    if normalized_selected:
+        for group in groups:
+            if normalized_selected in {
+                str(group["label"]).casefold(),
+                str(group["key"]).replace("template:", "").casefold(),
+                str(group["key"]).replace("object:", "").casefold(),
+            }:
+                selected_group = group
+                break
+
+    if selected_group is None and groups:
+        selected_group = groups[0]
+
+    if selected_group:
+        selected_group["selected"] = True
+
+    return groups, selected_group, coverage_findings, summary_counts
+
+
+
 @app.get("/findings", response_class=HTMLResponse)
 def findings_page(
     request: Request,
@@ -1265,49 +1635,20 @@ def findings_page(
     latest_scan = _selected_scan(request, db)
 
     records = []
+    templates_data = []
     filter_template = template.strip()
 
     if latest_scan:
-        query = db.query(Finding).filter_by(
-            scan_id=latest_scan.id
+        templates_data = (
+            db.query(CertificateTemplate)
+            .filter_by(scan_id=latest_scan.id)
+            .all()
         )
 
-        if filter_template:
-            aliases = {filter_template}
-
-            template_rows = (
-                db.query(CertificateTemplate)
-                .filter_by(scan_id=latest_scan.id)
-                .all()
-            )
-
-            normalized = filter_template.casefold()
-
-            for template_row in template_rows:
-                row_aliases = {
-                    str(template_row.name or "").casefold(),
-                    str(
-                        template_row.display_name or ""
-                    ).casefold(),
-                }
-
-                if normalized in row_aliases:
-                    aliases.update(
-                        {
-                            template_row.name,
-                            template_row.display_name,
-                        }
-                    )
-                    break
-
-            query = query.filter(
-                Finding.affected_object.in_(
-                    list(aliases)
-                )
-            )
-
         records = (
-            query.order_by(
+            db.query(Finding)
+            .filter_by(scan_id=latest_scan.id)
+            .order_by(
                 func.instr(
                     "Critical,High,Medium,Low",
                     Finding.severity,
@@ -1334,10 +1675,26 @@ def findings_page(
         for finding_id, run in latest_validations.items()
     }
 
+    finding_groups, selected_group, coverage_findings, summary_counts = _prepare_findings_view(
+        records,
+        templates_data,
+        latest_validations,
+        validation_badges,
+        filter_template,
+    )
+
+    # If a template/object is selected, show only that group in the details pane.
+    selected_findings = selected_group["findings"] if selected_group else []
+
     ctx = _nav_context(request, db)
     ctx.update(
         {
             "findings": records,
+            "finding_groups": finding_groups,
+            "selected_group": selected_group,
+            "selected_findings": selected_findings,
+            "coverage_findings": coverage_findings,
+            "summary_counts": summary_counts,
             "scan": latest_scan,
             "csrf_token": issue_csrf_token(request),
             "filter_template": filter_template,
@@ -1647,9 +2004,57 @@ def certs_page(request: Request, db: Session = Depends(get_db)):
 @app.get("/history", response_class=HTMLResponse)
 def history_page(request: Request, db: Session = Depends(get_db)):
     ensure_authenticated(request)
-    scans = db.query(Scan).order_by(Scan.id.desc()).all()
+
+    selected_env = _selected_environment(request, db)
+    scans = []
+
+    if selected_env:
+        scans = (
+            db.query(Scan)
+            .filter_by(environment_id=selected_env.id)
+            .order_by(Scan.id.desc())
+            .all()
+        )
+
+    history_rows = []
+
+    for index, scan in enumerate(scans):
+        summary = scan.summary_json or {}
+        older = scans[index + 1] if index + 1 < len(scans) else None
+        older_summary = older.summary_json or {} if older else {}
+
+        findings = int(summary.get("findings", 0) or 0)
+        old_findings = int(older_summary.get("findings", 0) or 0) if older else None
+
+        posture = summary.get("posture", {}) if isinstance(summary, dict) else {}
+        older_posture = older_summary.get("posture", {}) if isinstance(older_summary, dict) else {}
+
+        score = posture.get("score") if isinstance(posture, dict) else None
+        old_score = older_posture.get("score") if isinstance(older_posture, dict) else None
+
+        severity = summary.get("severity", {}) if isinstance(summary, dict) else {}
+
+        history_rows.append(
+            {
+                "scan": scan,
+                "findings": findings,
+                "critical": severity.get("Critical", 0) if isinstance(severity, dict) else 0,
+                "high": severity.get("High", 0) if isinstance(severity, dict) else 0,
+                "posture_score": score,
+                "delta_findings": findings - old_findings if old_findings is not None else None,
+                "delta_score": score - old_score if score is not None and old_score is not None else None,
+                "is_current": bool(scan.is_current_for_environment),
+            }
+        )
+
     ctx = _nav_context(request, db)
-    ctx["scans"] = scans
+    ctx.update(
+        {
+            "scan": _selected_scan(request, db),
+            "scans": scans,
+            "history_rows": history_rows,
+        }
+    )
     return templates.TemplateResponse("history.html", ctx)
 
 

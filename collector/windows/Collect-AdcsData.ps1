@@ -13,6 +13,11 @@ param(
   [Parameter(Mandatory=$true)][string]$ApiUrl,
   [Parameter(Mandatory=$true)][string]$ApiToken,
   [string]$DomainName = $env:USERDNSDOMAIN,
+  [string]$EnvironmentName,
+  [string]$EnvironmentKey,
+  [string]$PkiLabel,
+  [ValidateSet('full','incremental','partial')]
+  [string]$CollectionMode = 'full',
   [int]$RecentRequestLimit = 200,
   [switch]$SkipIssued,
   [switch]$DebugPayload,
@@ -31,7 +36,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$CollectorVersion = 'collector-ps51-1.8.5'
+$CollectorVersion = 'collector-ps51-1.8.5-esc5-esc7-tier0'
 
 function Write-Step { param([string]$Message) Write-Host "[CertShield] $Message" }
 function Empty-List { return @() }
@@ -676,13 +681,14 @@ function Convert-TemplateAcl {
       $canEnroll = (($rule.ObjectType -eq $enrollGuid) -or ($rightsText -match 'GenericAll'))
       $canAutoEnroll = (($rule.ObjectType -eq $autoEnrollGuid) -or ($rightsText -match 'GenericAll'))
       $genericAll = ($rightsText -match 'GenericAll')
+      $genericWrite = ($rightsText -match 'GenericWrite')
       $writeDacl = ($rightsText -match 'WriteDacl')
       $writeOwner = ($rightsText -match 'WriteOwner')
       $writeProperty = ($rightsText -match 'WriteProperty')
-      if ($canEnroll -or $canAutoEnroll -or $genericAll -or $writeDacl -or $writeOwner -or $writeProperty) {
+      if ($canEnroll -or $canAutoEnroll -or $genericAll -or $genericWrite -or $writeDacl -or $writeOwner -or $writeProperty) {
         $entry = [ordered]@{
           principal = $principal; sid = $sid; rights = @($rights); can_enroll = [bool]$canEnroll; can_autoenroll = [bool]$canAutoEnroll;
-          generic_all = [bool]$genericAll; write_dacl = [bool]$writeDacl; write_owner = [bool]$writeOwner; write_property = [bool]$writeProperty;
+          generic_all = [bool]$genericAll; generic_write = [bool]$genericWrite; write_dacl = [bool]$writeDacl; write_owner = [bool]$writeOwner; write_property = [bool]$writeProperty;
           owner = $owner; is_broad_principal = (Test-BroadPrincipal -Principal $principal)
         }
         $permissions += [pscustomobject]$entry
@@ -694,6 +700,387 @@ function Convert-TemplateAcl {
     return @{ permissions_assessed = $false; acl_collection_reason = "Template ACL collection failed for $($TemplateName): $_"; permissions = @(); acl_details = @(); owner = $owner }
   }
 }
+
+
+
+function Test-CertShieldPkiAdminLike {
+  param([string]$Principal)
+
+  $p = ([string]$Principal).Trim().ToLowerInvariant()
+
+  return (
+    $p -like "*pki*" -or
+    $p -like "*cert*" -or
+    $p -like "*ca admin*" -or
+    $p -like "*enterprise admin*" -or
+    $p -like "*domain admin*"
+  )
+}
+
+function Test-CertShieldRiskyPrincipal {
+  param([string]$Principal)
+
+  if ([string]::IsNullOrWhiteSpace($Principal)) {
+    return $false
+  }
+
+  if (Test-BroadPrincipal -Principal $Principal) {
+    return $true
+  }
+
+  if (-not (Test-CertShieldPkiAdminLike -Principal $Principal)) {
+    return $true
+  }
+
+  return $false
+}
+
+function Convert-CertShieldDangerousRights {
+  param($Rights)
+
+  $r = ([string]$Rights).ToLowerInvariant()
+  $out = @()
+
+  if ($r -match "genericall") { $out += "GenericAll" }
+  if ($r -match "genericwrite") { $out += "GenericWrite" }
+  if ($r -match "writedacl") { $out += "WriteDacl" }
+  if ($r -match "writeowner") { $out += "WriteOwner" }
+  if ($r -match "writeproperty") { $out += "WriteProperty" }
+
+  return @($out | Select-Object -Unique)
+}
+
+function Get-CertShieldDirectoryAclEvidence {
+  param(
+    [Parameter(Mandatory=$true)][string]$DistinguishedName,
+    [Parameter(Mandatory=$true)][string]$ObjectType
+  )
+
+  $out = @()
+
+  try {
+    $obj = [ADSI]("LDAP://$DistinguishedName")
+    $acl = $obj.ObjectSecurity
+    $rules = $acl.GetAccessRules(
+      $true,
+      $true,
+      [System.Security.Principal.NTAccount]
+    )
+
+    foreach ($rule in $rules) {
+      if ([string]$rule.AccessControlType -ne "Allow") {
+        continue
+      }
+
+      $principal = ([string]$rule.IdentityReference).Trim()
+      $dangerousRights = @(
+        Convert-CertShieldDangerousRights `
+          -Rights $rule.ActiveDirectoryRights
+      )
+
+      if ($dangerousRights.Count -eq 0) {
+        continue
+      }
+
+      if (-not (Test-CertShieldRiskyPrincipal -Principal $principal)) {
+        continue
+      }
+
+      $out += [pscustomobject]@{
+        object_type        = $ObjectType
+        distinguished_name = $DistinguishedName
+        principal          = $principal
+        rights             = @($dangerousRights)
+        inherited          = [bool]$rule.IsInherited
+        risk               = "Risky principal can modify PKI-related AD object"
+      }
+    }
+  } catch {
+    return @()
+  }
+
+  return @($out)
+}
+
+function Get-CertShieldPkiObjectControlEvidence {
+  $out = @()
+
+  if ($SkipAcl) {
+    return @{
+      assessed = $false
+      evidence = @()
+      principals = @()
+      broad = $false
+      reason = "Collector ran with SkipAcl"
+    }
+  }
+
+  if (-not (Test-ADModule)) {
+    return @{
+      assessed = $false
+      evidence = @()
+      principals = @()
+      broad = $false
+      reason = "ActiveDirectory module not available"
+    }
+  }
+
+  try {
+    $root = Get-ADRootDSE
+    $base = (
+      "CN=Public Key Services," +
+      "CN=Services," +
+      $root.configurationNamingContext
+    )
+
+    $objects = Get-ADObject `
+      -Filter * `
+      -SearchBase $base `
+      -SearchScope Subtree `
+      -Properties distinguishedName,objectClass,name
+
+    foreach ($obj in $objects) {
+      $dn = [string]$obj.DistinguishedName
+      $classes = @($obj.objectClass)
+      $objectType = "pkiObject"
+
+      if ($classes.Count -gt 0) {
+        $objectType = [string]$classes[-1]
+      }
+
+      $out += Get-CertShieldDirectoryAclEvidence `
+        -DistinguishedName $dn `
+        -ObjectType $objectType
+    }
+
+    $principals = @(
+      $out |
+      ForEach-Object { $_.principal } |
+      Where-Object { $_ } |
+      Select-Object -Unique
+    )
+
+    $broad = $false
+
+    foreach ($p in $principals) {
+      if (Test-BroadPrincipal -Principal $p) {
+        $broad = $true
+      }
+    }
+
+    return @{
+      assessed = $true
+      evidence = @($out)
+      principals = @($principals)
+      broad = $broad
+      reason = "Collected ACLs from Public Key Services container"
+    }
+  } catch {
+    return @{
+      assessed = $false
+      evidence = @()
+      principals = @()
+      broad = $false
+      reason = $_.Exception.Message
+    }
+  }
+}
+
+function Get-CertShieldCaSecurityEvidence {
+  param([string]$ConfigString)
+
+  $result = @{
+    assessed = $false
+    broad_management = $false
+    manage_principals = @()
+    raw_preview = ""
+    reason = ""
+  }
+
+  if ([string]::IsNullOrWhiteSpace($ConfigString)) {
+    $result.reason = "CA config string not available"
+    return $result
+  }
+
+  try {
+    $lines = certutil.exe -config $ConfigString -getsecurity 2>&1
+    $raw = ($lines | Out-String)
+
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+      $result.reason = "certutil returned empty CA security output"
+      return $result
+    }
+
+    $result.assessed = $true
+    $result.raw_preview = $raw.Substring(
+      0,
+      [Math]::Min(2500, $raw.Length)
+    )
+
+    $found = @()
+
+    foreach ($principal in @(
+      "Everyone",
+      "Authenticated Users",
+      "Domain Users",
+      "Domain Computers",
+      "Users"
+    )) {
+      if ($raw -match [regex]::Escape($principal)) {
+        $found += $principal
+      }
+    }
+
+    $result.manage_principals = @($found | Select-Object -Unique)
+    $result.broad_management = ($found.Count -gt 0)
+    $result.reason = "Collected CA security descriptor using certutil -getsecurity"
+
+    return $result
+  } catch {
+    $result.reason = $_.Exception.Message
+    return $result
+  }
+}
+
+function Get-CertShieldLocalAdministrators {
+  param([string]$ComputerName)
+
+  $out = @()
+
+  if ([string]::IsNullOrWhiteSpace($ComputerName)) {
+    return @()
+  }
+
+  try {
+    $group = [ADSI]"WinNT://$ComputerName/Administrators,group"
+
+    foreach ($member in @($group.psbase.Invoke("Members"))) {
+      $name = $member.GetType().InvokeMember(
+        "Name",
+        "GetProperty",
+        $null,
+        $member,
+        $null
+      )
+
+      $path = $member.GetType().InvokeMember(
+        "ADsPath",
+        "GetProperty",
+        $null,
+        $member,
+        $null
+      )
+
+      $out += [pscustomobject]@{
+        computer  = $ComputerName
+        principal = [string]$name
+        path      = [string]$path
+      }
+    }
+  } catch {
+    return @()
+  }
+
+  return @($out)
+}
+
+function Get-CertShieldCertSvcAccount {
+  param([string]$ComputerName)
+
+  if ([string]::IsNullOrWhiteSpace($ComputerName)) {
+    return $null
+  }
+
+  try {
+    $svc = Get-CimInstance `
+      -ClassName Win32_Service `
+      -ComputerName $ComputerName `
+      -Filter "Name='CertSvc'"
+
+    if ($svc) {
+      return [pscustomobject]@{
+        computer  = $ComputerName
+        service   = "CertSvc"
+        startName = [string]$svc.StartName
+      }
+    }
+  } catch {
+    return $null
+  }
+
+  return $null
+}
+
+function Get-CertShieldTier0Evidence {
+  param(
+    [string]$ComputerName,
+    [object]$PkiObjectControl
+  )
+
+  $admins = @()
+  $svc = $null
+  $delegates = @()
+  $broad = $false
+  $assessed = $false
+  $reason = ""
+
+  if (-not [string]::IsNullOrWhiteSpace($ComputerName)) {
+    $admins = @(Get-CertShieldLocalAdministrators -ComputerName $ComputerName)
+    $svc = Get-CertShieldCertSvcAccount -ComputerName $ComputerName
+  }
+
+  foreach ($a in $admins) {
+    if ($a.principal) {
+      $delegates += [string]$a.principal
+    }
+  }
+
+  if ($svc -and $svc.startName) {
+    $delegates += [string]$svc.startName
+  }
+
+  if ($PkiObjectControl -and $PkiObjectControl.principals) {
+    foreach ($p in @($PkiObjectControl.principals)) {
+      if ($p) {
+        $delegates += [string]$p
+      }
+    }
+  }
+
+  $delegates = @(
+    $delegates |
+    Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+    Select-Object -Unique
+  )
+
+  foreach ($d in $delegates) {
+    if (Test-BroadPrincipal -Principal $d) {
+      $broad = $true
+    }
+  }
+
+  if (
+    $admins.Count -gt 0 -or
+    $svc -or
+    ($PkiObjectControl -and $PkiObjectControl.assessed)
+  ) {
+    $assessed = $true
+    $reason = "Collected PKI delegation evidence; CA host admin evidence collected where reachable"
+  } else {
+    $assessed = $false
+    $reason = "Could not collect PKI delegation or CA host administration evidence"
+  }
+
+  return @{
+    assessed = $assessed
+    local_admins = @($admins)
+    service_account = $svc
+    delegated_admin_principals = @($delegates)
+    broad = $broad
+    reason = $reason
+  }
+}
+
 
 function Get-OfflineCaMetadata {
   param([string]$Path)
@@ -738,6 +1125,7 @@ function Get-CaRegistryValue {
 function Get-CertificateAuthorities {
   param([hashtable]$PublishedMap, [hashtable]$HealthCoverage, [object[]]$EnrollmentServices)
   $cas = @()
+  $pkiObjectControl = Get-CertShieldPkiObjectControlEvidence
   $records = @($EnrollmentServices)
   foreach ($manual in @($ManualCaConfig)) {
     if (-not $manual) { continue }
@@ -778,7 +1166,33 @@ function Get-CertificateAuthorities {
     $config = $certHint.config
     $config['web_enrollment_assessed'] = (-not $SkipHealth)
     $config['ca_policy_flags_assessed'] = (-not $SkipHealth)
-    $config['ca_roles_assessed'] = $false
+    # ESC5-like: PKI AD object control evidence.
+    $config['pki_control_paths'] = @($pkiObjectControl.evidence)
+    $config['dangerous_pki_object_control'] = @($pkiObjectControl.evidence)
+    $config['pki_control_paths_assessed'] = [bool]$pkiObjectControl.assessed
+    $config['pki_control_paths_reason'] = [string]$pkiObjectControl.reason
+
+    # ESC7-like: CA management/security descriptor evidence.
+    $caSecurity = Get-CertShieldCaSecurityEvidence -ConfigString $configString
+    $config['ca_roles_assessed'] = [bool]$caSecurity.assessed
+    $config['ca_manage_principals'] = @($caSecurity.manage_principals)
+    $config['manage_ca_principals'] = @($caSecurity.manage_principals)
+    $config['manage_ca_broad'] = [bool]$caSecurity.broad_management
+    $config['ca_security_raw_preview'] = [string]$caSecurity.raw_preview
+    $config['ca_security_reason'] = [string]$caSecurity.reason
+
+    # Tier-0: PKI delegation + CA host admin/service account evidence.
+    $tier0 = Get-CertShieldTier0Evidence `
+      -ComputerName $dns `
+      -PkiObjectControl $pkiObjectControl
+
+    $config['tier0_posture_assessed'] = [bool]$tier0.assessed
+    $config['delegated_admin_principals'] = @($tier0.delegated_admin_principals)
+    $config['tier0_admin_principals'] = @($tier0.delegated_admin_principals)
+    $config['tier0_admin_broad'] = [bool]$tier0.broad
+    $config['ca_local_admins'] = @($tier0.local_admins)
+    $config['ca_service_account'] = $tier0.service_account
+    $config['tier0_posture_reason'] = [string]$tier0.reason
     $config['published_templates'] = @($published)
     $config['config_string'] = $configString
     $config['source_host'] = $env:COMPUTERNAME
@@ -1097,6 +1511,7 @@ function Get-Templates {
           acl_assessed = [bool]$acl.permissions_assessed
           acl_collection_reason = $acl.acl_collection_reason
           acl_details = @($acl.acl_details)
+          dangerous_acl = @($acl.acl_details)
           owner = $acl.owner
           validity_days_assessed = ($null -ne $validityDays)
           renewal_days_assessed = ($null -ne $renewalDays)
@@ -1323,7 +1738,12 @@ function Get-IssuedCertificates {
 }
 
 if (-not $DomainName) { $DomainName = 'unknown.local' }
-$assessmentHints = @{ esc6_ca_policy = 'not_assessed'; esc7_ca_roles = 'not_assessed'; esc8_web_enrollment = 'insufficient_data'; esc4_template_acl = 'insufficient_data' }
+if (-not $EnvironmentName) { $EnvironmentName = $DomainName }
+if (-not $EnvironmentKey) {
+  $EnvironmentKey = "adcs:$($DomainName.ToLowerInvariant())"
+}
+if (-not $PkiLabel) { $PkiLabel = "$EnvironmentName ADCS" }
+$assessmentHints = @{ esc6_ca_policy = 'not_assessed'; esc7_ca_roles = 'collector_attempted'; esc8_web_enrollment = 'insufficient_data'; esc4_template_acl = 'collector_attempted'; esc5_pki_object_control = 'collector_attempted'; tier0_pki_posture = 'collector_attempted' }
 $healthCoverage = @{ ca_certificate_collected = $false; crl_collected = $false; aia_collected = $false; ocsp_collected = $false; issued_certificates_collected = $false; template_acl_collected = $false; ca_registry_collected = $false; key_protection_collected = $false; audit_collected = $false }
 $offlineMetadata = Get-OfflineCaMetadata -Path $OfflineCaMetadataPath
 $enrollmentServices = @(Get-EnrollmentServiceRecords)
@@ -1335,6 +1755,10 @@ $issued = @(Get-IssuedCertificates -HealthCoverage $healthCoverage -Cas $cas)
 
 $payload = [ordered]@{
   collector_type = 'adcs'
+  environment_name = $EnvironmentName
+  environment_key = $EnvironmentKey
+  pki_label = $PkiLabel
+  collection_mode = $CollectionMode
   schema_version = '1.2'
   domain_name = $DomainName
   source_host = $env:COMPUTERNAME
