@@ -1,16 +1,225 @@
 {% extends 'base.html' %}
 {% block content %}
-<h1 class="h3 mb-3">Scan History</h1>
-<div class="card card-panel"><div class="card-body">
-<div class="table-responsive"><table class="table modern-table align-middle">
-  <thead><tr><th>Scan ID</th><th>Domain</th><th>Source</th><th>Completed</th><th>Findings</th><th>Exports</th></tr></thead>
-  <tbody>
-  {% for s in scans %}
-  <tr><td>{{s.id}}</td><td>{{s.domain_name}}</td><td>{{s.source}}</td><td>{{s.completed_at}}</td><td>{{s.summary_json.findings}}</td><td><a href="/reports/{{s.id}}">HTML</a> · <a href="/reports/{{s.id}}.json">JSON</a></td></tr>
-  {% else %}
-  <tr><td colspan="6" class="text-secondary">No scans yet.</td></tr>
-  {% endfor %}
-  </tbody>
-</table></div>
-</div></div>
+
+<style>
+.history-hero {
+  background: linear-gradient(135deg, #111827, #334155);
+  color: #fff;
+  border-radius: 18px;
+  padding: 22px;
+  box-shadow: 0 18px 38px rgba(15,23,42,.18);
+  margin-bottom: 16px;
+}
+.history-hero h1 { margin: 0; font-size: 28px; }
+.history-hero p { margin: 6px 0 0; color: #e2e8f0; max-width: 900px; }
+.history-layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0,1fr);
+  gap: 16px;
+}
+.history-side,
+.history-timeline {
+  background: #fff;
+  border: 1px solid rgba(148,163,184,.35);
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: 0 10px 24px rgba(15,23,42,.06);
+}
+.history-side h2,
+.history-timeline h2 {
+  font-size: 18px;
+  margin: 0 0 12px;
+}
+.history-metric {
+  border-bottom: 1px solid rgba(148,163,184,.25);
+  padding: 10px 0;
+}
+.history-metric:last-child { border-bottom: none; }
+.history-metric span {
+  display: block;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.history-metric strong {
+  display: block;
+  color: #0f172a;
+  font-size: 22px;
+}
+.timeline-list {
+  display: grid;
+  gap: 12px;
+}
+.timeline-item {
+  display: grid;
+  grid-template-columns: 80px minmax(0,1fr) 190px;
+  gap: 14px;
+  border: 1px solid rgba(148,163,184,.3);
+  border-radius: 16px;
+  padding: 14px;
+  background: #f8fafc;
+}
+.timeline-version {
+  text-align: center;
+  background: #0f172a;
+  color: #fff;
+  border-radius: 14px;
+  padding: 10px;
+  align-self: start;
+}
+.timeline-version span {
+  display: block;
+  font-size: 11px;
+  color: #cbd5e1;
+}
+.timeline-version strong {
+  font-size: 22px;
+}
+.timeline-main h3 {
+  margin: 0 0 4px;
+  font-size: 17px;
+}
+.timeline-main p {
+  color: #475569;
+  margin: 0 0 8px;
+}
+.timeline-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.timeline-tags span {
+  border: 1px solid rgba(148,163,184,.4);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+  background: #fff;
+}
+.timeline-delta {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+.delta-good { color: #15803d; font-weight: 800; }
+.delta-bad { color: #b91c1c; font-weight: 800; }
+.delta-neutral { color: #64748b; font-weight: 800; }
+.history-note {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 14px;
+  padding: 12px;
+  color: #92400e;
+  margin-top: 12px;
+}
+@media (max-width: 1000px) {
+  .history-layout { grid-template-columns: 1fr; }
+  .timeline-item { grid-template-columns: 1fr; }
+}
+</style>
+
+<div class="history-hero">
+  <div class="eyebrow">Scan Timeline</div>
+  <h1>Environment scan history</h1>
+  <p>
+    Use History to understand what changed between collector runs. This is not
+    the report export page. Reports are for management, audit, and evidence sharing.
+  </p>
+</div>
+
+{% if history_rows %}
+<div class="history-layout">
+  <aside class="history-side">
+    <h2>Selected environment</h2>
+    <div class="history-metric">
+      <span>Environment</span>
+      <strong>{{ selected_environment.name if selected_environment else '—' }}</strong>
+    </div>
+    <div class="history-metric">
+      <span>Scan versions</span>
+      <strong>{{ history_rows|length }}</strong>
+    </div>
+    <div class="history-metric">
+      <span>Current version</span>
+      <strong>#{{ scan.scan_sequence or scan.id if scan else '—' }}</strong>
+    </div>
+    <div class="history-metric">
+      <span>Collector</span>
+      <strong>{{ scan.collector_version or scan.collector_type if scan else '—' }}</strong>
+    </div>
+    <div class="history-note">
+      Second collector run should increase scan sequence in this same environment,
+      not create a new environment.
+    </div>
+  </aside>
+
+  <section class="history-timeline">
+    <h2>Timeline</h2>
+    <div class="timeline-list">
+      {% for row in history_rows %}
+      {% set s = row.scan %}
+      <div class="timeline-item">
+        <div class="timeline-version">
+          <span>Version</span>
+          <strong>#{{ s.scan_sequence or s.id }}</strong>
+        </div>
+
+        <div class="timeline-main">
+          <h3>
+            {{ s.completed_at or s.started_at }}
+            {% if row.is_current %}<span class="badge text-bg-success">Current</span>{% endif %}
+          </h3>
+          <p>
+            {{ s.collection_mode or 'full' }} scan from
+            <strong>{{ s.source_host or s.source or 'collector' }}</strong>
+          </p>
+          <div class="timeline-tags">
+            <span>{{ s.collector_type|upper }}</span>
+            <span>{{ s.collector_version or 'collector version unknown' }}</span>
+            {% if s.previous_scan_id %}<span>Previous scan ID {{ s.previous_scan_id }}</span>{% endif %}
+          </div>
+        </div>
+
+        <div class="timeline-delta">
+          <div>
+            Findings:
+            <strong>{{ row.findings }}</strong>
+            {% if row.delta_findings is not none %}
+              {% if row.delta_findings > 0 %}
+                <span class="delta-bad">+{{ row.delta_findings }}</span>
+              {% elif row.delta_findings < 0 %}
+                <span class="delta-good">{{ row.delta_findings }}</span>
+              {% else %}
+                <span class="delta-neutral">No change</span>
+              {% endif %}
+            {% endif %}
+          </div>
+          <div>Critical: <strong>{{ row.critical }}</strong></div>
+          <div>High: <strong>{{ row.high }}</strong></div>
+          <div>
+            Posture:
+            <strong>{{ row.posture_score if row.posture_score is not none else '—' }}</strong>
+            {% if row.delta_score is not none %}
+              {% if row.delta_score > 0 %}
+                <span class="delta-good">+{{ row.delta_score }}</span>
+              {% elif row.delta_score < 0 %}
+                <span class="delta-bad">{{ row.delta_score }}</span>
+              {% else %}
+                <span class="delta-neutral">No change</span>
+              {% endif %}
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+{% else %}
+<div class="empty-state compact-card">
+  <h2 class="h5">No scan history for selected environment</h2>
+  <p>Run the collector to create the first scan version.</p>
+</div>
+{% endif %}
+
 {% endblock %}
