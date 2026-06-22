@@ -1,9 +1,10 @@
+import json
 from collections import Counter
 from contextlib import contextmanager
 from datetime import datetime
 
 from fastapi import Depends, FastAPI, Form, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
@@ -45,6 +46,7 @@ from app.services.governance_evidence import (
     governance_evidence_map,
 )
 from app.services.ingest import IngestService
+from app.services.pdf_report import build_customer_pdf
 from app.services.pki_hierarchy import build_pki_hierarchy
 from app.services.posture_assessment import assess_pki_posture
 from app.services.risk_acceptance import (
@@ -2080,6 +2082,89 @@ def settings_page(request: Request, db: Session = Depends(get_db)):
         }
     )
     return templates.TemplateResponse("settings.html", ctx)
+
+
+
+@app.get("/reports/{scan_id}.pdf")
+def export_customer_pdf(
+    scan_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    ensure_authenticated(request)
+
+    json_response = export_json(scan_id, request, db)
+
+    payload = json.loads(
+        json_response.body.decode("utf-8")
+    )
+
+    pdf_bytes = build_customer_pdf(payload)
+
+    environment = payload.get("environment") or {}
+    environment_name = str(
+        environment.get("name") or f"scan-{scan_id}"
+    )
+
+    slug = "".join(
+        character.lower()
+        if character.isalnum()
+        else "-"
+        for character in environment_name
+    )
+
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+
+    slug = slug.strip("-") or "pki-environment"
+
+    filename = (
+        f"certshield-{slug}-scan-{scan_id}.pdf"
+    )
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{filename}"'
+            ),
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@app.get(
+    "/reports/environment/{environment_id}/latest.pdf"
+)
+def export_environment_latest_pdf(
+    environment_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    ensure_authenticated(request)
+
+    scan = (
+        db.query(Scan)
+        .filter_by(
+            environment_id=environment_id,
+            is_current_for_environment=True,
+        )
+        .order_by(Scan.id.desc())
+        .first()
+    )
+
+    if not scan:
+        raise HTTPException(
+            status_code=404,
+            detail="Environment scan not found",
+        )
+
+    return export_customer_pdf(
+        scan.id,
+        request,
+        db,
+    )
 
 
 @app.get("/reports/environment/{environment_id}/latest.json")

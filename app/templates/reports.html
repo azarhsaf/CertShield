@@ -1,6 +1,298 @@
 {% extends 'base.html' %}
-{% from 'macros/evidence.html' import status_badge %}
 {% block content %}
-<div class="page-title"><div><div class="eyebrow">Evidence Centre</div><h1>Reports</h1><p>Executive, audit and technical evidence exports for the selected PKI environment.</p></div></div>
-<div class="card card-panel"><div class="card-body compact-card"><div class="table-responsive"><table class="table modern-table table-sm align-middle"><thead><tr><th>Scan</th><th>Domain</th><th>Completed</th><th>Posture</th><th>Health</th><th>Best Practices</th><th>Exports</th></tr></thead><tbody>{% for s in scans %}<tr><td>{{s.id}}</td><td>{{s.domain_name}}</td><td>{{s.completed_at}}</td><td>{{s.summary_json.posture.score if s.summary_json.posture else 'Unknown'}}</td><td>{{s.summary_json.health.score if s.summary_json.health else 'Unknown'}}</td><td>{{s.summary_json.best_practices.score if s.summary_json.best_practices else 'Unknown'}}</td><td><a href="/reports/{{s.id}}">HTML</a> · <a href="/reports/{{s.id}}.json">JSON</a></td></tr>{% else %}<tr><td colspan="7">No reports yet.</td></tr>{% endfor %}</tbody></table></div></div></div>
+
+<div class="customer-report-page">
+
+  <section class="customer-report-hero">
+    <div class="customer-report-hero-copy">
+      <div class="customer-report-kicker">Customer Evidence Centre</div>
+      <h1>Assessment Reports</h1>
+      <p>
+        Executive, audit and technical assessment evidence for the selected
+        PKI environment.
+      </p>
+
+      {% if selected_environment %}
+      <div class="customer-report-environment">
+        <span class="customer-report-env-dot"></span>
+        <div>
+          <strong>{{ selected_environment.name }}</strong>
+          <small>
+            {{ selected_environment.collector_type|upper }}
+            {% if selected_environment.domain_name %}
+              · {{ selected_environment.domain_name }}
+            {% endif %}
+            {% if selected_environment.last_scan_at %}
+              · Last scan {{ selected_environment.last_scan_at }}
+            {% endif %}
+          </small>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if scan %}
+    <div class="customer-report-hero-actions">
+      {% if selected_environment %}
+      <a
+        class="btn btn-light customer-report-primary-action"
+        href="/reports/environment/{{ selected_environment.id }}/latest.pdf"
+      >
+        Download Executive PDF
+      </a>
+      {% endif %}
+
+      <a
+        class="btn customer-report-secondary-action"
+        href="/pki-posture{% if selected_environment %}?environment_id={{ selected_environment.id }}{% endif %}"
+      >
+        View PKI Posture
+      </a>
+    </div>
+    {% endif %}
+  </section>
+
+  {% if scan %}
+  <section class="customer-report-metrics" aria-label="Latest assessment summary">
+
+    <article class="customer-report-metric customer-report-metric-score">
+      <div class="customer-report-metric-label">PKI posture</div>
+      <div class="customer-report-metric-value">
+        {{ report_stats.posture_score if report_stats.posture_score is not none else '—' }}
+      </div>
+      <div class="customer-report-metric-caption">Latest assurance score</div>
+    </article>
+
+    <article class="customer-report-metric">
+      <div class="customer-report-metric-label">PKI health</div>
+      <div class="customer-report-metric-value">
+        {{ report_stats.health_score if report_stats.health_score is not none else '—' }}
+      </div>
+      <div class="customer-report-metric-caption">Operational health score</div>
+    </article>
+
+    <article class="customer-report-metric">
+      <div class="customer-report-metric-label">Controls</div>
+      <div class="customer-report-metric-value">
+        {{ report_stats.best_practice_score if report_stats.best_practice_score is not none else '—' }}
+      </div>
+      <div class="customer-report-metric-caption">Best-practice alignment</div>
+    </article>
+
+    <article class="customer-report-metric">
+      <div class="customer-report-metric-label">Open findings</div>
+      <div class="customer-report-metric-value">
+        {{ report_stats.findings or 0 }}
+      </div>
+      <div class="customer-report-metric-caption">
+        {{ report_stats.critical or 0 }} critical ·
+        {{ report_stats.high or 0 }} high
+      </div>
+    </article>
+
+  </section>
+
+  <div class="customer-report-section-heading">
+    <div>
+      <span class="customer-report-section-kicker">Report Library</span>
+      <h2>Customer-ready assessment views</h2>
+    </div>
+    <span class="customer-report-scan-chip">
+      Current scan #{{ scan.id }}
+      {% if scan.scan_sequence %} · Sequence {{ scan.scan_sequence }}{% endif %}
+    </span>
+  </div>
+
+  <section class="customer-report-library">
+
+    <article class="customer-report-card customer-report-card-featured">
+      <div class="customer-report-card-icon">EX</div>
+      <div class="customer-report-card-body">
+        <span class="customer-report-card-type">Executive</span>
+        <h3>Executive Risk Summary</h3>
+        <p>
+          A concise view of PKI posture, major exposures, health,
+          governance alignment and remediation priorities.
+        </p>
+      </div>
+      <div class="customer-report-card-actions">
+        <a
+          href="/pki-posture{% if selected_environment %}?environment_id={{ selected_environment.id }}{% endif %}"
+        >
+          Open executive view
+        </a>
+        <a href="/reports/{{ scan.id }}.pdf">Download PDF</a> <a href="/reports/{{ scan.id }}.json">Technical JSON</a>
+      </div>
+    </article>
+
+    <article class="customer-report-card">
+      <div class="customer-report-card-icon">TR</div>
+      <div class="customer-report-card-body">
+        <span class="customer-report-card-type">Technical</span>
+        <h3>Technical Risk Assessment</h3>
+        <p>
+          Detailed ADCS findings, affected templates, confidence,
+          evidence and safe remediation guidance.
+        </p>
+      </div>
+      <div class="customer-report-card-actions">
+        <a
+          href="/findings{% if selected_environment %}?environment_id={{ selected_environment.id }}{% endif %}"
+        >
+          Review findings
+        </a>
+      </div>
+    </article>
+
+    <article class="customer-report-card">
+      <div class="customer-report-card-icon">HC</div>
+      <div class="customer-report-card-body">
+        <span class="customer-report-card-type">Operational</span>
+        <h3>Health &amp; Controls Report</h3>
+        <p>
+          CA health, key protection, publication services,
+          evidence coverage and governance controls.
+        </p>
+      </div>
+      <div class="customer-report-card-actions">
+        <a
+          href="/pki-health{% if selected_environment %}?environment_id={{ selected_environment.id }}{% endif %}"
+        >
+          View health
+        </a>
+        <a
+          href="/best-practices{% if selected_environment %}?environment_id={{ selected_environment.id }}{% endif %}"
+        >
+          View controls
+        </a>
+      </div>
+    </article>
+
+    <article class="customer-report-card">
+      <div class="customer-report-card-icon">EV</div>
+      <div class="customer-report-card-body">
+        <span class="customer-report-card-type">Audit Evidence</span>
+        <h3>Evidence &amp; Coverage Register</h3>
+        <p>
+          Collected evidence, assessment coverage, missing evidence
+          and areas requiring additional validation.
+        </p>
+      </div>
+      <div class="customer-report-card-actions">
+        <a
+          href="/evidence-gaps{% if selected_environment %}?environment_id={{ selected_environment.id }}{% endif %}"
+        >
+          Review evidence
+        </a>
+      </div>
+    </article>
+
+  </section>
+
+  <div class="customer-report-section-heading customer-report-snapshot-heading">
+    <div>
+      <span class="customer-report-section-kicker">Assessment Archive</span>
+      <h2>Recent report snapshots</h2>
+    </div>
+    <a
+      class="customer-report-history-link"
+      href="/history{% if selected_environment %}?environment_id={{ selected_environment.id }}{% endif %}"
+    >
+      View full scan history
+    </a>
+  </div>
+
+  <section class="customer-report-table-card">
+    <div class="table-responsive">
+      <table class="table customer-report-table align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Assessment</th>
+            <th>Completed</th>
+            <th>Collection</th>
+            <th>Posture</th>
+            <th>Health</th>
+            <th>Controls</th>
+            <th class="text-end">Evidence export</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in scans %}
+          {% set summary = s.summary_json or {} %}
+          {% set scan_posture = summary.get('posture') or {} %}
+          {% set scan_health = summary.get('health') or {} %}
+          {% set scan_controls = summary.get('best_practices') or {} %}
+          <tr>
+            <td>
+              <div class="customer-report-scan-name">
+                <strong>Scan #{{ s.id }}</strong>
+                {% if s.is_current_for_environment %}
+                <span class="customer-report-current-badge">Current</span>
+                {% endif %}
+              </div>
+              <small>
+                {% if s.scan_sequence %}Sequence {{ s.scan_sequence }}{% endif %}
+                {% if s.collector_version %} · {{ s.collector_version }}{% endif %}
+              </small>
+            </td>
+            <td>
+              {{ s.completed_at or 'Not completed' }}
+            </td>
+            <td>
+              <span class="customer-report-mode">
+                {{ (s.collection_mode or 'full')|title }}
+              </span>
+            </td>
+            <td>
+              <span class="customer-report-table-score">
+                {{ scan_posture.get('score') if scan_posture.get('score') is not none else '—' }}
+              </span>
+            </td>
+            <td>
+              <span class="customer-report-table-score">
+                {{ scan_health.get('score') if scan_health.get('score') is not none else '—' }}
+              </span>
+            </td>
+            <td>
+              <span class="customer-report-table-score">
+                {{ scan_controls.get('score') if scan_controls.get('score') is not none else '—' }}
+              </span>
+            </td>
+            <td class="text-end">
+              <a
+                class="customer-report-export-link"
+                href="/reports/{{ s.id }}.pdf"
+              >
+                Download PDF
+              </a>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="7">
+              <div class="customer-report-empty">
+                <strong>No assessment reports yet</strong>
+                <span>Run the ADCS collector to create the first report.</span>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {% else %}
+
+  <section class="customer-report-empty customer-report-empty-page">
+    <div class="customer-report-empty-icon">R</div>
+    <strong>No report is available</strong>
+    <span>
+      Select a PKI environment with a completed scan to view its report.
+    </span>
+  </section>
+
+  {% endif %}
+</div>
+
 {% endblock %}

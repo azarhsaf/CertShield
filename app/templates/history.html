@@ -1,16 +1,231 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="page-title"><div><div class="eyebrow">Scan Timeline</div><h1>Scan History</h1><p>Environment-scoped collector runs, versions, source hosts and comparison entry points.</p></div></div>
-<div class="card card-panel"><div class="card-body">
-<div class="table-responsive"><table class="table modern-table align-middle">
-  <thead><tr><th>Scan ID</th><th>Domain</th><th>Source</th><th>Completed</th><th>Findings</th><th>Exports</th></tr></thead>
-  <tbody>
-  {% for s in scans %}
-  <tr><td>{{s.id}}</td><td>{{s.domain_name}}</td><td>{{s.source}}</td><td>{{s.completed_at}}</td><td>{{s.summary_json.findings}}</td><td><a href="/reports/{{s.id}}">HTML</a> · <a href="/reports/{{s.id}}.json">JSON</a></td></tr>
+
+<div class="customer-history-page">
+
+  <section class="customer-history-hero">
+    <div>
+      <div class="customer-report-kicker">Environment Timeline</div>
+      <h1>Scan History</h1>
+      <p>
+        Review assessment versions, collector runs and posture movement
+        for the selected PKI environment.
+      </p>
+    </div>
+
+    {% if selected_environment %}
+    <div class="customer-history-environment-card">
+      <span>Selected environment</span>
+      <strong>{{ selected_environment.name }}</strong>
+      <small>
+        {{ selected_environment.collector_type|upper }}
+        {% if selected_environment.domain_name %}
+          · {{ selected_environment.domain_name }}
+        {% endif %}
+      </small>
+    </div>
+    {% endif %}
+  </section>
+
+  {% if history_rows %}
+
+  <section class="customer-history-summary">
+    <article>
+      <span>Total scans</span>
+      <strong>{{ history_rows|length }}</strong>
+      <small>Retained assessment versions</small>
+    </article>
+
+    <article>
+      <span>Current scan</span>
+      <strong>#{{ scan.id if scan else '—' }}</strong>
+      <small>
+        {% if scan and scan.scan_sequence %}
+        Sequence {{ scan.scan_sequence }}
+        {% else %}
+        Latest available version
+        {% endif %}
+      </small>
+    </article>
+
+    <article>
+      <span>Latest posture</span>
+      <strong>
+        {% if history_rows[0].posture_score is not none %}
+          {{ history_rows[0].posture_score }}
+        {% else %}
+          —
+        {% endif %}
+      </strong>
+      <small>Current environment score</small>
+    </article>
+
+    <article>
+      <span>Latest findings</span>
+      <strong>{{ history_rows[0].findings }}</strong>
+      <small>
+        {{ history_rows[0].critical }} critical ·
+        {{ history_rows[0].high }} high
+      </small>
+    </article>
+  </section>
+
+  <div class="customer-report-section-heading">
+    <div>
+      <span class="customer-report-section-kicker">Version History</span>
+      <h2>Assessment timeline</h2>
+    </div>
+
+    <a
+      class="customer-report-history-link"
+      href="/reports{% if selected_environment %}?environment_id={{ selected_environment.id }}{% endif %}"
+    >
+      Open report centre
+    </a>
+  </div>
+
+  <section class="customer-history-timeline">
+
+    {% for row in history_rows %}
+    {% set item = row.scan %}
+
+    <article
+      class="customer-history-entry{% if row.is_current %} customer-history-entry-current{% endif %}"
+    >
+      <div class="customer-history-marker">
+        <span></span>
+      </div>
+
+      <div class="customer-history-entry-card">
+
+        <div class="customer-history-entry-header">
+          <div>
+            <div class="customer-history-entry-title">
+              <h3>Scan #{{ item.id }}</h3>
+
+              {% if row.is_current %}
+              <span class="customer-history-current">Current assessment</span>
+              {% endif %}
+            </div>
+
+            <div class="customer-history-entry-meta">
+              {% if item.scan_sequence %}
+              <span>Sequence {{ item.scan_sequence }}</span>
+              {% endif %}
+
+              <span>{{ item.completed_at or item.started_at or 'Time unavailable' }}</span>
+
+              {% if item.source_host %}
+              <span>Source: {{ item.source_host }}</span>
+              {% endif %}
+            </div>
+          </div>
+
+          <a
+            class="customer-history-export"
+            href="/reports/{{ item.id }}.pdf"
+          >
+            Download report
+          </a>
+        </div>
+
+        <div class="customer-history-entry-grid">
+
+          <div class="customer-history-stat">
+            <span>Posture score</span>
+            <strong>
+              {{ row.posture_score if row.posture_score is not none else '—' }}
+            </strong>
+
+            {% if row.delta_score is not none %}
+            <small
+              class="{% if row.delta_score > 0 %}history-delta-positive{% elif row.delta_score < 0 %}history-delta-negative{% else %}history-delta-neutral{% endif %}"
+            >
+              {% if row.delta_score > 0 %}+{% endif %}{{ row.delta_score }}
+              from previous
+            </small>
+            {% else %}
+            <small>Baseline assessment</small>
+            {% endif %}
+          </div>
+
+          <div class="customer-history-stat">
+            <span>Total findings</span>
+            <strong>{{ row.findings }}</strong>
+
+            {% if row.delta_findings is not none %}
+            <small
+              class="{% if row.delta_findings < 0 %}history-delta-positive{% elif row.delta_findings > 0 %}history-delta-negative{% else %}history-delta-neutral{% endif %}"
+            >
+              {% if row.delta_findings > 0 %}+{% endif %}{{ row.delta_findings }}
+              from previous
+            </small>
+            {% else %}
+            <small>Baseline assessment</small>
+            {% endif %}
+          </div>
+
+          <div class="customer-history-stat">
+            <span>Priority findings</span>
+            <strong>{{ row.critical + row.high }}</strong>
+            <small>
+              {{ row.critical }} critical · {{ row.high }} high
+            </small>
+          </div>
+
+          <div class="customer-history-stat">
+            <span>Collection mode</span>
+            <strong class="customer-history-mode">
+              {{ (item.collection_mode or 'full')|title }}
+            </strong>
+            <small>
+              {{ item.collector_version or 'Collector version unavailable' }}
+            </small>
+          </div>
+
+        </div>
+
+        <div class="customer-history-entry-footer">
+          <div>
+            {% if item.previous_scan_id %}
+            <span>Previous scan #{{ item.previous_scan_id }}</span>
+            {% else %}
+            <span>First retained scan in this environment</span>
+            {% endif %}
+          </div>
+
+          <div class="customer-history-entry-actions">
+            <a
+              href="/findings{% if selected_environment %}?environment_id={{ selected_environment.id }}{% endif %}"
+            >
+              Findings
+            </a>
+            <a
+              href="/pki-posture{% if selected_environment %}?environment_id={{ selected_environment.id }}{% endif %}"
+            >
+              Posture
+            </a>
+            <a href="/reports/{{ item.id }}.json">JSON evidence</a>
+          </div>
+        </div>
+
+      </div>
+    </article>
+
+    {% endfor %}
+  </section>
+
   {% else %}
-  <tr><td colspan="6" class="text-secondary">No scans yet.</td></tr>
-  {% endfor %}
-  </tbody>
-</table></div>
-</div></div>
+
+  <section class="customer-report-empty customer-report-empty-page">
+    <div class="customer-report-empty-icon">H</div>
+    <strong>No scan history is available</strong>
+    <span>
+      Select an environment with completed collector scans.
+    </span>
+  </section>
+
+  {% endif %}
+</div>
+
 {% endblock %}
