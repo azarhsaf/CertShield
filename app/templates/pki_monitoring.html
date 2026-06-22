@@ -1,0 +1,1113 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<div class="monitoring-page">
+
+  <section class="monitoring-hero">
+    <div class="monitoring-hero-main">
+      <div class="monitoring-kicker">
+        PKI Live Operations Centre
+      </div>
+
+      <div class="monitoring-title-row">
+        <h1>PKI Monitoring</h1>
+
+        <span
+          id="monitorModeBadge"
+          class="monitor-mode-badge monitor-mode-snapshot"
+        >
+          <span class="monitor-mode-dot"></span>
+          Snapshot mode
+        </span>
+      </div>
+
+      <p>
+        {% if monitoring.environment.name %}
+          {{ monitoring.environment.name }}
+          ·
+          {{ monitoring.environment.collector_type|upper }}
+          ·
+          Scan #{{ monitoring.environment.scan_id }}
+        {% else %}
+          Select a PKI environment to begin monitoring.
+        {% endif %}
+      </p>
+    </div>
+
+    <div class="monitoring-hero-status">
+      <div>
+        <span>Monitoring status</span>
+        <strong id="monitorStatusLabel">
+          {{ monitoring.status_label }}
+        </strong>
+      </div>
+
+      <div>
+        <span>Latest evidence</span>
+        <strong id="monitorLastUpdate">
+          {{ monitoring.last_update or 'No scan available' }}
+        </strong>
+      </div>
+
+      <div class="monitoring-refresh-state">
+        <span class="monitor-refresh-pulse"></span>
+        Auto-refresh every 10 seconds
+      </div>
+    </div>
+  </section>
+
+  <section
+    id="monitoringModeNotice"
+    class="monitoring-mode-notice"
+  >
+    <div class="monitoring-mode-notice-icon">i</div>
+
+    <div>
+      <strong>
+        Live monitoring agent is not connected yet
+      </strong>
+
+      <span>
+        This page currently presents the latest collected PKI
+        snapshot. Certificate activity and CA state are real
+        collected values. Administrator sessions, Web Enrollment
+        sessions and server resources will activate when the
+        monitoring agent is installed.
+      </span>
+    </div>
+
+    <a href="/settings">Agent settings</a>
+  </section>
+
+  <section class="monitoring-attention-panel">
+    <div class="monitoring-section-heading">
+      <div>
+        <span>Immediate operational awareness</span>
+        <h2>What needs attention now?</h2>
+      </div>
+
+      <a href="/pki-health">
+        View detailed PKI Health
+      </a>
+    </div>
+
+    <div id="monitorAlertList">
+      {% for alert in monitoring.alerts %}
+      <article
+        class="monitor-alert monitor-alert-{{ alert.severity }}"
+      >
+        <div class="monitor-alert-icon">!</div>
+
+        <div class="monitor-alert-copy">
+          <span>{{ alert.severity|upper }}</span>
+          <strong>{{ alert.title }}</strong>
+          <p>{{ alert.summary }}</p>
+          <small>
+            Business impact: {{ alert.impact }}
+          </small>
+        </div>
+
+        <a href="{{ alert.target }}">
+          Review
+        </a>
+      </article>
+      {% else %}
+      <article class="monitor-no-alert">
+        <div class="monitor-no-alert-icon">✓</div>
+
+        <div>
+          <strong>
+            No active service-impact alert was identified
+            in the latest snapshot
+          </strong>
+
+          <span>
+            Continuous alerts will appear here immediately
+            after the monitoring agent is connected.
+          </span>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="monitoring-counter-grid">
+
+    <a href="/certificates" class="monitor-counter-card">
+      <div class="monitor-counter-icon monitor-counter-blue">
+        ◈
+      </div>
+      <div>
+        <span>Certificates issued</span>
+        <strong id="counterIssued">
+          {{ monitoring.counters.issued }}
+        </strong>
+        <small>Captured in latest collection</small>
+      </div>
+    </a>
+
+    <a href="/certificates" class="monitor-counter-card">
+      <div class="monitor-counter-icon monitor-counter-red">
+        ×
+      </div>
+      <div>
+        <span>Requests denied</span>
+        <strong id="counterDenied">
+          {{ monitoring.counters.denied }}
+        </strong>
+        <small>Recorded request failures</small>
+      </div>
+    </a>
+
+    <a href="/certificates" class="monitor-counter-card">
+      <div class="monitor-counter-icon monitor-counter-amber">
+        ◷
+      </div>
+      <div>
+        <span>Pending approvals</span>
+        <strong id="counterPending">
+          {{ monitoring.counters.pending }}
+        </strong>
+        <small>Awaiting completion</small>
+      </div>
+    </a>
+
+    <a href="/pki-hierarchy" class="monitor-counter-card">
+      <div class="monitor-counter-icon monitor-counter-green">
+        ⌁
+      </div>
+      <div>
+        <span>CA connectivity</span>
+        <strong id="counterCas">
+          {{ monitoring.counters.connected_cas }}
+          /
+          {{ monitoring.counters.total_cas }}
+        </strong>
+        <small>Latest collected CA state</small>
+      </div>
+    </a>
+
+    <div class="monitor-counter-card monitor-counter-disabled">
+      <div class="monitor-counter-icon monitor-counter-purple">
+        👤
+      </div>
+      <div>
+        <span>Active administrators</span>
+        <strong id="counterAdmins">—</strong>
+        <small>Requires monitoring agent</small>
+      </div>
+    </div>
+
+    <div class="monitor-counter-card monitor-counter-disabled">
+      <div class="monitor-counter-icon monitor-counter-cyan">
+        ◎
+      </div>
+      <div>
+        <span>Web Enrollment users</span>
+        <strong id="counterWebUsers">—</strong>
+        <small>Requires IIS live telemetry</small>
+      </div>
+    </div>
+
+    <a href="#monitorAlertList" class="monitor-counter-card">
+      <div class="monitor-counter-icon monitor-counter-alert">
+        !
+      </div>
+      <div>
+        <span>Active alerts</span>
+        <strong id="counterAlerts">
+          {{ monitoring.counters.active_alerts }}
+        </strong>
+        <small>Operational attention items</small>
+      </div>
+    </a>
+
+  </section>
+
+  <section class="monitoring-chart-grid">
+
+    <article class="monitoring-card monitoring-trend-card">
+      <div class="monitoring-section-heading compact">
+        <div>
+          <span>Certificate activity</span>
+          <h2>Issuance trend</h2>
+        </div>
+
+        <small>Latest collected activity</small>
+      </div>
+
+      <div class="monitor-line-chart-wrap">
+        <svg
+          id="monitorTrendChart"
+          class="monitor-line-chart"
+          viewBox="0 0 700 250"
+          preserveAspectRatio="none"
+        ></svg>
+      </div>
+
+      <div id="monitorTrendLabels" class="monitor-trend-labels"></div>
+    </article>
+
+    <article class="monitoring-card">
+      <div class="monitoring-section-heading compact">
+        <div>
+          <span>Request outcomes</span>
+          <h2>Certificate result mix</h2>
+        </div>
+      </div>
+
+      <div class="monitor-outcome-layout">
+        <div
+          id="monitorOutcomeDonut"
+          class="monitor-outcome-donut"
+        >
+          <div>
+            <strong id="monitorOutcomeTotal">0</strong>
+            <span>requests</span>
+          </div>
+        </div>
+
+        <div
+          id="monitorOutcomeLegend"
+          class="monitor-outcome-legend"
+        ></div>
+      </div>
+    </article>
+
+    <article class="monitoring-card">
+      <div class="monitoring-section-heading compact">
+        <div>
+          <span>Certificate demand</span>
+          <h2>Templates being used</h2>
+        </div>
+      </div>
+
+      <div
+        id="monitorTemplateBars"
+        class="monitor-template-bars"
+      ></div>
+    </article>
+
+  </section>
+
+  <section class="monitoring-main-grid">
+
+    <article class="monitoring-card monitoring-timeline-card">
+      <div class="monitoring-section-heading">
+        <div>
+          <span>Operational event stream</span>
+          <h2>Activity timeline</h2>
+        </div>
+
+        <div class="monitoring-filter-row">
+          <button
+            type="button"
+            class="monitor-filter active"
+            data-monitor-filter="all"
+          >
+            All activity
+          </button>
+
+          <button
+            type="button"
+            class="monitor-filter"
+            data-monitor-filter="certificate"
+          >
+            Certificates
+          </button>
+
+          <button
+            type="button"
+            class="monitor-filter"
+            data-monitor-filter="access"
+          >
+            Administrator access
+          </button>
+
+          <button
+            type="button"
+            class="monitor-filter"
+            data-monitor-filter="web"
+          >
+            Web Enrollment
+          </button>
+
+          <button
+            type="button"
+            class="monitor-filter"
+            data-monitor-filter="infrastructure"
+          >
+            Infrastructure
+          </button>
+        </div>
+      </div>
+
+      <div id="monitorTimeline" class="monitor-timeline"></div>
+    </article>
+
+    <aside class="monitoring-side-column">
+
+      <article class="monitoring-card monitoring-infrastructure-card">
+        <div class="monitoring-section-heading compact">
+          <div>
+            <span>Current operational state</span>
+            <h2>Infrastructure summary</h2>
+          </div>
+        </div>
+
+        <div class="monitor-infrastructure-state">
+          <div
+            id="monitorInfrastructureIcon"
+            class="monitor-infrastructure-icon"
+          >
+            ◉
+          </div>
+
+          <div>
+            <span>Current state</span>
+            <strong id="monitorInfrastructureState">
+              {{ monitoring.infrastructure.state }}
+            </strong>
+          </div>
+        </div>
+
+        <p id="monitorInfrastructureMessage">
+          {{ monitoring.infrastructure.message }}
+        </p>
+
+        <a href="/pki-health">
+          Open detailed PKI Health analysis
+          <span>→</span>
+        </a>
+      </article>
+
+      <article class="monitoring-card monitoring-agent-card">
+        <div class="monitor-agent-orbit">
+          <div class="monitor-agent-core">CS</div>
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+
+        <div>
+          <span>Monitoring agent</span>
+          <strong>Not connected</strong>
+          <p>
+            Connect the Windows monitoring service to activate
+            live sessions, IIS access, resources, event logs and
+            second-by-second certificate activity.
+          </p>
+        </div>
+      </article>
+
+    </aside>
+
+  </section>
+
+  <section class="monitoring-card monitoring-architecture-card">
+    <div class="monitoring-section-heading">
+      <div>
+        <span>PKI operating map</span>
+        <h2>Live architecture status</h2>
+      </div>
+
+      <a href="/pki-hierarchy">
+        Open full PKI architecture
+      </a>
+    </div>
+
+    <div
+      id="monitorArchitecture"
+      class="monitor-architecture"
+    ></div>
+  </section>
+
+  <script
+    id="monitoringInitialData"
+    type="application/json"
+  >{{ monitoring|tojson }}</script>
+
+  <script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const initialNode = document.getElementById(
+      "monitoringInitialData"
+    );
+
+    let monitoringData = {};
+
+    try {
+      monitoringData = JSON.parse(
+        initialNode?.textContent || "{}"
+      );
+    } catch (error) {
+      monitoringData = {};
+    }
+
+    let activeFilter = "all";
+
+    const outcomeColors = {
+      issued: "#1da876",
+      denied: "#d44358",
+      pending: "#e4a62f",
+      revoked: "#7a5ce1",
+      other: "#718096",
+    };
+
+    function safeNumber(value) {
+      const number = Number(value);
+      return Number.isFinite(number) ? number : 0;
+    }
+
+    function setText(id, value) {
+      const node = document.getElementById(id);
+
+      if (node) {
+        node.textContent =
+          value === null ||
+          value === undefined
+            ? "—"
+            : value;
+      }
+    }
+
+    function renderMode(data) {
+      const badge = document.getElementById(
+        "monitorModeBadge"
+      );
+
+      if (!badge) {
+        return;
+      }
+
+      badge.classList.toggle(
+        "monitor-mode-live",
+        Boolean(data.agent_connected)
+      );
+
+      badge.classList.toggle(
+        "monitor-mode-snapshot",
+        !data.agent_connected
+      );
+
+      badge.innerHTML = `
+        <span class="monitor-mode-dot"></span>
+        ${data.agent_connected ? "Live" : "Snapshot mode"}
+      `;
+
+      setText(
+        "monitorStatusLabel",
+        data.status_label
+      );
+
+      setText(
+        "monitorLastUpdate",
+        data.last_update || "No scan available"
+      );
+    }
+
+    function renderCounters(data) {
+      const counters = data.counters || {};
+
+      setText("counterIssued", safeNumber(counters.issued));
+      setText("counterDenied", safeNumber(counters.denied));
+      setText("counterPending", safeNumber(counters.pending));
+      setText(
+        "counterCas",
+        `${safeNumber(counters.connected_cas)}/` +
+        `${safeNumber(counters.total_cas)}`
+      );
+      setText("counterAdmins", counters.active_admins);
+      setText("counterWebUsers", counters.web_users);
+      setText(
+        "counterAlerts",
+        safeNumber(counters.active_alerts)
+      );
+    }
+
+    function renderTrend(data) {
+      const svg = document.getElementById(
+        "monitorTrendChart"
+      );
+
+      const labels = document.getElementById(
+        "monitorTrendLabels"
+      );
+
+      if (!svg || !labels) {
+        return;
+      }
+
+      const points = Array.isArray(data.trend)
+        ? data.trend
+        : [];
+
+      svg.innerHTML = "";
+      labels.innerHTML = "";
+
+      if (!points.length) {
+        svg.innerHTML = `
+          <text
+            x="350"
+            y="125"
+            text-anchor="middle"
+            class="monitor-svg-empty"
+          >
+            No timestamped issuance trend is available
+          </text>
+        `;
+        return;
+      }
+
+      const width = 700;
+      const height = 250;
+      const top = 25;
+      const bottom = 35;
+      const left = 35;
+      const right = 25;
+
+      const maxValue = Math.max(
+        1,
+        ...points.map((point) =>
+          safeNumber(point.value)
+        )
+      );
+
+      const chartWidth = width - left - right;
+      const chartHeight = height - top - bottom;
+
+      for (let grid = 0; grid <= 4; grid += 1) {
+        const y = top + (chartHeight / 4) * grid;
+
+        svg.insertAdjacentHTML(
+          "beforeend",
+          `
+            <line
+              x1="${left}"
+              y1="${y}"
+              x2="${width - right}"
+              y2="${y}"
+              class="monitor-chart-grid-line"
+            />
+          `
+        );
+      }
+
+      const coordinateList = points.map(
+        (point, index) => {
+          const x = points.length === 1
+            ? width / 2
+            : left +
+              (chartWidth * index) /
+              (points.length - 1);
+
+          const y = top +
+            chartHeight -
+            (
+              safeNumber(point.value) /
+              maxValue
+            ) * chartHeight;
+
+          return {
+            x,
+            y,
+            value: safeNumber(point.value),
+            label: point.label,
+          };
+        }
+      );
+
+      const polyline = coordinateList
+        .map((point) => `${point.x},${point.y}`)
+        .join(" ");
+
+      const areaPoints = [
+        `${coordinateList[0].x},${height - bottom}`,
+        ...coordinateList.map(
+          (point) => `${point.x},${point.y}`
+        ),
+        `${coordinateList.at(-1).x},${height - bottom}`,
+      ].join(" ");
+
+      svg.insertAdjacentHTML(
+        "beforeend",
+        `
+          <defs>
+            <linearGradient
+              id="monitorTrendGradient"
+              x1="0"
+              y1="0"
+              x2="0"
+              y2="1"
+            >
+              <stop
+                offset="0%"
+                stop-color="#377ee8"
+                stop-opacity="0.35"
+              />
+              <stop
+                offset="100%"
+                stop-color="#377ee8"
+                stop-opacity="0.02"
+              />
+            </linearGradient>
+          </defs>
+
+          <polygon
+            points="${areaPoints}"
+            fill="url(#monitorTrendGradient)"
+          />
+
+          <polyline
+            points="${polyline}"
+            class="monitor-trend-line"
+          />
+        `
+      );
+
+      coordinateList.forEach((point) => {
+        svg.insertAdjacentHTML(
+          "beforeend",
+          `
+            <circle
+              cx="${point.x}"
+              cy="${point.y}"
+              r="5"
+              class="monitor-trend-point"
+            >
+              <title>
+                ${point.label}: ${point.value}
+              </title>
+            </circle>
+          `
+        );
+
+        const label = document.createElement("span");
+        label.textContent = point.label;
+        labels.appendChild(label);
+      });
+    }
+
+    function renderOutcomes(data) {
+      const donut = document.getElementById(
+        "monitorOutcomeDonut"
+      );
+
+      const legend = document.getElementById(
+        "monitorOutcomeLegend"
+      );
+
+      if (!donut || !legend) {
+        return;
+      }
+
+      const outcomes = data.outcomes || {};
+      const names = [
+        "issued",
+        "denied",
+        "pending",
+        "revoked",
+        "other",
+      ];
+
+      const total = names.reduce(
+        (sum, name) =>
+          sum + safeNumber(outcomes[name]),
+        0
+      );
+
+      setText("monitorOutcomeTotal", total);
+
+      let position = 0;
+      const segments = [];
+
+      legend.innerHTML = "";
+
+      names.forEach((name) => {
+        const value = safeNumber(outcomes[name]);
+
+        if (total > 0 && value > 0) {
+          const start = position;
+          const end = position + (value / total) * 100;
+
+          segments.push(
+            `${outcomeColors[name]} ${start}% ${end}%`
+          );
+
+          position = end;
+        }
+
+        const row = document.createElement("div");
+        row.className = "monitor-outcome-row";
+
+        row.innerHTML = `
+          <span
+            class="monitor-outcome-color"
+            style="background:${outcomeColors[name]}"
+          ></span>
+          <span>${name}</span>
+          <strong>${value}</strong>
+        `;
+
+        legend.appendChild(row);
+      });
+
+      donut.style.background = segments.length
+        ? `conic-gradient(${segments.join(",")})`
+        : "conic-gradient(#e4eaf2 0 100%)";
+    }
+
+    function renderTemplates(data) {
+      const container = document.getElementById(
+        "monitorTemplateBars"
+      );
+
+      if (!container) {
+        return;
+      }
+
+      const templates = Array.isArray(data.templates)
+        ? data.templates
+        : [];
+
+      container.innerHTML = "";
+
+      if (!templates.length) {
+        container.innerHTML = `
+          <div class="monitor-empty-state">
+            No certificate template activity is available.
+          </div>
+        `;
+        return;
+      }
+
+      const max = Math.max(
+        1,
+        ...templates.map((item) =>
+          safeNumber(item.value)
+        )
+      );
+
+      templates.forEach((item, index) => {
+        const row = document.createElement("div");
+        row.className = "monitor-template-row";
+
+        const percentage =
+          (safeNumber(item.value) / max) * 100;
+
+        row.innerHTML = `
+          <div>
+            <span>${item.name}</span>
+            <strong>${safeNumber(item.value)}</strong>
+          </div>
+
+          <div class="monitor-template-track">
+            <span
+              style="
+                width:${percentage}%;
+                --template-index:${index};
+              "
+            ></span>
+          </div>
+        `;
+
+        container.appendChild(row);
+      });
+    }
+
+    function renderAlerts(data) {
+      const container = document.getElementById(
+        "monitorAlertList"
+      );
+
+      if (!container) {
+        return;
+      }
+
+      const alerts = Array.isArray(data.alerts)
+        ? data.alerts
+        : [];
+
+      container.innerHTML = "";
+
+      if (!alerts.length) {
+        container.innerHTML = `
+          <article class="monitor-no-alert">
+            <div class="monitor-no-alert-icon">✓</div>
+            <div>
+              <strong>
+                No active service-impact alert was identified
+                in the latest snapshot
+              </strong>
+              <span>
+                Continuous alerts will appear here after the
+                monitoring agent is connected.
+              </span>
+            </div>
+          </article>
+        `;
+        return;
+      }
+
+      alerts.forEach((alert) => {
+        const article = document.createElement("article");
+
+        article.className =
+          `monitor-alert monitor-alert-${alert.severity}`;
+
+        article.innerHTML = `
+          <div class="monitor-alert-icon">!</div>
+          <div class="monitor-alert-copy">
+            <span>${String(alert.severity).toUpperCase()}</span>
+            <strong>${alert.title}</strong>
+            <p>${alert.summary}</p>
+            <small>
+              Business impact: ${alert.impact}
+            </small>
+          </div>
+          <a href="${alert.target || "/pki-health"}">
+            Review
+          </a>
+        `;
+
+        container.appendChild(article);
+      });
+    }
+
+    function renderTimeline(data) {
+      const container = document.getElementById(
+        "monitorTimeline"
+      );
+
+      if (!container) {
+        return;
+      }
+
+      const events = Array.isArray(data.events)
+        ? data.events
+        : [];
+
+      const filtered = activeFilter === "all"
+        ? events
+        : events.filter(
+            (event) => event.kind === activeFilter
+          );
+
+      container.innerHTML = "";
+
+      if (!filtered.length) {
+        const message = activeFilter === "access"
+          ? "Administrator session monitoring requires the agent."
+          : activeFilter === "web"
+            ? "Web Enrollment monitoring requires IIS telemetry."
+            : activeFilter === "infrastructure"
+              ? "No infrastructure event is available in snapshot mode."
+              : "No activity is available for this filter.";
+
+        container.innerHTML = `
+          <div class="monitor-timeline-empty">
+            <div>◎</div>
+            <strong>No activity available</strong>
+            <span>${message}</span>
+          </div>
+        `;
+
+        return;
+      }
+
+      filtered.forEach((event) => {
+        const item = document.createElement("article");
+
+        item.className =
+          `monitor-event monitor-event-${event.tone || "info"}`;
+
+        item.innerHTML = `
+          <div class="monitor-event-rail">
+            <span></span>
+          </div>
+
+          <div class="monitor-event-time">
+            ${event.time || "Time not recorded"}
+          </div>
+
+          <div class="monitor-event-copy">
+            <span>${event.kind}</span>
+            <strong>${event.title}</strong>
+            <p>${event.summary}</p>
+            <small>
+              ${event.actor || "Actor not recorded"}
+              ${event.object ? ` · ${event.object}` : ""}
+            </small>
+          </div>
+        `;
+
+        container.appendChild(item);
+      });
+    }
+
+    function renderInfrastructure(data) {
+      const infrastructure =
+        data.infrastructure || {};
+
+      setText(
+        "monitorInfrastructureState",
+        infrastructure.state || "Unknown"
+      );
+
+      setText(
+        "monitorInfrastructureMessage",
+        infrastructure.message ||
+          "No infrastructure evidence is available."
+      );
+    }
+
+    function renderArchitecture(data) {
+      const container = document.getElementById(
+        "monitorArchitecture"
+      );
+
+      if (!container) {
+        return;
+      }
+
+      const nodes = Array.isArray(data.ca_nodes)
+        ? data.ca_nodes
+        : [];
+
+      container.innerHTML = "";
+
+      if (!nodes.length) {
+        container.innerHTML = `
+          <div class="monitor-empty-state">
+            No Certificate Authority nodes are available.
+          </div>
+        `;
+        return;
+      }
+
+      const environmentNode =
+        document.createElement("div");
+
+      environmentNode.className =
+        "monitor-architecture-environment";
+
+      environmentNode.innerHTML = `
+        <div class="monitor-architecture-root-icon">PKI</div>
+        <div>
+          <span>Environment</span>
+          <strong>
+            ${data.environment?.name || "Selected environment"}
+          </strong>
+        </div>
+      `;
+
+      container.appendChild(environmentNode);
+
+      const connector = document.createElement("div");
+      connector.className = "monitor-architecture-connector";
+      container.appendChild(connector);
+
+      const nodeGrid = document.createElement("div");
+      nodeGrid.className = "monitor-architecture-node-grid";
+
+      nodes.forEach((node) => {
+        const link = document.createElement("a");
+
+        link.href = "/pki-hierarchy";
+        link.className =
+          `monitor-ca-node monitor-ca-${node.tone}`;
+
+        link.innerHTML = `
+          <div class="monitor-ca-status-ring">
+            <span></span>
+          </div>
+
+          <div class="monitor-ca-node-copy">
+            <span>Certificate Authority</span>
+            <strong>${node.name}</strong>
+            <small>${node.dns_name || "Host not recorded"}</small>
+          </div>
+
+          <div class="monitor-ca-node-state">
+            ${node.status}
+          </div>
+        `;
+
+        nodeGrid.appendChild(link);
+      });
+
+      container.appendChild(nodeGrid);
+    }
+
+    function renderAll(data) {
+      monitoringData = data || {};
+
+      renderMode(monitoringData);
+      renderCounters(monitoringData);
+      renderTrend(monitoringData);
+      renderOutcomes(monitoringData);
+      renderTemplates(monitoringData);
+      renderAlerts(monitoringData);
+      renderTimeline(monitoringData);
+      renderInfrastructure(monitoringData);
+      renderArchitecture(monitoringData);
+    }
+
+    document
+      .querySelectorAll("[data-monitor-filter]")
+      .forEach((button) => {
+        button.addEventListener("click", () => {
+          activeFilter =
+            button.dataset.monitorFilter || "all";
+
+          document
+            .querySelectorAll("[data-monitor-filter]")
+            .forEach((candidate) => {
+              candidate.classList.toggle(
+                "active",
+                candidate === button
+              );
+            });
+
+          renderTimeline(monitoringData);
+        });
+      });
+
+    async function refreshMonitoring() {
+      try {
+        const response = await fetch(
+          "/api/v1/monitoring/summary" +
+          window.location.search,
+          {
+            headers: {
+              Accept: "application/json",
+            },
+            cache: "no-store",
+          }
+        );
+
+        if (!response.ok) {
+          return;
+        }
+
+        const data = await response.json();
+        renderAll(data);
+      } catch (error) {
+        console.warn(
+          "PKI monitoring refresh failed",
+          error
+        );
+      }
+    }
+
+    renderAll(monitoringData);
+
+    window.setInterval(
+      refreshMonitoring,
+      10000
+    );
+  });
+  </script>
+
+</div>
+
+{% endblock %}

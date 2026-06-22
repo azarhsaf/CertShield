@@ -579,6 +579,427 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("dashboard.html", ctx)
 
 
+
+def _monitoring_snapshot(
+    db: Session,
+    scan: Scan | None,
+) -> dict:
+    """Build the current monitoring view.
+
+    Phase one uses the latest collected environment snapshot.
+    The future CA monitoring agent will populate this contract
+    with live events, sessions, resources and heartbeats.
+    """
+
+    generated_at = datetime.utcnow().isoformat() + "Z"
+
+    empty_snapshot = {
+        "mode": "snapshot",
+        "agent_connected": False,
+        "status": "not_connected",
+        "status_label": "Monitoring agent not connected",
+        "generated_at": generated_at,
+        "last_update": None,
+        "environment": {},
+        "counters": {
+            "issued": 0,
+            "denied": 0,
+            "pending": 0,
+            "revoked": 0,
+            "active_admins": None,
+            "web_users": None,
+            "active_alerts": 0,
+            "connected_cas": 0,
+            "total_cas": 0,
+        },
+        "outcomes": {
+            "issued": 0,
+            "denied": 0,
+            "pending": 0,
+            "revoked": 0,
+            "other": 0,
+        },
+        "trend": [],
+        "templates": [],
+        "ca_statuses": {},
+        "ca_nodes": [],
+        "alerts": [],
+        "events": [],
+        "infrastructure": {
+            "state": "Unknown",
+            "message": (
+                "Connect the CertShield Monitoring Agent "
+                "to begin live infrastructure monitoring."
+            ),
+        },
+    }
+
+    if not scan:
+        return empty_snapshot
+
+    certificates = (
+        db.query(IssuedCertificate)
+        .filter_by(scan_id=scan.id)
+        .order_by(IssuedCertificate.id.desc())
+        .limit(250)
+        .all()
+    )
+
+    cas = (
+        db.query(CertificateAuthority)
+        .filter_by(scan_id=scan.id)
+        .order_by(CertificateAuthority.name.asc())
+        .all()
+    )
+
+    findings = (
+        db.query(Finding)
+        .filter_by(scan_id=scan.id)
+        .all()
+    )
+
+    outcomes = {
+        "issued": 0,
+        "denied": 0,
+        "pending": 0,
+        "revoked": 0,
+        "other": 0,
+    }
+
+    template_counts: dict[str, int] = {}
+    trend_counts: dict[str, int] = {}
+    events: list[dict] = []
+
+    for certificate in certificates:
+        normalized_status = str(
+            certificate.status or "issued"
+        ).strip().lower()
+
+        if normalized_status in {
+            "issued",
+            "valid",
+            "completed",
+            "success",
+        }:
+            outcome = "issued"
+            event_title = "Certificate issued"
+            event_tone = "success"
+        elif normalized_status in {
+            "denied",
+            "rejected",
+            "failed",
+        }:
+            outcome = "denied"
+            event_title = "Certificate request denied"
+            event_tone = "danger"
+        elif normalized_status in {
+            "pending",
+            "submitted",
+            "processing",
+        }:
+            outcome = "pending"
+            event_title = "Certificate request pending"
+            event_tone = "warning"
+        elif normalized_status == "revoked":
+            outcome = "revoked"
+            event_title = "Certificate revoked"
+            event_tone = "danger"
+        else:
+            outcome = "other"
+            event_title = "Certificate activity recorded"
+            event_tone = "info"
+
+        outcomes[outcome] += 1
+
+        template_name = (
+            certificate.template_name
+            or "Template not recorded"
+        )
+
+        template_counts[template_name] = (
+            template_counts.get(template_name, 0) + 1
+        )
+
+        raw_time = str(certificate.issued_at or "").strip()
+
+        if raw_time:
+            try:
+                parsed_time = datetime.fromisoformat(
+                    raw_time.replace("Z", "+00:00")
+                )
+                trend_label = parsed_time.strftime("%d %b")
+            except ValueError:
+                trend_label = raw_time[:10]
+        else:
+            trend_label = "Unknown date"
+
+        if outcome == "issued":
+            trend_counts[trend_label] = (
+                trend_counts.get(trend_label, 0) + 1
+            )
+
+        subject = (
+            certificate.subject
+            or certificate.san
+            or "Certificate subject not recorded"
+        )
+
+        requester = (
+            certificate.requester
+            or "Requester not recorded"
+        )
+
+        events.append(
+            {
+                "id": f"certificate-{certificate.id}",
+                "kind": "certificate",
+                "tone": event_tone,
+                "title": event_title,
+                "summary": (
+                    f"{template_name} for {subject}"
+                ),
+                "actor": requester,
+                "time": raw_time or "Captured in latest scan",
+                "object": f"Request #{certificate.request_id}",
+            }
+        )
+
+    template_chart = [
+        {
+            "name": name,
+            "value": value,
+        }
+        for name, value in sorted(
+            template_counts.items(),
+            key=lambda item: item[1],
+            reverse=True,
+        )[:8]
+    ]
+
+    trend = [
+        {
+            "label": label,
+            "value": value,
+        }
+        for label, value in list(trend_counts.items())[-10:]
+    ]
+
+    good_ca_states = {
+        "online",
+        "healthy",
+        "normal",
+        "running",
+        "up",
+        "available",
+    }
+
+    ca_statuses: dict[str, int] = {}
+    ca_nodes: list[dict] = []
+    alerts: list[dict] = []
+    connected_cas = 0
+
+    critical_findings = sum(
+        1
+        for finding in findings
+        if str(finding.severity).lower() == "critical"
+    )
+
+    high_findings = sum(
+        1
+        for finding in findings
+        if str(finding.severity).lower() == "high"
+    )
+
+    for ca in cas:
+        normalized_status = str(
+            ca.status or "unknown"
+        ).strip().lower()
+
+        display_status = (
+            normalized_status.replace("_", " ").title()
+        )
+
+        ca_statuses[display_status] = (
+            ca_statuses.get(display_status, 0) + 1
+        )
+
+        connected = normalized_status in good_ca_states
+
+        if connected:
+            connected_cas += 1
+            tone = "healthy"
+        elif normalized_status in {
+            "offline",
+            "down",
+            "stopped",
+            "failed",
+            "unreachable",
+        }:
+            tone = "critical"
+        else:
+            tone = "unknown"
+
+        ca_nodes.append(
+            {
+                "id": ca.id,
+                "name": ca.name,
+                "dns_name": ca.dns_name,
+                "status": display_status,
+                "tone": tone,
+                "connected": connected,
+            }
+        )
+
+        if not connected:
+            alerts.append(
+                {
+                    "id": f"ca-{ca.id}",
+                    "severity": (
+                        "critical"
+                        if tone == "critical"
+                        else "warning"
+                    ),
+                    "title": (
+                        f"{ca.name} requires attention"
+                    ),
+                    "summary": (
+                        "The latest collected evidence did "
+                        f"not report this CA as online. "
+                        f"Current state: {display_status}."
+                    ),
+                    "impact": (
+                        "Certificate issuance or validation "
+                        "services may be affected."
+                    ),
+                    "target": "/pki-health",
+                }
+            )
+
+    total_cas = len(cas)
+
+    if total_cas and connected_cas == total_cas:
+        infrastructure_state = "Normal"
+        infrastructure_message = (
+            "All collected CA servers were reported online "
+            "in the latest assessment snapshot."
+        )
+    elif total_cas:
+        infrastructure_state = "Attention required"
+        infrastructure_message = (
+            f"{connected_cas} of {total_cas} collected CA "
+            "servers were reported online."
+        )
+    else:
+        infrastructure_state = "Unknown"
+        infrastructure_message = (
+            "No CA status evidence is available."
+        )
+
+    environment = scan.environment
+
+    result = dict(empty_snapshot)
+
+    result.update(
+        {
+            "last_update": (
+                scan.completed_at.isoformat()
+                if scan.completed_at
+                else None
+            ),
+            "environment": {
+                "id": (
+                    environment.id
+                    if environment
+                    else scan.environment_id
+                ),
+                "name": (
+                    environment.name
+                    if environment
+                    else scan.domain_name
+                ),
+                "collector_type": scan.collector_type,
+                "domain_name": scan.domain_name,
+                "scan_id": scan.id,
+                "scan_sequence": scan.scan_sequence,
+            },
+            "counters": {
+                "issued": outcomes["issued"],
+                "denied": outcomes["denied"],
+                "pending": outcomes["pending"],
+                "revoked": outcomes["revoked"],
+                "active_admins": None,
+                "web_users": None,
+                "active_alerts": len(alerts),
+                "connected_cas": connected_cas,
+                "total_cas": total_cas,
+            },
+            "outcomes": outcomes,
+            "trend": trend,
+            "templates": template_chart,
+            "ca_statuses": ca_statuses,
+            "ca_nodes": ca_nodes,
+            "alerts": alerts,
+            "events": events[:40],
+            "infrastructure": {
+                "state": infrastructure_state,
+                "message": infrastructure_message,
+                "critical_findings": critical_findings,
+                "high_findings": high_findings,
+            },
+        }
+    )
+
+    return result
+
+
+@app.get(
+    "/pki-monitoring",
+    response_class=HTMLResponse,
+)
+def pki_monitoring_page(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    ensure_authenticated(request)
+
+    selected_scan = _selected_scan(request, db)
+    monitoring = _monitoring_snapshot(
+        db,
+        selected_scan,
+    )
+
+    ctx = _nav_context(request, db)
+    ctx.update(
+        {
+            "scan": selected_scan,
+            "monitoring": monitoring,
+        }
+    )
+
+    return templates.TemplateResponse(
+        "pki_monitoring.html",
+        ctx,
+    )
+
+
+@app.get("/api/v1/monitoring/summary")
+def pki_monitoring_summary(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    ensure_authenticated(request)
+
+    selected_scan = _selected_scan(request, db)
+
+    return JSONResponse(
+        _monitoring_snapshot(
+            db,
+            selected_scan,
+        )
+    )
+
+
+
 def render_page(request: Request, name: str, query, key: str, db: Session):
     ensure_authenticated(request)
     latest_scan = _selected_scan(request, db)
