@@ -1,23 +1,827 @@
 {% extends 'base.html' %}
 {% from 'macros/evidence.html' import status_badge %}
 {% block content %}
-<div class="hero-panel compact-hero mb-3">
-  <div><div class="eyebrow">CertShield PKI Posture Management</div><h1>PKI Dashboard</h1>{% if scan %}<p>Latest scan #{{scan.id}} · {{scan.domain_name}} · {{scan.completed_at}}</p>{% else %}<p>No scan data yet. Run the collector to start posture management.</p>{% endif %}</div>
-  {% if scan %}<a class="btn btn-light btn-sm" href="/pki-posture">Open Posture</a>{% endif %}
+
+<div class="visual-dashboard">
+
+  <section class="visual-dashboard-hero">
+    <div>
+      <div class="visual-dashboard-kicker">
+        CertShield PKI Posture Management
+      </div>
+
+      <h1>PKI Dashboard</h1>
+
+      {% if scan %}
+      <p>
+        Live assurance view for
+        <strong>{{ scan.domain_name }}</strong>
+        · Scan #{{ scan.id }}
+        · {{ scan.completed_at }}
+      </p>
+      {% else %}
+      <p>
+        Select a PKI environment and run the collector to generate
+        the first assurance dashboard.
+      </p>
+      {% endif %}
+    </div>
+
+    {% if scan %}
+    <div class="visual-dashboard-actions">
+      <a class="btn btn-light" href="/pki-posture">
+        Open Full Posture
+      </a>
+
+      <a class="btn visual-dashboard-outline" href="/reports">
+        Customer Reports
+      </a>
+    </div>
+    {% endif %}
+  </section>
+
+  {% if scan %}
+
+  {% set posture_score =
+      assurance.score
+      if assurance.score is not none
+      else posture.score or 0 %}
+
+  {% set health_score =
+      health.score
+      if health.score is not none
+      else 0 %}
+
+  {% set controls_score =
+      best_practices.score
+      if best_practices.score is not none
+      else 0 %}
+
+  {% set coverage_score =
+      assurance.coverage_score
+      if assurance.coverage_score is not none
+      else 0 %}
+
+  <section class="visual-score-grid">
+
+    <a class="visual-score-card" href="/pki-posture">
+      <div
+        class="visual-score-gauge"
+        style="--score: {{ posture_score }}"
+      >
+        <div>
+          <strong>{{ posture_score }}</strong>
+          <span>/100</span>
+        </div>
+      </div>
+
+      <div class="visual-score-copy">
+        <span>PKI Assurance Level</span>
+        <strong>
+          {{ assurance.assurance_level
+             or posture.assurance_level
+             or posture.status
+             or 'Unknown' }}
+        </strong>
+        <small>Overall PKI risk posture</small>
+      </div>
+    </a>
+
+    <a class="visual-score-card" href="/pki-health">
+      <div
+        class="visual-score-gauge visual-score-health"
+        style="--score: {{ health_score }}"
+      >
+        <div>
+          <strong>{{ health_score }}</strong>
+          <span>/100</span>
+        </div>
+      </div>
+
+      <div class="visual-score-copy">
+        <span>Operational health</span>
+        <strong>{{ health.status or 'Not assessed' }}</strong>
+        <small>CA services and publication health</small>
+      </div>
+    </a>
+
+    <a class="visual-score-card" href="/best-practices">
+      <div
+        class="visual-score-gauge visual-score-controls"
+        style="--score: {{ controls_score }}"
+      >
+        <div>
+          <strong>{{ controls_score }}</strong>
+          <span>/100</span>
+        </div>
+      </div>
+
+      <div class="visual-score-copy">
+        <span>Governance controls</span>
+        <strong>
+          {{ best_practices.status or 'Not assessed' }}
+        </strong>
+        <small>Best-practice and policy alignment</small>
+      </div>
+    </a>
+
+    <a class="visual-score-card" href="/evidence-gaps">
+      <div
+        class="visual-score-gauge visual-score-coverage"
+        style="--score: {{ coverage_score }}"
+      >
+        <div>
+          <strong>{{ coverage_score }}</strong>
+          <span>%</span>
+        </div>
+      </div>
+
+      <div class="visual-score-copy">
+        <span>Evidence coverage</span>
+        <strong>
+          {{ assurance.coverage_level or 'Unknown' }}
+        </strong>
+        <small>Confidence in collected evidence</small>
+      </div>
+    </a>
+
+  </section>
+
+  <section class="visual-dashboard-grid">
+
+    <article class="visual-chart-card visual-severity-card">
+      <div class="visual-card-heading">
+        <div>
+          <span>Risk distribution</span>
+          <h2>Findings by severity</h2>
+        </div>
+
+        <a href="/findings">View findings</a>
+      </div>
+
+      <div class="visual-donut-layout">
+        <div class="visual-donut-wrap">
+          <svg
+            id="severityDonut"
+            class="visual-donut"
+            viewBox="0 0 120 120"
+            aria-label="Findings severity distribution"
+          >
+            <circle
+              class="visual-donut-track"
+              cx="60"
+              cy="60"
+              r="46"
+            ></circle>
+
+            <g
+              id="severityDonutSegments"
+              transform="rotate(-90 60 60)"
+            ></g>
+
+            <text
+              id="severityDonutTotal"
+              class="visual-donut-total"
+              x="60"
+              y="57"
+              text-anchor="middle"
+            >
+              0
+            </text>
+
+            <text
+              class="visual-donut-caption"
+              x="60"
+              y="71"
+              text-anchor="middle"
+            >
+              findings
+            </text>
+          </svg>
+        </div>
+
+        <div id="severityLegend" class="visual-chart-legend"></div>
+      </div>
+    </article>
+
+    <article class="visual-chart-card">
+      <div class="visual-card-heading">
+        <div>
+          <span>Exposure patterns</span>
+          <h2>Risk categories</h2>
+        </div>
+
+        <a href="/findings">Explore</a>
+      </div>
+
+      <div
+        id="categoryBars"
+        class="visual-horizontal-chart"
+      ></div>
+    </article>
+
+    <article class="visual-chart-card">
+      <div class="visual-card-heading">
+        <div>
+          <span>Collection confidence</span>
+          <h2>Evidence coverage</h2>
+        </div>
+
+        <a href="/evidence-gaps">Review gaps</a>
+      </div>
+
+      <div
+        id="coverageBars"
+        class="visual-horizontal-chart"
+      ></div>
+    </article>
+
+  </section>
+
+  <section class="visual-dashboard-detail-grid">
+
+    <article class="visual-panel visual-priority-panel">
+      <div class="visual-card-heading">
+        <div>
+          <span>Immediate attention</span>
+          <h2>Priority risks</h2>
+        </div>
+
+        <div class="visual-risk-summary">
+          <strong>
+            {{ assurance.open_critical
+               or risk_acceptance_counts.open_critical }}
+          </strong>
+          critical
+          ·
+          <strong>
+            {{ assurance.open_high
+               or risk_acceptance_counts.open_high }}
+          </strong>
+          high
+        </div>
+      </div>
+
+      <div class="visual-priority-list">
+        {% for risk in (registry.open_risks or [])[:7] %}
+        <a
+          class="visual-priority-item"
+          href="/findings"
+        >
+          <span class="visual-priority-severity
+                       visual-priority-{{ risk.severity|lower }}">
+            {{ risk.severity }}
+          </span>
+
+          <span class="visual-priority-copy">
+            <strong>{{ risk.title }}</strong>
+            <small>
+              {{ risk.category }}
+              ·
+              {{ risk.object_name }}
+            </small>
+          </span>
+
+          <span class="visual-priority-arrow">›</span>
+        </a>
+        {% else %}
+        <div class="visual-empty">
+          No open critical or high risks were found.
+        </div>
+        {% endfor %}
+      </div>
+
+      {% if registry.accepted_risks %}
+      <div class="visual-accepted-row">
+        <span>Accepted Risks</span>
+
+        <div>
+          {% for risk in registry.accepted_risks[:6] %}
+          <span class="visual-accepted-chip">
+            {{ risk.severity }} · {{ risk.object_name }}
+          </span>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </article>
+
+    
+    <article class="visual-panel assurance-intelligence-panel">
+
+      {% set open_critical =
+          assurance.open_critical
+          or risk_acceptance_counts.open_critical
+          or 0 %}
+
+      {% set open_high =
+          assurance.open_high
+          or risk_acceptance_counts.open_high
+          or 0 %}
+
+      {% set accepted_total =
+          assurance.accepted_risk_count
+          or risk_acceptance_counts.accepted_total
+          or 0 %}
+
+      {% set evidence_score =
+          assurance.coverage_score
+          if assurance.coverage_score is not none
+          else 0 %}
+
+      <div class="visual-card-heading assurance-intelligence-heading">
+        <div>
+          <span>Assurance intelligence</span>
+          <h2>What is driving the PKI score?</h2>
+        </div>
+
+        <a href="/pki-posture">Open detailed analysis</a>
+      </div>
+
+      <div class="assurance-intelligence-summary">
+
+        <div class="assurance-intelligence-score">
+          <div
+            class="assurance-intelligence-ring"
+            style="--score: {{ posture_score }}"
+          >
+            <strong>{{ posture_score }}</strong>
+            <span>/100</span>
+          </div>
+
+          <div>
+            <span>Current assurance</span>
+            <strong>
+              {{ assurance.assurance_level
+                 or posture.assurance_level
+                 or posture.status
+                 or 'Unknown' }}
+            </strong>
+            <small>
+              Based on risk exposure, operational health,
+              governance controls and evidence coverage.
+            </small>
+          </div>
+        </div>
+
+        <div class="assurance-intelligence-signals">
+
+          <a href="/findings" class="assurance-signal assurance-signal-danger">
+            <span>Critical drivers</span>
+            <strong>{{ open_critical }}</strong>
+            <small>Require immediate attention</small>
+          </a>
+
+          <a href="/findings" class="assurance-signal assurance-signal-warning">
+            <span>High-risk drivers</span>
+            <strong>{{ open_high }}</strong>
+            <small>Prioritise remediation</small>
+          </a>
+
+          <a href="/findings" class="assurance-signal assurance-signal-info">
+            <span>Accepted Risks</span>
+            <strong>{{ accepted_total }}</strong>
+            <small>Approved policy exceptions</small>
+          </a>
+
+          <a href="/evidence-gaps" class="assurance-signal assurance-signal-coverage">
+            <span>Evidence confidence</span>
+            <strong>{{ evidence_score }}%</strong>
+            <small>
+              {{ assurance.coverage_level or 'Unknown coverage' }}
+            </small>
+          </a>
+
+        </div>
+      </div>
+
+      <div class="assurance-intelligence-comparison">
+
+        <div class="assurance-comparison-row">
+          <div>
+            <span>PKI posture</span>
+            <strong>{{ posture_score }}</strong>
+          </div>
+          <div class="assurance-comparison-track">
+            <span style="width: {{ posture_score }}%"></span>
+          </div>
+        </div>
+
+        <div class="assurance-comparison-row assurance-comparison-health">
+          <div>
+            <span>Operational health</span>
+            <strong>{{ health_score }}</strong>
+          </div>
+          <div class="assurance-comparison-track">
+            <span style="width: {{ health_score }}%"></span>
+          </div>
+        </div>
+
+        <div class="assurance-comparison-row assurance-comparison-controls">
+          <div>
+            <span>Governance controls</span>
+            <strong>{{ controls_score }}</strong>
+          </div>
+          <div class="assurance-comparison-track">
+            <span style="width: {{ controls_score }}%"></span>
+          </div>
+        </div>
+
+        <div class="assurance-comparison-row assurance-comparison-coverage">
+          <div>
+            <span>Evidence coverage</span>
+            <strong>{{ evidence_score }}%</strong>
+          </div>
+          <div class="assurance-comparison-track">
+            <span style="width: {{ evidence_score }}%"></span>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="assurance-intelligence-drivers">
+        <div class="assurance-intelligence-subheading">
+          <div>
+            <span>Assessment drivers</span>
+            <strong>Why the score looks like this</strong>
+          </div>
+
+          <small>Generated from the latest collector evidence</small>
+        </div>
+
+        <div class="assurance-driver-list">
+
+          {% for reason in assurance.why[:6] %}
+
+          {% set normalized_reason = reason|string|lower %}
+
+          {% if
+              'critical' in normalized_reason
+              or 'high risk' in normalized_reason
+              or 'exposure' in normalized_reason
+              or 'failed' in normalized_reason
+          %}
+            {% set driver_type = 'risk' %}
+            {% set driver_label = 'Risk driver' %}
+            {% set driver_icon = '!' %}
+
+          {% elif
+              'not collected' in normalized_reason
+              or 'missing' in normalized_reason
+              or 'unknown' in normalized_reason
+              or 'coverage' in normalized_reason
+              or 'insufficient' in normalized_reason
+          %}
+            {% set driver_type = 'evidence' %}
+            {% set driver_label = 'Evidence gap' %}
+            {% set driver_icon = '?' %}
+
+          {% elif
+              'accepted' in normalized_reason
+              or 'exception' in normalized_reason
+          %}
+            {% set driver_type = 'accepted' %}
+            {% set driver_label = 'Accepted risk' %}
+            {% set driver_icon = 'A' %}
+
+          {% elif
+              'healthy' in normalized_reason
+              or 'protected' in normalized_reason
+              or 'passed' in normalized_reason
+              or 'verified' in normalized_reason
+          %}
+            {% set driver_type = 'strength' %}
+            {% set driver_label = 'Positive control' %}
+            {% set driver_icon = '✓' %}
+
+          {% else %}
+            {% set driver_type = 'neutral' %}
+            {% set driver_label = 'Assessment signal' %}
+            {% set driver_icon = 'i' %}
+          {% endif %}
+
+          <div class="assurance-driver assurance-driver-{{ driver_type }}">
+            <div class="assurance-driver-icon">
+              {{ driver_icon }}
+            </div>
+
+            <div class="assurance-driver-copy">
+              <span>{{ driver_label }}</span>
+              <p>{{ reason }}</p>
+            </div>
+          </div>
+
+          {% else %}
+
+          <div class="visual-empty">
+            No assurance drivers are available from the latest scan.
+          </div>
+
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="assurance-next-action">
+
+        <div class="assurance-next-action-icon">→</div>
+
+        <div>
+          <span>Recommended next action</span>
+
+          {% if open_critical > 0 %}
+          <strong>
+            Address the {{ open_critical }} critical PKI
+            risk{{ '' if open_critical == 1 else 's' }} first.
+          </strong>
+          <small>
+            Critical findings have the highest impact on the
+            overall assurance level.
+          </small>
+
+          {% elif evidence_score < 80 %}
+          <strong>
+            Improve collector evidence coverage before making
+            final risk decisions.
+          </strong>
+          <small>
+            Missing evidence reduces assessment confidence and
+            can hide operational or configuration risks.
+          </small>
+
+          {% elif open_high > 0 %}
+          <strong>
+            Review and assign owners to the remaining high-risk
+            findings.
+          </strong>
+          <small>
+            Track remediation through Findings and validate the
+            exposure after corrective action.
+          </small>
+
+          {% else %}
+          <strong>
+            Maintain the current controls and continue periodic
+            PKI assessments.
+          </strong>
+          <small>
+            No immediate critical or high-risk action is visible
+            from the latest collected evidence.
+          </small>
+          {% endif %}
+        </div>
+
+        <a
+          href="{% if open_critical > 0 or open_high > 0 %}/findings{% elif evidence_score < 80 %}/evidence-gaps{% else %}/pki-posture{% endif %}"
+        >
+          Take action
+        </a>
+      </div>
+
+    </article>
+
+
+  </section>
+
+  <section class="visual-panel visual-certificate-panel">
+    <div class="visual-card-heading">
+      <div>
+        <span>Certificate activity</span>
+        <h2>Recent issued certificates</h2>
+      </div>
+
+      <a href="/certificates">Open inventory</a>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table visual-dashboard-table align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Request</th>
+            <th>Requester</th>
+            <th>Template</th>
+            <th>Subject</th>
+            <th>Status</th>
+            <th>Issued</th>
+            <th>Expires</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {% for certificate in recent_certs %}
+          <tr>
+            <td>
+              <strong>#{{ certificate.request_id }}</strong>
+            </td>
+            <td>{{ certificate.requester or '—' }}</td>
+            <td>{{ certificate.template_name or '—' }}</td>
+            <td>{{ certificate.subject or '—' }}</td>
+            <td>{{ status_badge(certificate.status|title) }}</td>
+            <td>{{ certificate.issued_at or '—' }}</td>
+            <td>{{ certificate.expires_at or '—' }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="7">
+              <div class="visual-empty">
+                No issued certificate rows were collected.
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <script
+    id="dashboardSeverityData"
+    type="application/json"
+  >{{ severity|tojson }}</script>
+
+  <script
+    id="dashboardCategoryData"
+    type="application/json"
+  >{{ by_category|tojson }}</script>
+
+  <script
+    id="dashboardCoverageData"
+    type="application/json"
+  >{{ coverage_counts|tojson }}</script>
+
+  <script>
+  document.addEventListener("DOMContentLoaded", () => {
+    function readJson(id) {
+      const node = document.getElementById(id);
+
+      if (!node) {
+        return {};
+      }
+
+      try {
+        return JSON.parse(node.textContent || "{}");
+      } catch (error) {
+        return {};
+      }
+    }
+
+    const severityData = readJson("dashboardSeverityData");
+    const categoryData = readJson("dashboardCategoryData");
+    const coverageData = readJson("dashboardCoverageData");
+
+    const severityOrder = [
+      ["Critical", "#bd2341"],
+      ["High", "#e66b27"],
+      ["Medium", "#e7ad2f"],
+      ["Low", "#2f80d0"],
+    ];
+
+    const circleGroup = document.getElementById(
+      "severityDonutSegments"
+    );
+
+    const legend = document.getElementById(
+      "severityLegend"
+    );
+
+    const totalLabel = document.getElementById(
+      "severityDonutTotal"
+    );
+
+    const circumference = 2 * Math.PI * 46;
+
+    const total = severityOrder.reduce(
+      (sum, [name]) => sum + Number(severityData[name] || 0),
+      0
+    );
+
+    if (totalLabel) {
+      totalLabel.textContent = total;
+    }
+
+    let offset = 0;
+
+    severityOrder.forEach(([name, color]) => {
+      const value = Number(severityData[name] || 0);
+      const length = total ? (value / total) * circumference : 0;
+
+      if (circleGroup && value > 0) {
+        const segment = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "circle"
+        );
+
+        segment.setAttribute("cx", "60");
+        segment.setAttribute("cy", "60");
+        segment.setAttribute("r", "46");
+        segment.setAttribute("fill", "none");
+        segment.setAttribute("stroke", color);
+        segment.setAttribute("stroke-width", "13");
+        segment.setAttribute("stroke-linecap", "round");
+        segment.setAttribute(
+          "stroke-dasharray",
+          `${length} ${circumference - length}`
+        );
+        segment.setAttribute(
+          "stroke-dashoffset",
+          String(-offset)
+        );
+
+        circleGroup.appendChild(segment);
+      }
+
+      offset += length;
+
+      if (legend) {
+        const item = document.createElement("a");
+        item.href = `/findings#severity-${name.toLowerCase()}`;
+        item.className = "visual-legend-item";
+
+        item.innerHTML = `
+          <span class="visual-legend-dot"
+                style="background:${color}"></span>
+          <span>${name}</span>
+          <strong>${value}</strong>
+        `;
+
+        legend.appendChild(item);
+      }
+    });
+
+    function renderBars(targetId, input, options = {}) {
+      const container = document.getElementById(targetId);
+
+      if (!container) {
+        return;
+      }
+
+      const entries = Object.entries(input || {})
+        .map(([name, value]) => [
+          name,
+          Number(value || 0),
+        ])
+        .filter(([, value]) => value >= 0)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, options.limit || 8);
+
+      const max = Math.max(
+        1,
+        ...entries.map(([, value]) => value)
+      );
+
+      if (!entries.length) {
+        container.innerHTML =
+          '<div class="visual-empty">No chart data available.</div>';
+        return;
+      }
+
+      entries.forEach(([name, value], index) => {
+        const row = document.createElement("div");
+        row.className = "visual-bar-row";
+
+        const width = options.percent
+          ? Math.min(100, value)
+          : (value / max) * 100;
+
+        row.innerHTML = `
+          <div class="visual-bar-label">
+            <span>${String(name).replaceAll("_", " ")}</span>
+            <strong>${value}${options.percent ? "%" : ""}</strong>
+          </div>
+          <div class="visual-bar-track">
+            <span
+              style="
+                width:${width}%;
+                --bar-index:${index};
+              "
+            ></span>
+          </div>
+        `;
+
+        container.appendChild(row);
+      });
+    }
+
+    renderBars("categoryBars", categoryData, {
+      limit: 7,
+    });
+
+    renderBars("coverageBars", coverageData, {
+      limit: 7,
+    });
+  });
+  </script>
+
+  {% else %}
+
+  <section class="visual-dashboard-empty">
+    <strong>No scan data available</strong>
+    <span>
+      Run the Windows collector and select a PKI environment.
+    </span>
+  </section>
+
+  {% endif %}
+
 </div>
-{% if scan %}
-<div class="metric-grid mb-3">
-  <div class="metric-card score-card"><div class="metric-title">PKI Assurance Level</div><div class="metric-value status-word">{{assurance.assurance_level or posture.assurance_level or posture.status or 'Unknown / Not Enough Data'}}</div><div class="small text-secondary">Supporting score: {{assurance.score if assurance.score is not none else 'Not enough data'}}</div></div>
-  <div class="metric-card"><div class="metric-title">Coverage Level</div><div class="metric-value status-word-sm">{{assurance.coverage_level or 'Unknown'}}</div><div class="small text-secondary">{{assurance.coverage_score or 0}}% evidence coverage</div></div>
-  <div class="metric-card"><div class="metric-title">Open Critical Risks</div><div class="metric-value">{{assurance.open_critical or risk_acceptance_counts.open_critical}}</div></div>
-  <div class="metric-card"><div class="metric-title">Open High Risks</div><div class="metric-value">{{assurance.open_high or risk_acceptance_counts.open_high}}</div></div>
-  <div class="metric-card"><div class="metric-title">Accepted Risks</div><div class="metric-value">{{assurance.accepted_risk_count or risk_acceptance_counts.accepted_total}}</div></div>
-  <div class="metric-card"><div class="metric-title">Last Scan</div><div class="metric-value status-word-sm">{{scan.completed_at}}</div></div>
-</div>
-<div class="row g-3 mb-3">
-  <div class="col-xl-7"><div class="card card-panel"><div class="card-body compact-card"><h2 class="section-title">Why this status?</h2><ul class="compact-list">{% for reason in assurance.why[:8] %}<li>{{reason}}</li>{% else %}<li>No assurance explanation is available yet.</li>{% endfor %}</ul></div></div></div>
-  <div class="col-xl-5"><div class="card card-panel"><div class="card-body compact-card"><h2 class="section-title">Open and Accepted Risks</h2>{% for risk in (registry.open_risks or [])[:5] %}<div class="risk-row compact-risk"><span class="badge sev-{{risk.severity|lower}}">{{risk.severity}}</span><div><strong>{{risk.title}}</strong><div class="small text-secondary">{{risk.category}} · {{risk.object_name}}</div></div></div>{% else %}<p class="text-secondary">No open critical/high risks from shared evidence registry.</p>{% endfor %}{% if registry.accepted_risks %}<h2 class="mini-heading mt-2">Accepted by Policy</h2>{% for risk in registry.accepted_risks[:5] %}<span class="badge text-bg-info me-1 mb-1">{{risk.severity}} · {{risk.object_name}}</span>{% endfor %}{% endif %}</div></div></div>
-</div>
-<div class="card card-panel"><div class="card-body compact-card"><h2 class="section-title">Recent Issued Certificates</h2><div class="table-responsive"><table class="table table-sm align-middle modern-table"><thead><tr><th>Request ID</th><th>Requester</th><th>Template</th><th>Subject</th><th>Status</th><th>Issued</th><th>Expires</th></tr></thead><tbody>{% for c in recent_certs %}<tr><td>{{c.request_id}}</td><td class="text-wrap-sm">{{c.requester or '-'}}</td><td>{{c.template_name or '-'}}</td><td class="text-wrap-sm">{{c.subject or '-'}}</td><td>{{status_badge(c.status|title)}}</td><td>{{c.issued_at or '-'}}</td><td>{{c.expires_at or '-'}}</td></tr>{% else %}<tr><td colspan="7" class="text-secondary">No issued certificate rows collected. Open Certificates for collection guidance.</td></tr>{% endfor %}</tbody></table></div></div></div>
-{% else %}<div class="empty-state compact-card"><h2 class="h5">No scan data yet</h2><p>Run the Windows collector and refresh this page.</p></div>{% endif %}
+
 {% endblock %}
