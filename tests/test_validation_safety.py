@@ -21,7 +21,11 @@ def test_phase1_implementation_has_no_live_execution_primitives():
         "os." + "system",
         "Invoke" + "-Expression",
         "power" + "shell.exe",
-        "cmd.exe" + " /c",
+        "cmd" + ".exe",
+        "cert" + "req",
+        "Rube" + "us",
+        "Cert" + "ipy",
+        "Pass" + "TheCert",
         "shell" + "=True",
     ]
     files = [
@@ -35,3 +39,17 @@ def test_phase1_implementation_has_no_live_execution_primitives():
         text = file_path.read_text()
         for pattern in banned:
             assert pattern not in text, f"{pattern} found in {file_path}"
+
+
+def test_exposure_console_js_autostarts_and_has_dynamic_fallback():
+    text = Path("app/static/js/validation.js").read_text()
+    assert "DOMContentLoaded" in text
+    assert "startTerminal();" in text
+    assert "fallbackScript" in text
+    assert "validation-run-data could not be parsed" in text
+    assert "exposure-console-terminal" in text
+    assert "allowedControls" in text
+    assert "ANALYZE" in text
+    assert "REQUEST" in text
+    assert "AUTH" in text
+    assert "FIX" in text

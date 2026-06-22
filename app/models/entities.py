@@ -15,11 +15,41 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class PkiEnvironment(Base):
+    __tablename__ = "pki_environments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    environment_key: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    collector_type: Mapped[str] = mapped_column(String(50), default="adcs")
+    domain_name: Mapped[str] = mapped_column(String(255), default="")
+    forest_name: Mapped[str] = mapped_column(String(255), default="")
+    pki_label: Mapped[str] = mapped_column(String(255), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_scan_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_scan_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    scans: Mapped[list["Scan"]] = relationship(back_populates="environment")
+
+
 class Scan(Base):
     __tablename__ = "scans"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     source: Mapped[str] = mapped_column(String(100), nullable=False, default="collector")
+    environment_id: Mapped[int | None] = mapped_column(ForeignKey("pki_environments.id"), nullable=True, index=True)
+    collector_type: Mapped[str] = mapped_column(String(50), default="adcs")
+    scan_sequence: Mapped[int] = mapped_column(Integer, default=1)
+    previous_scan_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_current_for_environment: Mapped[bool] = mapped_column(Boolean, default=True)
+    collection_mode: Mapped[str] = mapped_column(String(50), default="full")
+    source_host: Mapped[str] = mapped_column(String(255), default="")
+    collector_version: Mapped[str] = mapped_column(String(100), default="legacy")
+    schema_version: Mapped[str] = mapped_column(String(50), default="legacy")
     domain_name: Mapped[str] = mapped_column(String(255), nullable=False)
     started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     completed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -34,6 +64,7 @@ class Scan(Base):
     validation_runs: Mapped[list["ValidationRun"]] = relationship(
         back_populates="scan"
     )
+    environment: Mapped[PkiEnvironment | None] = relationship(back_populates="scans")
 
 
 class CertificateAuthority(Base):
@@ -137,6 +168,11 @@ class ValidationRun(Base):
     scan_id: Mapped[int] = mapped_column(
         ForeignKey("scans.id"),
         nullable=False,
+        index=True,
+    )
+    environment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("pki_environments.id"),
+        nullable=True,
         index=True,
     )
     mode: Mapped[str] = mapped_column(

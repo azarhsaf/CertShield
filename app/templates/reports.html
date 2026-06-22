@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% from 'macros/evidence.html' import status_badge %}
 {% block content %}
-<div class="page-title"><div><div class="eyebrow">Exports</div><h1>Reports</h1><p>Executive and technical scan reports with posture, health, best-practice, coverage, and remediation-priority sections.</p></div></div>
+<div class="page-title"><div><div class="eyebrow">Evidence Centre</div><h1>Reports</h1><p>Executive, audit and technical evidence exports for the selected PKI environment.</p></div></div>
 <div class="card card-panel"><div class="card-body compact-card"><div class="table-responsive"><table class="table modern-table table-sm align-middle"><thead><tr><th>Scan</th><th>Domain</th><th>Completed</th><th>Posture</th><th>Health</th><th>Best Practices</th><th>Exports</th></tr></thead><tbody>{% for s in scans %}<tr><td>{{s.id}}</td><td>{{s.domain_name}}</td><td>{{s.completed_at}}</td><td>{{s.summary_json.posture.score if s.summary_json.posture else 'Unknown'}}</td><td>{{s.summary_json.health.score if s.summary_json.health else 'Unknown'}}</td><td>{{s.summary_json.best_practices.score if s.summary_json.best_practices else 'Unknown'}}</td><td><a href="/reports/{{s.id}}">HTML</a> · <a href="/reports/{{s.id}}.json">JSON</a></td></tr>{% else %}<tr><td colspan="7">No reports yet.</td></tr>{% endfor %}</tbody></table></div></div></div>
 {% endblock %}
