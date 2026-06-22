@@ -1,419 +1,57 @@
 {% extends 'base.html' %}
 {% from 'macros/evidence.html' import evidence_table, status_badge %}
 {% block content %}
-<div id="legacy-test-findings-index" class="visually-hidden" aria-hidden="true">
+<div class="page-title"><div><div class="eyebrow">ADCS Vulnerability Assessment</div><h1>Findings</h1><p>Can ADCS misconfiguration lead to certificate misuse or domain compromise?</p></div></div>
+{% if filter_template %}
+<div class="health-visibility-alert">
+  <span>
+    Showing findings for:
+    <strong>{{ filter_template }}</strong>
+  </span>
+  <a href="/findings">Clear filter</a>
+</div>
+{% endif %}
+{% if findings %}
+<div class="d-grid gap-2">
 {% for f in findings %}
-{{ f.title }} {{ f.affected_object }}
-Accept Risk
-{% if f.accepted_risk %}Accepted Risk{% endif %}
-{% if f.latest_replay %}/validations/{{ f.latest_replay.id }}{% endif %}
-{% if f.validation_badge %}{{ f.validation_badge }}{% endif %}
-Guided Walkthrough:
+{% set evidence = f.evidence_json or {} %}
+{% set latest_replay =
+    latest_validations.get(f.id)
+    if latest_validations
+    else none
+%}
+<div
+  id="finding-{{ f.id }}"
+  class="card card-panel finding-card sev-border-{{f.severity|lower}}"
+>
+  <div class="card-body compact-card">
+    <div class="finding-head">
+      <div><div class="small text-secondary">{{f.rule_id}}</div><h2>{{f.title}}</h2><div class="small">Affected: <strong>{{f.affected_object}}</strong></div></div>
+      <div class="finding-badges"><span class="risk-score">{{evidence.risk_score or 0}}</span><span class="badge sev-{{f.severity|lower}}">{{f.severity}}</span><span class="badge text-bg-dark">{{f.esc_category}}</span><span class="badge text-bg-secondary">{{f.confidence}}</span>{{status_badge(f.coverage_state|replace('_',' ')|title)}}{% if f.accepted_risk %}<span class="badge text-bg-info">Accepted Risk</span>{% endif %}{% if latest_replay %}<span class="badge text-bg-primary">{{ validation_badges.get(f.id) }}</span>{% endif %}</div>
+    </div>
+    <div class="row g-3 mt-1">
+      <div class="col-lg-7"><p class="mb-1"><strong>Trigger:</strong> {{f.trigger_conditions}}</p><p class="mb-1"><strong>Business impact:</strong> {{evidence.business_impact or f.rationale}}</p><p class="mb-1"><strong>Technical impact:</strong> {{evidence.technical_impact or f.trigger_conditions}}</p><p class="mb-1"><strong>Safe remediation guidance:</strong> {{f.remediation}}</p>{% if f.remediation_steps_json %}<ol class="compact-list">{% for s in f.remediation_steps_json %}<li>{{s}}</li>{% endfor %}</ol>{% endif %}</div>
+      <div class="col-lg-5"><div class="evidence-box"><strong>Evidence</strong>{{evidence_table(evidence)}}</div></div>
+    </div>
+    <div class="d-flex gap-2 flex-wrap mt-2">{% if latest_replay and latest_replay.status == 'completed' %}
+<a class="btn btn-sm btn-outline-primary"
+   href="/validations/{{ latest_replay.id }}">
+  View Guided Walkthrough
+</a>
+{% elif latest_replay and latest_replay.status == 'failed' %}
+<a class="btn btn-sm btn-outline-primary"
+   href="/findings/{{ f.id }}/simulate">
+  Retry Guided Walkthrough
+</a>
+{% else %}
+<a class="btn btn-sm btn-outline-primary"
+   href="/findings/{{ f.id }}/simulate">
+  Validate Exposure
+</a>
+{% endif %}{% if f.accepted_risk %}<form method="post" action="/acceptances/{{f.acceptance.id}}/revoke"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><button class="btn btn-sm btn-outline-danger" type="submit">Revoke Acceptance</button></form><span class="small text-secondary align-self-center">Accepted by {{f.acceptance.accepted_by}}{% if f.acceptance.expiry_date %} until {{f.acceptance.expiry_date}}{% endif %}</span>{% else %}<details class="accept-risk-box"><summary class="btn btn-sm btn-outline-secondary">Accept Risk</summary><form class="accept-risk-form mt-2" method="post" action="/findings/{{f.id}}/accept"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><label class="form-label small">Expiry date</label><input class="form-control form-control-sm" type="date" name="expiry_date"><label class="form-label small mt-1">Business justification</label><textarea class="form-control form-control-sm" name="business_justification" required></textarea><label class="form-label small mt-1">Compensating control</label><textarea class="form-control form-control-sm" name="compensating_control"></textarea><input type="hidden" name="scope" value="exact_fingerprint"><button class="btn btn-sm btn-primary mt-2" type="submit">Save Acceptance</button></form></details>{% endif %}</div>
+  </div>
+</div>
 {% endfor %}
 </div>
-
-
-<style>
-.finding-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  margin: 16px 0;
-}
-.finding-summary-card {
-  background: #fff;
-  border: 1px solid rgba(148,163,184,.35);
-  border-radius: 14px;
-  padding: 14px 16px;
-  box-shadow: 0 8px 20px rgba(15,23,42,.06);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.finding-summary-card span {
-  font-size: 13px;
-  color: #475569;
-  font-weight: 700;
-}
-.finding-summary-card strong {
-  font-size: 26px;
-  color: #0f172a;
-}
-.findings-workbench {
-  display: grid;
-  grid-template-columns: 360px minmax(0, 1fr);
-  gap: 16px;
-  align-items: start;
-}
-.findings-sidebar,
-.findings-detail,
-.coverage-gap-panel {
-  background: #fff;
-  border: 1px solid rgba(148,163,184,.35);
-  border-radius: 16px;
-  box-shadow: 0 10px 24px rgba(15,23,42,.06);
-}
-.findings-sidebar {
-  padding: 12px;
-  max-height: calc(100vh - 130px);
-  overflow-y: auto;
-  position: sticky;
-  top: 80px;
-}
-.findings-sidebar-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 6px 8px 12px;
-}
-.findings-sidebar-head span {
-  color: #64748b;
-  font-size: 12px;
-}
-.finding-group-link {
-  display: block;
-  text-decoration: none;
-  color: #0f172a;
-  border: 1px solid rgba(148,163,184,.25);
-  background: #f8fafc;
-  border-radius: 12px;
-  padding: 10px 12px;
-  margin-bottom: 8px;
-}
-.finding-group-link:hover,
-.finding-group-link.active {
-  background: #eff6ff;
-  border-color: #2563eb;
-}
-.finding-group-main {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-}
-.finding-group-title {
-  font-weight: 800;
-  line-height: 1.25;
-}
-.finding-group-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 8px;
-}
-.finding-group-meta span {
-  font-size: 11px;
-  color: #475569;
-  border: 1px solid rgba(148,163,184,.35);
-  background: #fff;
-  border-radius: 999px;
-  padding: 2px 8px;
-}
-.findings-detail {
-  padding: 16px;
-}
-.selected-finding-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  border-bottom: 1px solid rgba(148,163,184,.25);
-  padding-bottom: 14px;
-  margin-bottom: 14px;
-}
-.selected-finding-header h2 {
-  margin: 0;
-  font-size: 22px;
-}
-.selected-finding-header p {
-  margin: 4px 0 0;
-  color: #64748b;
-}
-.selected-finding-score {
-  min-width: 90px;
-  text-align: center;
-  background: #0f172a;
-  color: #fff;
-  border-radius: 14px;
-  padding: 10px;
-}
-.selected-finding-score span {
-  display: block;
-  color: #cbd5e1;
-  font-size: 12px;
-}
-.selected-finding-score strong {
-  font-size: 28px;
-}
-.finding-issue-card {
-  background: #fff;
-  border: 1px solid rgba(148,163,184,.3);
-  border-radius: 14px;
-  padding: 16px;
-  margin-bottom: 14px;
-}
-.finding-issue-card.esc {
-  background: linear-gradient(180deg, #fff1f2, #fff);
-}
-.finding-issue-card.acl {
-  background: linear-gradient(180deg, #fffbeb, #fff);
-}
-.finding-issue-card.hygiene {
-  background: linear-gradient(180deg, #eff6ff, #fff);
-}
-.finding-issue-top {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-}
-.finding-issue-top h3 {
-  margin: 3px 0;
-  font-size: 18px;
-}
-.finding-type-label {
-  color: #64748b;
-  font-size: 12px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
-.finding-plain-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(260px, .8fr);
-  gap: 16px;
-  margin-top: 12px;
-}
-.finding-plain-grid h4 {
-  font-size: 14px;
-  margin: 10px 0 4px;
-  color: #334155;
-}
-.finding-plain-grid p {
-  margin: 0;
-  color: #334155;
-}
-.evidence-collapse summary {
-  cursor: pointer;
-  font-weight: 800;
-  color: #334155;
-}
-.finding-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-.coverage-gap-panel {
-  margin-top: 16px;
-  padding: 16px;
-}
-.coverage-gap-list {
-  display: grid;
-  gap: 8px;
-}
-.coverage-gap-item {
-  display: grid;
-  grid-template-columns: 150px 1fr;
-  gap: 12px;
-  border: 1px dashed rgba(148,163,184,.5);
-  border-radius: 12px;
-  background: #f8fafc;
-  padding: 10px 12px;
-}
-@media (max-width: 1100px) {
-  .finding-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .findings-workbench { grid-template-columns: 1fr; }
-  .findings-sidebar { position: static; max-height: none; }
-  .finding-plain-grid { grid-template-columns: 1fr; }
-}
-</style>
-
-
-<div class="page-title findings-title">
-  <div>
-    <div class="eyebrow">ADCS Vulnerability Assessment</div>
-    <h1>Findings</h1>
-    <p>Grouped by affected template or PKI object so customers can understand what to fix first.</p>
-  </div>
-</div>
-
-{% if scan %}
-<div class="finding-summary-grid">
-  <div class="finding-summary-card critical">
-    <span>Confirmed ESC Exposure</span>
-    <strong>{{ summary_counts.esc or 0 }}</strong>
-  </div>
-  <div class="finding-summary-card high">
-    <span>ACL / Delegation Risk</span>
-    <strong>{{ summary_counts.acl or 0 }}</strong>
-  </div>
-  <div class="finding-summary-card medium">
-    <span>Template Hygiene</span>
-    <strong>{{ summary_counts.hygiene or 0 }}</strong>
-  </div>
-  <div class="finding-summary-card info">
-    <span>Needs More Evidence</span>
-    <strong>{{ summary_counts.coverage or 0 }}</strong>
-  </div>
-</div>
-{% endif %}
-
-
-{# Compatibility/status index for grouped view and existing tests.
-   It also helps screen readers understand hidden states across all groups. #}
-<div class="visually-hidden" aria-hidden="true">
-  {% for f in findings %}
-    {% if f.accepted_risk %}Accepted Risk{% endif %}
-    {% if f.validation_badge %}{{ f.validation_badge }}{% endif %}
-  {% endfor %}
-</div>
-
-{% if finding_groups %}
-<div class="findings-workbench">
-  <aside class="findings-sidebar">
-    <div class="findings-sidebar-head">
-      <strong>Templates / Objects</strong>
-      <span>{{ finding_groups|length }} with issues</span>
-    </div>
-
-    {% for group in finding_groups %}
-    <a
-      class="finding-group-link {% if selected_group and group.key == selected_group.key %}active{% endif %}"
-      href="/findings?template={{ group.label | urlencode }}"
-    >
-      <div class="finding-group-main">
-        <span class="finding-group-title">{{ group.label }}</span>
-        <span class="badge sev-{{ group.max_severity|lower }}">{{ group.max_severity }}</span>
-      </div>
-      <div class="finding-group-meta">
-        {% if group.counts.esc %}<span>ESC {{ group.counts.esc }}</span>{% endif %}
-        {% if group.counts.acl %}<span>ACL {{ group.counts.acl }}</span>{% endif %}
-        {% if group.counts.hygiene %}<span>Hygiene {{ group.counts.hygiene }}</span>{% endif %}
-        {% if group.counts.infra %}<span>Infra {{ group.counts.infra }}</span>{% endif %}
-        <span>Open {{ group.counts.open }}</span>
-      </div>
-    </a>
-    {% endfor %}
-  </aside>
-
-  <section class="findings-detail">
-    {% if selected_group %}
-    <div class="selected-finding-header">
-      <div>
-        <div class="eyebrow">Selected template / object</div>
-        <h2>{{ selected_group.label }}</h2>
-        <p>
-          Showing only issues for this selected item. Use the list on the left to switch templates.
-        </p>
-      </div>
-      <div class="selected-finding-score">
-        <span>Risk</span>
-        <strong>{{ selected_group.risk_score or 0 }}</strong>
-      </div>
-    </div>
-
-    {% for f in selected_findings %}
-    {% set evidence = f.evidence_json or {} %}
-    <div id="finding-{{ f.id }}" class="finding-issue-card {{ f.ui_bucket }} sev-border-{{ f.severity|lower }}">
-      <div class="finding-issue-top">
-        <div>
-          <div class="finding-type-label">{{ f.ui_bucket_label }} · {{ f.rule_id }}</div>
-          <h3>{{ f.title }}</h3>
-          <div class="small text-secondary">Affected: <strong>{{ f.affected_object }}</strong></div>
-        </div>
-        <div class="finding-badges">
-          <span class="risk-score">{{ evidence.risk_score or 0 }}</span>
-          <span class="badge sev-{{ f.severity|lower }}">{{ f.severity }}</span>
-          <span class="badge text-bg-dark">{{ f.esc_category }}</span>
-          {% if f.accepted_risk %}<span class="badge text-bg-info">Accepted Risk</span>{% endif %}
-          {% if f.validation_badge %}<span class="badge text-bg-primary">{{ f.validation_badge }}</span>{% endif %}
-        </div>
-      </div>
-
-      <div class="finding-plain-grid">
-        <div>
-          <h4>What is the problem?</h4>
-          <p>{{ evidence.business_impact or f.rationale }}</p>
-
-          <h4>Why was it flagged?</h4>
-          <p>{{ f.trigger_conditions }}</p>
-
-          <h4>What should be fixed?</h4>
-          <p>{{ f.remediation }}</p>
-
-          {% if f.remediation_steps_json %}
-          <ol class="compact-list">
-            {% for s in f.remediation_steps_json %}
-            <li>{{ s }}</li>
-            {% endfor %}
-          </ol>
-          {% endif %}
-        </div>
-
-        <div>
-          <details class="evidence-collapse">
-            <summary>Show collected evidence</summary>
-            <div class="evidence-box">{{ evidence_table(evidence) }}</div>
-          </details>
-        </div>
-      </div>
-
-      <div class="finding-actions">
-        {% if f.latest_replay and f.latest_replay.status == 'completed' %}
-        <a class="btn btn-sm btn-outline-primary" href="/validations/{{ f.latest_replay.id }}">View Guided Walkthrough</a>
-        {% else %}
-        <a class="btn btn-sm btn-outline-primary" href="/findings/{{ f.id }}/simulate">Validate Exposure</a>
-        {% endif %}
-
-        {% if f.accepted_risk %}
-        <form method="post" action="/acceptances/{{ f.acceptance.id }}/revoke">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <button class="btn btn-sm btn-outline-danger" type="submit">Revoke Acceptance</button>
-        </form>
-        {% else %}
-        <details class="accept-risk-box">
-          <summary class="btn btn-sm btn-outline-secondary">Accept Risk</summary>
-          <form class="accept-risk-form mt-2" method="post" action="/findings/{{ f.id }}/accept">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <label class="form-label small">Expiry date</label>
-            <input class="form-control form-control-sm" type="date" name="expiry_date">
-            <label class="form-label small mt-1">Business justification</label>
-            <textarea class="form-control form-control-sm" name="business_justification" required></textarea>
-            <label class="form-label small mt-1">Compensating control</label>
-            <textarea class="form-control form-control-sm" name="compensating_control"></textarea>
-            <input type="hidden" name="scope" value="exact_fingerprint">
-            <button class="btn btn-sm btn-primary mt-2" type="submit">Save Acceptance</button>
-          </form>
-        </details>
-        {% endif %}
-      </div>
-    </div>
-    {% endfor %}
-    {% endif %}
-  </section>
-</div>
-
-{% if coverage_findings %}
-<div class="coverage-gap-panel">
-  <div>
-    <div class="eyebrow">Collection gaps</div>
-    <h2>Items needing more evidence</h2>
-    <p>These are not shown as main vulnerabilities. They only mean the collector needs more metadata to fully assess that category.</p>
-  </div>
-  <div class="coverage-gap-list">
-    {% for f in coverage_findings %}
-    <div class="coverage-gap-item">
-      <strong>{{ f.esc_category }}</strong>
-      <span>{{ f.rationale }}</span>
-    </div>
-    {% endfor %}
-  </div>
-</div>
-{% endif %}
-
-{% else %}
-<div class="empty-state compact-card">
-  <h2 class="h5">No confirmed findings in selected scan</h2>
-  <p>Run the collector or select another environment.</p>
-</div>
-{% endif %}
-
+{% else %}<div class="empty-state compact-card"><h2 class="h5">No findings in latest scan</h2></div>{% endif %}
 {% endblock %}
