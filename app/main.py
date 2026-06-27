@@ -1,7 +1,10 @@
+import io
 import json
+import zipfile
 from collections import Counter
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, Form, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -29,6 +32,10 @@ from app.models.entities import (
     Finding,
     GovernanceEvidence,
     IssuedCertificate,
+    MonitoringAgent,
+    MonitoringCommand,
+    MonitoringEvent,
+    MonitoringMetric,
     PkiEnvironment,
     RiskAcceptance,
     Scan,
@@ -36,6 +43,11 @@ from app.models.entities import (
     ValidationRun,
 )
 from app.schemas.collector import CollectorPayload
+from app.schemas.monitoring import (
+    MonitoringCommandResultPayload,
+    MonitoringEventBatchPayload,
+    MonitoringMetricPayload,
+)
 from app.services.assessment_registry import (
     build_assessment_registry,
     registry_fingerprint,
@@ -46,6 +58,14 @@ from app.services.governance_evidence import (
     governance_evidence_map,
 )
 from app.services.ingest import IngestService
+from app.services.monitoring_agent import (
+    authorize_monitoring_agent,
+    complete_command,
+    ensure_monitoring_agent_schema,
+    poll_command,
+    queue_command,
+    save_heartbeat,
+)
 from app.services.pdf_report import build_customer_pdf
 from app.services.pki_hierarchy import build_pki_hierarchy
 from app.services.posture_assessment import assess_pki_posture
@@ -80,33 +100,18 @@ templates = Jinja2Templates(directory="app/templates")
 
 
 def _severity_counts(db: Session, scan_id: int) -> dict[str, int]:
-    rows = (
-        db.query(Finding.severity, func.count(Finding.id))
-        .filter(Finding.scan_id == scan_id)
-        .group_by(Finding.severity)
-        .all()
-    )
+    rows = db.query(Finding.severity, func.count(Finding.id)).filter(Finding.scan_id == scan_id).group_by(Finding.severity).all()
     counts = Counter({k: v for k, v in rows})
     return {sev: counts.get(sev, 0) for sev in SEVERITY_ORDER}
 
 
 def _category_counts(db: Session, scan_id: int) -> dict[str, int]:
-    rows = (
-        db.query(Finding.esc_category, func.count(Finding.id))
-        .filter(Finding.scan_id == scan_id)
-        .group_by(Finding.esc_category)
-        .all()
-    )
+    rows = db.query(Finding.esc_category, func.count(Finding.id)).filter(Finding.scan_id == scan_id).group_by(Finding.esc_category).all()
     return {k: v for k, v in rows}
 
 
 def _coverage_counts(db: Session, scan_id: int) -> dict[str, int]:
-    rows = (
-        db.query(Finding.coverage_state, func.count(Finding.id))
-        .filter(Finding.scan_id == scan_id)
-        .group_by(Finding.coverage_state)
-        .all()
-    )
+    rows = db.query(Finding.coverage_state, func.count(Finding.id)).filter(Finding.scan_id == scan_id).group_by(Finding.coverage_state).all()
     return {k: v for k, v in rows}
 
 
@@ -137,12 +142,7 @@ def _latest_validation_map(
 
 
 def _environment_options(db: Session) -> list[PkiEnvironment]:
-    return (
-        db.query(PkiEnvironment)
-        .filter_by(is_active=True)
-        .order_by(PkiEnvironment.is_demo, PkiEnvironment.name)
-        .all()
-    )
+    return db.query(PkiEnvironment).filter_by(is_active=True).order_by(PkiEnvironment.is_demo, PkiEnvironment.name).all()
 
 
 def _selected_environment(request: Request, db: Session) -> PkiEnvironment | None:
@@ -152,6 +152,21 @@ def _selected_environment(request: Request, db: Session) -> PkiEnvironment | Non
         env = db.query(PkiEnvironment).filter_by(id=int(requested)).first()
         if env:
             request.session["environment_id"] = env.id
+            return env
+
+    session_environment_id = request.session.get("environment_id")
+
+    if session_environment_id:
+        env = (
+            db.query(PkiEnvironment)
+            .filter_by(
+                id=int(session_environment_id),
+                is_active=True,
+            )
+            .first()
+        )
+
+        if env:
             return env
 
     latest = (
@@ -181,12 +196,7 @@ def _selected_environment(request: Request, db: Session) -> PkiEnvironment | Non
         request.session["environment_id"] = latest_any.environment.id
         return latest_any.environment
 
-    env = (
-        db.query(PkiEnvironment)
-        .filter_by(is_active=True)
-        .order_by(PkiEnvironment.is_demo, PkiEnvironment.id.desc())
-        .first()
-    )
+    env = db.query(PkiEnvironment).filter_by(is_active=True).order_by(PkiEnvironment.is_demo, PkiEnvironment.id.desc()).first()
 
     if env:
         request.session["environment_id"] = env.id
@@ -210,6 +220,7 @@ def _selected_scan(request: Request, db: Session) -> Scan | None:
         .first()
     )
 
+
 def _compatibility_index(
     request: Request,
     db: Session | None,
@@ -231,11 +242,7 @@ def _compatibility_index(
             .first()
         )
     else:
-        scan = (
-            db.query(Scan)
-            .order_by(Scan.id.desc())
-            .first()
-        )
+        scan = db.query(Scan).order_by(Scan.id.desc()).first()
 
     if not scan:
         return []
@@ -284,21 +291,13 @@ def _compatibility_index(
         if isinstance(cfg, dict):
             kp = cfg.get("key_protection") or {}
             if isinstance(kp, dict):
-                if (
-                    kp.get("hsm_detected") is True
-                    or kp.get("storage") == "hsm"
-                    or kp.get("provider_type") == "hsm"
-                ):
+                if kp.get("hsm_detected") is True or kp.get("storage") == "hsm" or kp.get("provider_type") == "hsm":
                     add("HSM Protected")
 
             if cfg.get("ca_role_hint") not in {"root", "issuing"}:
                 add("Unclassified CAs")
 
-    templates_data = (
-        db.query(CertificateTemplate)
-        .filter_by(scan_id=scan.id)
-        .all()
-    )
+    templates_data = db.query(CertificateTemplate).filter_by(scan_id=scan.id).all()
     for template in templates_data:
         add(template.name)
         add(template.display_name)
@@ -320,11 +319,7 @@ def _compatibility_index(
         walk(finding.simulation_json or {})
 
     if finding_ids:
-        runs = (
-            db.query(ValidationRun)
-            .filter(ValidationRun.finding_id.in_(finding_ids))
-            .all()
-        )
+        runs = db.query(ValidationRun).filter(ValidationRun.finding_id.in_(finding_ids)).all()
         for run in runs:
             add(f"/validations/{run.id}")
             add("Guided Walkthrough:")
@@ -348,7 +343,9 @@ def _nav_context(request: Request, db: Session | None = None) -> dict:
             request,
             db,
             selected_env,
-        ) if db else [],
+        )
+        if db
+        else [],
     }
 
 
@@ -358,14 +355,12 @@ def _assessment(scan: Scan | None, key: str, default):
     return (scan.summary_json or {}).get(key, default)
 
 
-
 def _best_practice_registry_category(
     category: str,
 ) -> str:
     if category in {"PKI Architecture", "Key Protection"}:
         return category
     return "Best Practices"
-
 
 
 def _best_practice_acceptance_identity(
@@ -387,7 +382,6 @@ def _best_practice_acceptance_identity(
         "best_practice",
         control_title,
     )
-
 
 
 def _refresh_posture_for_scan(db: Session, scan_id: int) -> None:
@@ -458,6 +452,7 @@ def startup():
     Base.metadata.create_all(bind=engine)
     with db_context() as db:
         run_ddl_migrations(db)
+        ensure_monitoring_agent_schema(db)
         user = db.query(User).filter_by(username=settings.bootstrap_admin_user).first()
         if not user:
             db.add(
@@ -543,13 +538,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         coverage_counts = _coverage_counts(db, latest_scan.id)
         scan_findings = db.query(Finding).filter_by(scan_id=latest_scan.id).all()
         risk_acceptance_counts = accepted_counts(scan_findings, active_acceptance_map(db))
-        recent_certs = (
-            db.query(IssuedCertificate)
-            .filter_by(scan_id=latest_scan.id)
-            .order_by(IssuedCertificate.id.desc())
-            .limit(10)
-            .all()
-        )
+        recent_certs = db.query(IssuedCertificate).filter_by(scan_id=latest_scan.id).order_by(IssuedCertificate.id.desc()).limit(10).all()
     ctx = _nav_context(request, db)
     posture = _assessment(latest_scan, "posture", {})
     registry = _assessment(latest_scan, "registry", {})
@@ -558,7 +547,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         assurance.setdefault("why", [])
     health_assessment = _assessment(latest_scan, "health", {})
     best_practices = _assessment(latest_scan, "best_practices", {})
-    expiring = (health_assessment.get("items", [{}])[-2].get("evidence", {}) if health_assessment.get("items") else {})
+    expiring = health_assessment.get("items", [{}])[-2].get("evidence", {}) if health_assessment.get("items") else {}
     ctx.update(
         {
             "scan": latest_scan,
@@ -577,7 +566,6 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         }
     )
     return templates.TemplateResponse("dashboard.html", ctx)
-
 
 
 def _monitoring_snapshot(
@@ -627,36 +615,18 @@ def _monitoring_snapshot(
         "events": [],
         "infrastructure": {
             "state": "Unknown",
-            "message": (
-                "Connect the CertShield Monitoring Agent "
-                "to begin live infrastructure monitoring."
-            ),
+            "message": ("Connect the CertShield Monitoring Agent " "to begin live infrastructure monitoring."),
         },
     }
 
     if not scan:
         return empty_snapshot
 
-    certificates = (
-        db.query(IssuedCertificate)
-        .filter_by(scan_id=scan.id)
-        .order_by(IssuedCertificate.id.desc())
-        .limit(250)
-        .all()
-    )
+    certificates = db.query(IssuedCertificate).filter_by(scan_id=scan.id).order_by(IssuedCertificate.id.desc()).limit(250).all()
 
-    cas = (
-        db.query(CertificateAuthority)
-        .filter_by(scan_id=scan.id)
-        .order_by(CertificateAuthority.name.asc())
-        .all()
-    )
+    cas = db.query(CertificateAuthority).filter_by(scan_id=scan.id).order_by(CertificateAuthority.name.asc()).all()
 
-    findings = (
-        db.query(Finding)
-        .filter_by(scan_id=scan.id)
-        .all()
-    )
+    findings = db.query(Finding).filter_by(scan_id=scan.id).all()
 
     outcomes = {
         "issued": 0,
@@ -671,9 +641,7 @@ def _monitoring_snapshot(
     events: list[dict] = []
 
     for certificate in certificates:
-        normalized_status = str(
-            certificate.status or "issued"
-        ).strip().lower()
+        normalized_status = str(certificate.status or "issued").strip().lower()
 
         if normalized_status in {
             "issued",
@@ -711,22 +679,15 @@ def _monitoring_snapshot(
 
         outcomes[outcome] += 1
 
-        template_name = (
-            certificate.template_name
-            or "Template not recorded"
-        )
+        template_name = certificate.template_name or "Template not recorded"
 
-        template_counts[template_name] = (
-            template_counts.get(template_name, 0) + 1
-        )
+        template_counts[template_name] = template_counts.get(template_name, 0) + 1
 
         raw_time = str(certificate.issued_at or "").strip()
 
         if raw_time:
             try:
-                parsed_time = datetime.fromisoformat(
-                    raw_time.replace("Z", "+00:00")
-                )
+                parsed_time = datetime.fromisoformat(raw_time.replace("Z", "+00:00"))
                 trend_label = parsed_time.strftime("%d %b")
             except ValueError:
                 trend_label = raw_time[:10]
@@ -734,20 +695,11 @@ def _monitoring_snapshot(
             trend_label = "Unknown date"
 
         if outcome == "issued":
-            trend_counts[trend_label] = (
-                trend_counts.get(trend_label, 0) + 1
-            )
+            trend_counts[trend_label] = trend_counts.get(trend_label, 0) + 1
 
-        subject = (
-            certificate.subject
-            or certificate.san
-            or "Certificate subject not recorded"
-        )
+        subject = certificate.subject or certificate.san or "Certificate subject not recorded"
 
-        requester = (
-            certificate.requester
-            or "Requester not recorded"
-        )
+        requester = certificate.requester or "Requester not recorded"
 
         events.append(
             {
@@ -755,9 +707,7 @@ def _monitoring_snapshot(
                 "kind": "certificate",
                 "tone": event_tone,
                 "title": event_title,
-                "summary": (
-                    f"{template_name} for {subject}"
-                ),
+                "summary": (f"{template_name} for {subject}"),
                 "actor": requester,
                 "time": raw_time or "Captured in latest scan",
                 "object": f"Request #{certificate.request_id}",
@@ -798,30 +748,16 @@ def _monitoring_snapshot(
     alerts: list[dict] = []
     connected_cas = 0
 
-    critical_findings = sum(
-        1
-        for finding in findings
-        if str(finding.severity).lower() == "critical"
-    )
+    critical_findings = sum(1 for finding in findings if str(finding.severity).lower() == "critical")
 
-    high_findings = sum(
-        1
-        for finding in findings
-        if str(finding.severity).lower() == "high"
-    )
+    high_findings = sum(1 for finding in findings if str(finding.severity).lower() == "high")
 
     for ca in cas:
-        normalized_status = str(
-            ca.status or "unknown"
-        ).strip().lower()
+        normalized_status = str(ca.status or "unknown").strip().lower()
 
-        display_status = (
-            normalized_status.replace("_", " ").title()
-        )
+        display_status = normalized_status.replace("_", " ").title()
 
-        ca_statuses[display_status] = (
-            ca_statuses.get(display_status, 0) + 1
-        )
+        ca_statuses[display_status] = ca_statuses.get(display_status, 0) + 1
 
         connected = normalized_status in good_ca_states
 
@@ -854,23 +790,10 @@ def _monitoring_snapshot(
             alerts.append(
                 {
                     "id": f"ca-{ca.id}",
-                    "severity": (
-                        "critical"
-                        if tone == "critical"
-                        else "warning"
-                    ),
-                    "title": (
-                        f"{ca.name} requires attention"
-                    ),
-                    "summary": (
-                        "The latest collected evidence did "
-                        f"not report this CA as online. "
-                        f"Current state: {display_status}."
-                    ),
-                    "impact": (
-                        "Certificate issuance or validation "
-                        "services may be affected."
-                    ),
+                    "severity": ("critical" if tone == "critical" else "warning"),
+                    "title": (f"{ca.name} requires attention"),
+                    "summary": ("The latest collected evidence did " f"not report this CA as online. " f"Current state: {display_status}."),
+                    "impact": ("Certificate issuance or validation " "services may be affected."),
                     "target": "/pki-health",
                 }
             )
@@ -879,21 +802,13 @@ def _monitoring_snapshot(
 
     if total_cas and connected_cas == total_cas:
         infrastructure_state = "Normal"
-        infrastructure_message = (
-            "All collected CA servers were reported online "
-            "in the latest assessment snapshot."
-        )
+        infrastructure_message = "All collected CA servers were reported online " "in the latest assessment snapshot."
     elif total_cas:
         infrastructure_state = "Attention required"
-        infrastructure_message = (
-            f"{connected_cas} of {total_cas} collected CA "
-            "servers were reported online."
-        )
+        infrastructure_message = f"{connected_cas} of {total_cas} collected CA " "servers were reported online."
     else:
         infrastructure_state = "Unknown"
-        infrastructure_message = (
-            "No CA status evidence is available."
-        )
+        infrastructure_message = "No CA status evidence is available."
 
     environment = scan.environment
 
@@ -901,22 +816,10 @@ def _monitoring_snapshot(
 
     result.update(
         {
-            "last_update": (
-                scan.completed_at.isoformat()
-                if scan.completed_at
-                else None
-            ),
+            "last_update": (scan.completed_at.isoformat() if scan.completed_at else None),
             "environment": {
-                "id": (
-                    environment.id
-                    if environment
-                    else scan.environment_id
-                ),
-                "name": (
-                    environment.name
-                    if environment
-                    else scan.domain_name
-                ),
+                "id": (environment.id if environment else scan.environment_id),
+                "name": (environment.name if environment else scan.domain_name),
                 "collector_type": scan.collector_type,
                 "domain_name": scan.domain_name,
                 "scan_id": scan.id,
@@ -952,6 +855,637 @@ def _monitoring_snapshot(
     return result
 
 
+def _require_monitoring_agent_token(
+    authorization: str | None,
+) -> None:
+    expected = f"Bearer {settings.monitoring_agent_token}"
+
+    if authorization != expected:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid monitoring agent token",
+        )
+
+
+def _monitoring_agent_or_404(
+    db: Session,
+    agent_key: str,
+) -> MonitoringAgent:
+    agent = (
+        db.query(MonitoringAgent)
+        .filter_by(
+            agent_key=agent_key,
+            is_active=True,
+        )
+        .first()
+    )
+
+    if not agent:
+        raise HTTPException(
+            status_code=404,
+            detail="Monitoring agent not registered",
+        )
+
+    return agent
+
+
+def _monitoring_live_snapshot(
+    db: Session,
+    scan: Scan | None,
+    environment_id: int | None = None,
+) -> dict:
+    snapshot = _monitoring_snapshot(db, scan)
+    snapshot["agents"] = []
+    snapshot["audit_disabled_count"] = 0
+    snapshot["audit_pending_count"] = 0
+
+    if environment_id is None and scan and scan.environment_id:
+        environment_id = scan.environment_id
+
+    if not environment_id:
+        return snapshot
+    now = datetime.now(timezone.utc)
+    connected_after = now - timedelta(seconds=45)
+
+    agents = (
+        db.query(MonitoringAgent)
+        .filter_by(
+            environment_id=environment_id,
+            is_active=True,
+        )
+        .order_by(MonitoringAgent.hostname.asc())
+        .all()
+    )
+
+    commands = db.query(MonitoringCommand).filter_by(environment_id=environment_id).order_by(MonitoringCommand.id.desc()).all()
+
+    latest_command_by_agent: dict[int, MonitoringCommand] = {}
+
+    for command in commands:
+        latest_command_by_agent.setdefault(
+            command.agent_id,
+            command,
+        )
+
+    agent_rows = []
+    connected_agents = []
+    active_admin_values = []
+    web_user_values = []
+
+    connected_heartbeats = []
+
+    for agent in agents:
+        last_seen_at = getattr(agent, "last_heartbeat", None) or agent.last_seen_at
+
+        if last_seen_at and last_seen_at.tzinfo is None:
+            last_seen_at = last_seen_at.replace(tzinfo=timezone.utc)
+
+        connected = bool(last_seen_at and last_seen_at >= connected_after)
+
+        if connected:
+            connected_agents.append(agent)
+
+            if last_seen_at:
+                connected_heartbeats.append(last_seen_at)
+
+        state = agent.metadata_json if isinstance(agent.metadata_json, dict) else {}
+
+        metadata = agent.metadata_json if isinstance(agent.metadata_json, dict) else {}
+
+        services = state.get("services")
+
+        if not isinstance(services, dict):
+            services = {}
+
+        auditing = state.get("auditing")
+
+        if not isinstance(auditing, dict):
+            auditing = {}
+
+        certsvc = str(services.get("certsvc") or "Unknown")
+
+        w3svc = str(services.get("w3svc") or "Unknown")
+
+        normalized_certsvc = certsvc.replace(" ", "").lower()
+
+        is_ca = normalized_certsvc not in {
+            "",
+            "unknown",
+            "notinstalled",
+            "none",
+            "null",
+        }
+
+        identity = (f"{agent.ca_name or ''} " f"{agent.hostname or ''}").lower()
+
+        if is_ca and "root" in identity:
+            role_label = "AD CS Root CA"
+        elif is_ca:
+            role_label = "AD CS Certification Authority"
+        elif w3svc.lower() == "running":
+            role_label = "IIS / Web Server"
+        else:
+            role_label = "Windows Server"
+
+        sessions = state.get("sessions")
+
+        if connected and isinstance(sessions, list):
+            active_admin_values.append(len(sessions))
+        else:
+            admin_count = metadata.get("active_session_count")
+
+            if connected and isinstance(admin_count, int):
+                active_admin_values.append(admin_count)
+
+        web_activity = state.get("web_activity")
+
+        if connected and isinstance(web_activity, list):
+            web_user_values.append(len(web_activity))
+        else:
+            web_count = metadata.get("web_enrollment_user_count")
+
+            if connected and isinstance(web_count, int):
+                web_user_values.append(web_count)
+
+        latest_command = latest_command_by_agent.get(agent.id)
+
+        command_status = latest_command.status if latest_command else ""
+
+        audit_ready = bool(agent.audit_ready) if is_ca else None
+
+        audit_filter = agent.audit_filter if is_ca else None
+
+        agent_rows.append(
+            {
+                "id": agent.id,
+                "agent_key": agent.agent_key,
+                "hostname": agent.hostname,
+                "ca_name": agent.ca_name,
+                "version": (
+                    getattr(
+                        agent,
+                        "agent_version",
+                        "",
+                    )
+                    or agent.version
+                ),
+                "connected": connected,
+                "last_seen_at": (last_seen_at.isoformat() if last_seen_at else None),
+                "is_ca": is_ca,
+                "role_label": role_label,
+                "certsvc": certsvc,
+                "w3svc": w3svc,
+                "audit_applicable": is_ca,
+                "audit_success_enabled": (bool(agent.audit_success_enabled) if is_ca else None),
+                "audit_failure_enabled": (bool(agent.audit_failure_enabled) if is_ca else None),
+                "audit_filter": audit_filter,
+                "audit_ready": audit_ready,
+                "security_log_access": bool(auditing.get("security_log_access")),
+                "command_status": command_status,
+                "command_type": (latest_command.command_type if latest_command else ""),
+            }
+        )
+
+    snapshot["agents"] = agent_rows
+    snapshot["agent_connected"] = bool(connected_agents)
+
+    snapshot["connected_agent_count"] = len(connected_agents)
+
+    snapshot["registered_agent_count"] = len(agent_rows)
+
+    snapshot["ca_agent_count"] = sum(1 for agent in agent_rows if agent["is_ca"])
+
+    snapshot["connected_ca_agent_count"] = sum(1 for agent in agent_rows if agent["is_ca"] and agent["connected"])
+
+    if connected_agents:
+        count = len(connected_agents)
+        noun = "agent" if count == 1 else "agents"
+
+        snapshot["mode"] = "agent_connected"
+        snapshot["status"] = "connected"
+        snapshot["status_label"] = f"{count} monitoring {noun} connected"
+
+        if connected_heartbeats:
+            snapshot["last_update"] = max(connected_heartbeats).isoformat()
+
+    elif agent_rows:
+        snapshot["mode"] = "agent_offline"
+        snapshot["status"] = "disconnected"
+        snapshot["status_label"] = "Monitoring agents registered but offline"
+
+    snapshot["audit_disabled_count"] = sum(1 for agent in agent_rows if agent["is_ca"] and not agent["audit_ready"])
+
+    ca_agent_ids = {agent["id"] for agent in agent_rows if agent["is_ca"]}
+
+    snapshot["audit_pending_count"] = sum(1 for command in commands if command.agent_id in ca_agent_ids and command.status in {"queued", "running"} and command.command_type == "enable_ca_auditing")
+
+    counters = snapshot.setdefault(
+        "counters",
+        {},
+    )
+
+    counters["monitoring_agents"] = len(agent_rows)
+
+    counters["connected_agents"] = len(connected_agents)
+
+    counters["monitored_ca_agents"] = sum(1 for agent in agent_rows if agent["is_ca"])
+
+    counters["active_admins"] = sum(active_admin_values) if active_admin_values else None
+
+    counters["web_users"] = sum(web_user_values) if web_user_values else None
+
+    events = (
+        db.query(MonitoringEvent)
+        .filter_by(environment_id=environment_id)
+        .order_by(
+            MonitoringEvent.occurred_at.desc(),
+            MonitoringEvent.id.desc(),
+        )
+        .limit(150)
+        .all()
+    )
+
+    if events:
+        outcome_types = {
+            "certificate_issued": "issued",
+            "certificate_denied": "denied",
+            "certificate_pending": "pending",
+            "certificate_revoked": "revoked",
+        }
+
+        outcomes = {
+            "issued": 0,
+            "denied": 0,
+            "pending": 0,
+            "revoked": 0,
+            "other": 0,
+        }
+
+        template_counts: dict[str, int] = {}
+        trend_counts: dict[str, int] = {}
+
+        for event in events:
+            outcome = outcome_types.get(event.event_type)
+
+            if outcome:
+                outcomes[outcome] += 1
+            elif event.category == "certificate":
+                outcomes["other"] += 1
+
+            details = event.details_json if isinstance(event.details_json, dict) else {}
+
+            template_name = details.get("template")
+
+            if template_name:
+                template_counts[template_name] = (
+                    template_counts.get(
+                        template_name,
+                        0,
+                    )
+                    + 1
+                )
+
+            if event.event_type == "certificate_issued":
+                label = event.occurred_at.strftime("%d %b %H:00")
+                trend_counts[label] = trend_counts.get(label, 0) + 1
+
+        snapshot["outcomes"] = outcomes
+        counters.update(
+            {
+                "issued": outcomes["issued"],
+                "denied": outcomes["denied"],
+                "pending": outcomes["pending"],
+                "revoked": outcomes["revoked"],
+            }
+        )
+
+        snapshot["templates"] = [
+            {
+                "name": name,
+                "value": value,
+            }
+            for name, value in sorted(
+                template_counts.items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )[:8]
+        ]
+
+        snapshot["trend"] = [
+            {
+                "label": label,
+                "value": value,
+            }
+            for label, value in list(reversed(list(trend_counts.items())))[-12:]
+        ]
+
+        tone_map = {
+            "critical": "danger",
+            "high": "danger",
+            "warning": "warning",
+            "success": "success",
+            "info": "info",
+        }
+
+        snapshot["events"] = [
+            {
+                "id": event.id,
+                "kind": event.category,
+                "tone": tone_map.get(
+                    event.severity.lower(),
+                    "info",
+                ),
+                "title": event.title,
+                "summary": event.summary,
+                "actor": event.actor,
+                "source_ip": event.source_ip,
+                "time": event.occurred_at.isoformat(),
+                "object": (
+                    event.details_json.get("object", "")
+                    if isinstance(
+                        event.details_json,
+                        dict,
+                    )
+                    else ""
+                ),
+            }
+            for event in events[:60]
+        ]
+
+        active_alert_events = [event for event in events if event.severity.lower() in {"critical", "high"}]
+
+        counters["active_alerts"] = len(active_alert_events)
+
+        snapshot["alerts"] = [
+            {
+                "id": f"event-{event.id}",
+                "severity": ("critical" if event.severity.lower() == "critical" else "warning"),
+                "title": event.title,
+                "summary": event.summary,
+                "impact": (
+                    event.details_json.get(
+                        "impact",
+                        "Review this event and confirm " "whether PKI services were affected.",
+                    )
+                    if isinstance(
+                        event.details_json,
+                        dict,
+                    )
+                    else "Review this event."
+                ),
+                "target": ("/pki-health" if event.category == "infrastructure" else "/pki-monitoring"),
+            }
+            for event in active_alert_events[:5]
+        ]
+
+    latest_metric = (
+        db.query(MonitoringMetric)
+        .filter_by(environment_id=environment_id)
+        .order_by(
+            MonitoringMetric.occurred_at.desc(),
+            MonitoringMetric.id.desc(),
+        )
+        .first()
+    )
+
+    if latest_metric:
+        resource_state = "Normal"
+        messages = []
+
+        if latest_metric.certsvc_state and latest_metric.certsvc_state.lower() != "running":
+            resource_state = "Service impact"
+            messages.append("Certificate Services is not running.")
+
+        if latest_metric.iis_state and latest_metric.iis_state.lower() not in {"running", "not installed"}:
+            resource_state = "Attention required"
+            messages.append("IIS is not running.")
+
+        if latest_metric.cpu_percent is not None and latest_metric.cpu_percent >= 90:
+            resource_state = "Attention required"
+            messages.append("CPU utilisation is above 90%.")
+
+        if latest_metric.memory_percent is not None and latest_metric.memory_percent >= 90:
+            resource_state = "Attention required"
+            messages.append("Memory utilisation is above 90%.")
+
+        if latest_metric.disk_free_percent is not None and latest_metric.disk_free_percent <= 10:
+            resource_state = "Attention required"
+            messages.append("System disk free space is below 10%.")
+
+        snapshot["resources"] = {
+            "cpu_percent": latest_metric.cpu_percent,
+            "memory_percent": (latest_metric.memory_percent),
+            "disk_free_percent": (latest_metric.disk_free_percent),
+            "certsvc_state": (latest_metric.certsvc_state),
+            "iis_state": latest_metric.iis_state,
+            "occurred_at": (latest_metric.occurred_at.isoformat()),
+        }
+
+        snapshot["infrastructure"] = {
+            **snapshot.get("infrastructure", {}),
+            "state": resource_state,
+            "message": (" ".join(messages) if messages else ("The latest live server metrics are " "within the configured operating range.")),
+        }
+
+    return snapshot
+
+
+@app.post("/api/v1/monitoring/agents/events")
+def monitoring_agent_events(
+    payload: MonitoringEventBatchPayload,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    _require_monitoring_agent_token(authorization)
+    agent = _monitoring_agent_or_404(
+        db,
+        payload.agent_key,
+    )
+
+    accepted = 0
+    duplicates = 0
+
+    for item in payload.events:
+        exists = db.query(MonitoringEvent.id).filter_by(event_key=item.event_key).first()
+
+        if exists:
+            duplicates += 1
+            continue
+
+        db.add(
+            MonitoringEvent(
+                environment_id=agent.environment_id,
+                agent_id=agent.id,
+                event_key=item.event_key,
+                category=item.category,
+                event_type=item.event_type,
+                severity=item.severity,
+                title=item.title,
+                summary=item.summary,
+                actor=item.actor,
+                source_ip=item.source_ip,
+                occurred_at=item.occurred_at,
+                details_json=item.details,
+            )
+        )
+        accepted += 1
+
+    db.commit()
+
+    return {
+        "status": "ok",
+        "accepted": accepted,
+        "duplicates": duplicates,
+    }
+
+
+@app.post("/api/v1/monitoring/agents/metrics")
+def monitoring_agent_metrics(
+    payload: MonitoringMetricPayload,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    _require_monitoring_agent_token(authorization)
+    agent = _monitoring_agent_or_404(
+        db,
+        payload.agent_key,
+    )
+
+    db.add(
+        MonitoringMetric(
+            environment_id=agent.environment_id,
+            agent_id=agent.id,
+            occurred_at=payload.occurred_at,
+            cpu_percent=payload.cpu_percent,
+            memory_percent=payload.memory_percent,
+            disk_free_percent=payload.disk_free_percent,
+            certsvc_state=payload.certsvc_state,
+            iis_state=payload.iis_state,
+            details_json=payload.details,
+        )
+    )
+
+    db.commit()
+
+    return {"status": "ok"}
+
+
+@app.get("/api/v1/monitoring/agents/" "{agent_key}/commands/next")
+def monitoring_agent_next_command(
+    agent_key: str,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    _require_monitoring_agent_token(authorization)
+    agent = _monitoring_agent_or_404(
+        db,
+        agent_key,
+    )
+
+    command = (
+        db.query(MonitoringCommand)
+        .filter_by(
+            agent_id=agent.id,
+            status="queued",
+        )
+        .order_by(MonitoringCommand.id.asc())
+        .first()
+    )
+
+    if not command:
+        return {"command": None}
+
+    command.status = "running"
+    command.claimed_at = datetime.utcnow()
+    db.commit()
+
+    return {
+        "command": {
+            "id": command.id,
+            "type": command.command_type,
+        }
+    }
+
+
+@app.post("/api/v1/monitoring/agents/" "{agent_key}/commands/{command_id}/result")
+def monitoring_agent_command_result(
+    agent_key: str,
+    command_id: int,
+    payload: MonitoringCommandResultPayload,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    _require_monitoring_agent_token(authorization)
+    agent = _monitoring_agent_or_404(
+        db,
+        agent_key,
+    )
+
+    command = (
+        db.query(MonitoringCommand)
+        .filter_by(
+            id=command_id,
+            agent_id=agent.id,
+        )
+        .first()
+    )
+
+    if not command:
+        raise HTTPException(
+            status_code=404,
+            detail="Monitoring command not found",
+        )
+
+    command.status = "completed" if payload.success else "failed"
+    command.completed_at = datetime.utcnow()
+    command.result_json = {
+        "success": payload.success,
+        "message": payload.message,
+        "details": payload.details,
+    }
+
+    if payload.audit:
+        command.result_json["audit"] = payload.audit.model_dump()
+        agent.audit_success_enabled = payload.audit.success_enabled
+        agent.audit_failure_enabled = payload.audit.failure_enabled
+        agent.audit_filter = payload.audit.audit_filter
+        agent.audit_ready = payload.audit.audit_ready
+        agent.updated_at = datetime.utcnow()
+
+    db.commit()
+
+    return {"status": command.status}
+
+
+@app.get("/pki-monitoring/agent-package.zip")
+def download_monitoring_agent_package(
+    request: Request,
+):
+    ensure_authenticated(request)
+
+    buffer = io.BytesIO()
+
+    with zipfile.ZipFile(
+        buffer,
+        "w",
+        zipfile.ZIP_DEFLATED,
+    ) as archive:
+        for file_path in sorted(Path("agent/windows").glob("*.ps1")):
+            archive.write(
+                file_path,
+                file_path.name,
+            )
+
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": ("attachment; filename=" '"CertShield-Monitoring-Agent.zip"'),
+            "Cache-Control": "no-store",
+        },
+    )
+
+
 @app.get(
     "/pki-monitoring",
     response_class=HTMLResponse,
@@ -962,10 +1496,12 @@ def pki_monitoring_page(
 ):
     ensure_authenticated(request)
 
+    selected_environment = _selected_environment(request, db)
     selected_scan = _selected_scan(request, db)
-    monitoring = _monitoring_snapshot(
+    monitoring = _monitoring_live_snapshot(
         db,
         selected_scan,
+        (selected_environment.id if selected_environment else None),
     )
 
     ctx = _nav_context(request, db)
@@ -973,6 +1509,7 @@ def pki_monitoring_page(
         {
             "scan": selected_scan,
             "monitoring": monitoring,
+            "csrf_token": issue_csrf_token(request),
         }
     )
 
@@ -989,15 +1526,180 @@ def pki_monitoring_summary(
 ):
     ensure_authenticated(request)
 
-    selected_scan = _selected_scan(request, db)
+    selected_environment = _selected_environment(
+        request,
+        db,
+    )
+
+    selected_scan = None
+
+    if selected_environment:
+        selected_scan = (
+            db.query(Scan)
+            .filter_by(
+                environment_id=selected_environment.id,
+                is_current_for_environment=True,
+            )
+            .order_by(Scan.id.desc())
+            .first()
+        )
 
     return JSONResponse(
-        _monitoring_snapshot(
+        _monitoring_live_snapshot(
             db,
             selected_scan,
+            (selected_environment.id if selected_environment else None),
         )
     )
 
+
+@app.post("/api/v1/monitoring/agent/heartbeat")
+def monitoring_agent_heartbeat(
+    payload: dict,
+    request: Request,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    authorize_monitoring_agent(
+        authorization,
+        settings.monitoring_agent_token,
+    )
+
+    required = (
+        "agent_key",
+        "hostname",
+    )
+    missing = [name for name in required if not payload.get(name)]
+
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=("Missing monitoring heartbeat fields: " + ", ".join(missing)),
+        )
+
+    supplied_environment_id = payload.get("environment_id")
+
+    agent = save_heartbeat(
+        db,
+        environment_id=(int(supplied_environment_id) if supplied_environment_id not in (None, "") else None),
+        environment_name=str(payload.get("environment_name") or ""),
+        domain_name=str(payload.get("domain_name") or ""),
+        forest_name=str(payload.get("forest_name") or ""),
+        collector_type=str(payload.get("collector_type") or "adcs"),
+        agent_key=str(payload["agent_key"]),
+        hostname=str(payload["hostname"]),
+        ca_name=str(payload.get("ca_name") or ""),
+        agent_version=str(payload.get("agent_version") or ""),
+        state=payload.get("state") or {},
+        source_ip=(request.client.host if request.client else ""),
+    )
+
+    return {
+        "status": "ok",
+        "agent_id": agent["id"],
+        "environment_id": agent["environment_id"],
+        "server_time": (datetime.utcnow().isoformat()),
+    }
+
+
+@app.get("/api/v1/monitoring/agent/commands")
+def monitoring_agent_commands(
+    agent_key: str,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    authorize_monitoring_agent(
+        authorization,
+        settings.monitoring_agent_token,
+    )
+
+    command = poll_command(
+        db,
+        agent_key,
+    )
+
+    return command or {}
+
+
+@app.post("/api/v1/monitoring/agent/commands/" "{command_id}/complete")
+def monitoring_agent_command_complete(
+    command_id: int,
+    payload: dict,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    authorize_monitoring_agent(
+        authorization,
+        settings.monitoring_agent_token,
+    )
+
+    complete_command(
+        db,
+        agent_key=str(payload.get("agent_key") or ""),
+        command_id=command_id,
+        success=bool(payload.get("success")),
+        result=payload.get("result") or {},
+    )
+
+    return {"status": "recorded"}
+
+
+@app.post("/pki-monitoring/agents/" "{agent_id}/enable-auditing")
+def enable_monitoring_agent_auditing(
+    agent_id: int,
+    request: Request,
+    csrf_token: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    ensure_authenticated(request)
+    validate_csrf(request, csrf_token)
+
+    environment = _selected_environment(
+        request,
+        db,
+    )
+
+    if not environment:
+        raise HTTPException(
+            status_code=404,
+            detail="PKI environment not selected",
+        )
+
+    command_id = queue_command(
+        db,
+        agent_id=agent_id,
+        environment_id=environment.id,
+        command_type="enable_ca_auditing",
+        requested_by=str(
+            request.session.get(
+                "user",
+                "unknown",
+            )
+        ),
+    )
+
+    db.add(
+        AuditLog(
+            actor=str(
+                request.session.get(
+                    "user",
+                    "unknown",
+                )
+            ),
+            action=("monitoring_enable_ca_auditing_queued"),
+            details_json={
+                "agent_id": agent_id,
+                "environment_id": environment.id,
+                "command_id": command_id,
+            },
+        )
+    )
+    db.commit()
+
+    return RedirectResponse(
+        ("/pki-monitoring" f"?environment_id={environment.id}" f"&command_id={command_id}"),
+        status_code=303,
+    )
 
 
 def render_page(request: Request, name: str, query, key: str, db: Session):
@@ -1034,10 +1736,7 @@ def _posture_target_url(record: dict) -> str:
         return "/pki-health#health-issues"
 
     if record.get("related_finding"):
-        return (
-            f"/findings"
-            f"#finding-{record['related_finding']}"
-        )
+        return f"/findings" f"#finding-{record['related_finding']}"
 
     technical_template_titles = {
         "Avoid broad enrollment on authentication templates",
@@ -1045,18 +1744,10 @@ def _posture_target_url(record: dict) -> str:
         "Avoid overly long validity periods",
     }
 
-    if (
-        record.get("related_template")
-        or object_type == "template"
-        or category in {"Template Risk", "Templates"}
-        or title in technical_template_titles
-    ):
+    if record.get("related_template") or object_type == "template" or category in {"Template Risk", "Templates"} or title in technical_template_titles:
         return "/templates"
 
-    if (
-        category in {"PKI Architecture", "Key Protection"}
-        or object_type == "ca"
-    ):
+    if category in {"PKI Architecture", "Key Protection"} or object_type == "ca":
         return "/pki-hierarchy"
 
     if object_type == "best_practice":
@@ -1094,22 +1785,13 @@ def _find_governance_acceptance(
         expected_categories.add("best practices")
 
     for candidate in acceptances.values():
-        if (
-            str(candidate.object_name).strip().casefold()
-            != str(object_name).strip().casefold()
-        ):
+        if str(candidate.object_name).strip().casefold() != str(object_name).strip().casefold():
             continue
 
-        if (
-            str(candidate.risk_title).strip().casefold()
-            not in expected_titles
-        ):
+        if str(candidate.risk_title).strip().casefold() not in expected_titles:
             continue
 
-        if (
-            str(candidate.category).strip().casefold()
-            not in expected_categories
-        ):
+        if str(candidate.category).strip().casefold() not in expected_categories:
             continue
 
         return candidate
@@ -1132,10 +1814,7 @@ def pki_posture_page(
             {},
         )
 
-        if (
-            not isinstance(stored_registry, dict)
-            or "confirmed_risks" not in stored_registry
-        ):
+        if not isinstance(stored_registry, dict) or "confirmed_risks" not in stored_registry:
             _refresh_posture_for_scan(
                 db,
                 latest_scan.id,
@@ -1143,14 +1822,8 @@ def pki_posture_page(
             db.commit()
             db.refresh(latest_scan)
 
-    posture = (
-        _assessment(latest_scan, "posture", {})
-        or {}
-    )
-    registry = (
-        _assessment(latest_scan, "registry", {})
-        or {}
-    )
+    posture = _assessment(latest_scan, "posture", {}) or {}
+    registry = _assessment(latest_scan, "registry", {}) or {}
     best_practices = (
         _assessment(
             latest_scan,
@@ -1182,21 +1855,12 @@ def pki_posture_page(
     if assurance_score is None:
         assurance_score = posture.get("score")
 
-    assurance_level = (
-        assurance.get("assurance_level")
-        or posture.get("assurance_level")
-        or posture.get("status")
-        or "Unknown / Not Enough Data"
-    )
+    assurance_level = assurance.get("assurance_level") or posture.get("assurance_level") or posture.get("status") or "Unknown / Not Enough Data"
 
     # Decorate every confirmed risk with its correct destination.
     confirmed_risks = []
 
-    for original in (
-        registry.get("confirmed_risks")
-        or registry.get("open_risks")
-        or []
-    ):
+    for original in registry.get("confirmed_risks") or registry.get("open_risks") or []:
         if not isinstance(original, dict):
             continue
 
@@ -1206,10 +1870,7 @@ def pki_posture_page(
 
     registry["confirmed_risks"] = confirmed_risks
 
-    all_coverage_gaps = (
-        registry.get("coverage_gaps")
-        or []
-    )
+    all_coverage_gaps = registry.get("coverage_gaps") or []
 
     acceptances = active_acceptance_map(db)
 
@@ -1292,25 +1953,17 @@ def pki_posture_page(
         )
 
         item["fingerprint"] = fingerprint
-        item["accepted_risk"] = (
-            acceptance is not None
-        )
+        item["accepted_risk"] = acceptance is not None
         item["acceptance"] = acceptance
 
         # Keep governance evidence separate from technical
         # collection gaps, whether open or accepted.
-        if (
-            item.get("manual_control")
-            or str(item.get("data_source") or "").casefold()
-            in {
-                "operator evidence",
-                "customer evidence",
-                "deployment",
-            }
-        ):
-            governance_input_fingerprints.add(
-                fingerprint
-            )
+        if item.get("manual_control") or str(item.get("data_source") or "").casefold() in {
+            "operator evidence",
+            "customer evidence",
+            "deployment",
+        }:
+            governance_input_fingerprints.add(fingerprint)
 
         status = item.get(
             "status",
@@ -1346,9 +1999,7 @@ def pki_posture_page(
             item["ui_status"] = "Customer input needed"
             item["ui_class"] = "input"
             governance_counts["input_needed"] += 1
-            governance_input_fingerprints.add(
-                fingerprint
-            )
+            governance_input_fingerprints.add(fingerprint)
 
         # Verified controls contribute to the count but remain hidden
         # from the main customer view.
@@ -1369,10 +2020,7 @@ def pki_posture_page(
             continue
 
         fingerprint = original.get("fingerprint")
-        source = str(
-            original.get("source")
-            or ""
-        ).strip().casefold()
+        source = str(original.get("source") or "").strip().casefold()
 
         if fingerprint in governance_input_fingerprints:
             continue
@@ -1419,18 +2067,12 @@ def pki_posture_page(
                 "severity": acceptance.severity,
                 "accepted_by": acceptance.accepted_by,
                 "expiry_date": acceptance.expiry_date,
-                "business_justification": (
-                    acceptance.business_justification
-                ),
-                "compensating_control": (
-                    acceptance.compensating_control
-                ),
+                "business_justification": (acceptance.business_justification),
+                "compensating_control": (acceptance.compensating_control),
             }
         )
 
-    governance_counts["accepted"] = len(
-        accepted_governance
-    )
+    governance_counts["accepted"] = len(accepted_governance)
 
     accepted_template_risks = []
 
@@ -1438,21 +2080,12 @@ def pki_posture_page(
         if not isinstance(original, dict):
             continue
 
-        if (
-            original.get("object_type")
-            not in {"finding", "template"}
-            and original.get("category")
-            != "Template Risk"
-        ):
+        if original.get("object_type") not in {"finding", "template"} and original.get("category") != "Template Risk":
             continue
 
         accepted_item = dict(original)
-        accepted_item["target_url"] = (
-            _posture_target_url(accepted_item)
-        )
-        accepted_template_risks.append(
-            accepted_item
-        )
+        accepted_item["target_url"] = _posture_target_url(accepted_item)
+        accepted_template_risks.append(accepted_item)
 
     hierarchy_summary = registry.get(
         "hierarchy_summary",
@@ -1476,9 +2109,7 @@ def pki_posture_page(
             "accepted_governance": accepted_governance,
             "governance_counts": governance_counts,
             "collection_gaps": collection_gaps,
-            "all_coverage_gap_count": len(
-                all_coverage_gaps
-            ),
+            "all_coverage_gap_count": len(all_coverage_gaps),
             "hierarchy_summary": hierarchy_summary,
             "csrf_token": issue_csrf_token(request),
         }
@@ -1544,11 +2175,7 @@ def save_best_practice_evidence(
         control_title,
     )
 
-    row = (
-        db.query(GovernanceEvidence)
-        .filter_by(control_key=key)
-        .first()
-    )
+    row = db.query(GovernanceEvidence).filter_by(control_key=key).first()
 
     if not row:
         row = GovernanceEvidence(
@@ -1659,12 +2286,8 @@ def accept_best_practice_risk(
         db.add(acceptance)
 
     acceptance.expiry_date = expiry_date.strip()
-    acceptance.business_justification = (
-        business_justification.strip()
-    )
-    acceptance.compensating_control = (
-        compensating_control.strip()
-    )
+    acceptance.business_justification = business_justification.strip()
+    acceptance.compensating_control = compensating_control.strip()
     acceptance.status = "active"
 
     db.add(
@@ -1701,13 +2324,7 @@ def reports_page(request: Request, db: Session = Depends(get_db)):
 
     scans = []
     if selected_env:
-        scans = (
-            db.query(Scan)
-            .filter_by(environment_id=selected_env.id)
-            .order_by(Scan.id.desc())
-            .limit(12)
-            .all()
-        )
+        scans = db.query(Scan).filter_by(environment_id=selected_env.id).order_by(Scan.id.desc()).limit(12).all()
 
     latest_summary = latest_scan.summary_json or {} if latest_scan else {}
     severity = latest_summary.get("severity", {}) if isinstance(latest_summary, dict) else {}
@@ -1753,16 +2370,7 @@ def template_page(
     ensure_authenticated(request)
     latest_scan = _selected_scan(request, db)
 
-    records = (
-        db.query(CertificateTemplate)
-        .options(
-            joinedload(CertificateTemplate.permissions)
-        )
-        .filter_by(scan_id=latest_scan.id)
-        .all()
-        if latest_scan
-        else []
-    )
+    records = db.query(CertificateTemplate).options(joinedload(CertificateTemplate.permissions)).filter_by(scan_id=latest_scan.id).all() if latest_scan else []
 
     # Resolve both internal template name and display name to the
     # same template record.
@@ -1781,21 +2389,13 @@ def template_page(
     template_risks = {}
 
     if latest_scan:
-        findings = (
-            db.query(Finding)
-            .filter_by(scan_id=latest_scan.id)
-            .all()
-        )
+        findings = db.query(Finding).filter_by(scan_id=latest_scan.id).all()
         acceptances = active_acceptance_map(db)
 
         for finding in findings:
-            affected = str(
-                finding.affected_object or ""
-            ).strip()
+            affected = str(finding.affected_object or "").strip()
 
-            template = alias_lookup.get(
-                affected.casefold()
-            )
+            template = alias_lookup.get(affected.casefold())
 
             aliases = {affected}
 
@@ -1807,11 +2407,7 @@ def template_page(
                     }
                 )
 
-            aliases = {
-                alias
-                for alias in aliases
-                if alias
-            }
+            aliases = {alias for alias in aliases if alias}
 
             risk = None
 
@@ -1834,9 +2430,7 @@ def template_page(
             for alias in aliases:
                 template_risks[alias] = risk
 
-            acceptance = acceptances.get(
-                finding_fingerprint(finding)
-            )
+            acceptance = acceptances.get(finding_fingerprint(finding))
             accepted = acceptance is not None
 
             if accepted:
@@ -1855,10 +2449,7 @@ def template_page(
                     "title": finding.title,
                     "severity": finding.severity,
                     "accepted": accepted,
-                    "url": (
-                        f"/findings"
-                        f"#finding-{finding.id}"
-                    ),
+                    "url": (f"/findings" f"#finding-{finding.id}"),
                 }
             )
 
@@ -1875,7 +2466,6 @@ def template_page(
         "templates.html",
         ctx,
     )
-
 
 
 def _finding_severity_rank(severity: str) -> int:
@@ -2047,7 +2637,6 @@ def _prepare_findings_view(
     return groups, selected_group, coverage_findings, summary_counts
 
 
-
 @app.get("/findings", response_class=HTMLResponse)
 def findings_page(
     request: Request,
@@ -2062,11 +2651,7 @@ def findings_page(
     filter_template = template.strip()
 
     if latest_scan:
-        templates_data = (
-            db.query(CertificateTemplate)
-            .filter_by(scan_id=latest_scan.id)
-            .all()
-        )
+        templates_data = db.query(CertificateTemplate).filter_by(scan_id=latest_scan.id).all()
 
         records = (
             db.query(Finding)
@@ -2091,12 +2676,7 @@ def findings_page(
         [finding.id for finding in records],
     )
 
-    validation_badges = {
-        finding_id: (
-            f"Guided Walkthrough: {result_label(run.result)}"
-        )
-        for finding_id, run in latest_validations.items()
-    }
+    validation_badges = {finding_id: (f"Guided Walkthrough: {result_label(run.result)}") for finding_id, run in latest_validations.items()}
 
     finding_groups, selected_group, coverage_findings, summary_counts = _prepare_findings_view(
         records,
@@ -2151,12 +2731,7 @@ def accept_finding_risk(
     if finding.scan and finding.scan.environment_id:
         request.session["environment_id"] = finding.scan.environment_id
     fingerprint = finding_fingerprint(finding)
-    acceptance = (
-        db.query(RiskAcceptance)
-        .filter_by(fingerprint=fingerprint, status="active")
-        .order_by(RiskAcceptance.id.desc())
-        .first()
-    )
+    acceptance = db.query(RiskAcceptance).filter_by(fingerprint=fingerprint, status="active").order_by(RiskAcceptance.id.desc()).first()
     if not acceptance:
         acceptance = RiskAcceptance(
             finding_id=finding.id,
@@ -2216,11 +2791,7 @@ def finding_simulation_page(
 ):
     ensure_authenticated(request)
 
-    finding = (
-        db.query(Finding)
-        .filter_by(id=finding_id)
-        .first()
-    )
+    finding = db.query(Finding).filter_by(id=finding_id).first()
 
     if not finding:
         raise HTTPException(
@@ -2273,11 +2844,7 @@ def start_finding_validation(
             detail="Only evidence_replay mode is supported",
         )
 
-    finding = (
-        db.query(Finding)
-        .filter_by(id=finding_id)
-        .first()
-    )
+    finding = db.query(Finding).filter_by(id=finding_id).first()
 
     if not finding:
         raise HTTPException(
@@ -2308,11 +2875,7 @@ def validation_run_page(
 ):
     ensure_authenticated(request)
 
-    run = (
-        db.query(ValidationRun)
-        .filter_by(id=validation_id)
-        .first()
-    )
+    run = db.query(ValidationRun).filter_by(id=validation_id).first()
 
     if not run:
         raise HTTPException(
@@ -2354,11 +2917,7 @@ def validation_run_status(
 ):
     ensure_authenticated(request)
 
-    run = (
-        db.query(ValidationRun)
-        .filter_by(id=validation_id)
-        .first()
-    )
+    run = db.query(ValidationRun).filter_by(id=validation_id).first()
 
     if not run:
         raise HTTPException(
@@ -2366,9 +2925,7 @@ def validation_run_status(
             detail="Validation run not found",
         )
 
-    return JSONResponse(
-        serialize_validation_run(run)
-    )
+    return JSONResponse(serialize_validation_run(run))
 
 
 @app.post("/api/v1/validations/{validation_id}/walkthrough-input")
@@ -2383,11 +2940,7 @@ def save_walkthrough_input(
     ensure_authenticated(request)
     validate_csrf(request, csrf_token)
 
-    run = (
-        db.query(ValidationRun)
-        .filter_by(id=validation_id)
-        .first()
-    )
+    run = db.query(ValidationRun).filter_by(id=validation_id).first()
 
     if not run:
         raise HTTPException(
@@ -2432,12 +2985,7 @@ def history_page(request: Request, db: Session = Depends(get_db)):
     scans = []
 
     if selected_env:
-        scans = (
-            db.query(Scan)
-            .filter_by(environment_id=selected_env.id)
-            .order_by(Scan.id.desc())
-            .all()
-        )
+        scans = db.query(Scan).filter_by(environment_id=selected_env.id).order_by(Scan.id.desc()).all()
 
     history_rows = []
 
@@ -2505,7 +3053,6 @@ def settings_page(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("settings.html", ctx)
 
 
-
 @app.get("/reports/{scan_id}.pdf")
 def export_customer_pdf(
     scan_id: int,
@@ -2516,48 +3063,33 @@ def export_customer_pdf(
 
     json_response = export_json(scan_id, request, db)
 
-    payload = json.loads(
-        json_response.body.decode("utf-8")
-    )
+    payload = json.loads(json_response.body.decode("utf-8"))
 
     pdf_bytes = build_customer_pdf(payload)
 
     environment = payload.get("environment") or {}
-    environment_name = str(
-        environment.get("name") or f"scan-{scan_id}"
-    )
+    environment_name = str(environment.get("name") or f"scan-{scan_id}")
 
-    slug = "".join(
-        character.lower()
-        if character.isalnum()
-        else "-"
-        for character in environment_name
-    )
+    slug = "".join(character.lower() if character.isalnum() else "-" for character in environment_name)
 
     while "--" in slug:
         slug = slug.replace("--", "-")
 
     slug = slug.strip("-") or "pki-environment"
 
-    filename = (
-        f"certshield-{slug}-scan-{scan_id}.pdf"
-    )
+    filename = f"certshield-{slug}-scan-{scan_id}.pdf"
 
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": (
-                f'attachment; filename="{filename}"'
-            ),
+            "Content-Disposition": (f'attachment; filename="{filename}"'),
             "Cache-Control": "no-store",
         },
     )
 
 
-@app.get(
-    "/reports/environment/{environment_id}/latest.pdf"
-)
+@app.get("/reports/environment/{environment_id}/latest.pdf")
 def export_environment_latest_pdf(
     environment_id: int,
     request: Request,
@@ -2591,12 +3123,7 @@ def export_environment_latest_pdf(
 @app.get("/reports/environment/{environment_id}/latest.json")
 def export_environment_latest_json(environment_id: int, request: Request, db: Session = Depends(get_db)):
     ensure_authenticated(request)
-    scan = (
-        db.query(Scan)
-        .filter_by(environment_id=environment_id, is_current_for_environment=True)
-        .order_by(Scan.id.desc())
-        .first()
-    )
+    scan = db.query(Scan).filter_by(environment_id=environment_id, is_current_for_environment=True).order_by(Scan.id.desc()).first()
     if not scan:
         raise HTTPException(status_code=404, detail="Environment scan not found")
     return export_json(scan.id, request, db)
@@ -2624,11 +3151,7 @@ def export_json(scan_id: int, request: Request, db: Session = Depends(get_db)):
         acceptances,
     )
     summary["registry"] = current_registry
-    validation_runs = (
-        db.query(ValidationRun)
-        .filter_by(scan_id=scan.id)
-        .all()
-    )
+    validation_runs = db.query(ValidationRun).filter_by(scan_id=scan.id).all()
 
     latest_validations = _latest_validation_map(
         db,
@@ -2637,26 +3160,10 @@ def export_json(scan_id: int, request: Request, db: Session = Depends(get_db)):
 
     validation_summary = {
         "total_runs": len(validation_runs),
-        "exposure_indicated": sum(
-            1
-            for run in validation_runs
-            if run.result == "exposure_indicated"
-        ),
-        "evidence_incomplete": sum(
-            1
-            for run in validation_runs
-            if run.result == "evidence_incomplete"
-        ),
-        "no_exposure_indicated": sum(
-            1
-            for run in validation_runs
-            if run.result == "no_exposure_indicated"
-        ),
-        "replay_failed": sum(
-            1
-            for run in validation_runs
-            if run.result == "replay_failed"
-        ),
+        "exposure_indicated": sum(1 for run in validation_runs if run.result == "exposure_indicated"),
+        "evidence_incomplete": sum(1 for run in validation_runs if run.result == "evidence_incomplete"),
+        "no_exposure_indicated": sum(1 for run in validation_runs if run.result == "no_exposure_indicated"),
+        "replay_failed": sum(1 for run in validation_runs if run.result == "replay_failed"),
     }
     env = scan.environment
     payload = {
@@ -2708,14 +3215,8 @@ def export_json(scan_id: int, request: Request, db: Session = Depends(get_db)):
         "top_risks": summary.get("posture", {}).get("top_risks", []),
         "evidence_summary": summary.get("registry", {}),
         "open_risks": summary.get("registry", {}).get("open_risks", []),
-        "health_issues": [
-            item for item in summary.get("health", {}).get("items", [])
-            if item.get("status") in {"Critical", "Warning", "Not Assessed"}
-        ],
-        "best_practice_gaps": [
-            item for item in summary.get("best_practices", {}).get("items", [])
-            if item.get("status") in {"Fail", "Warning", "Not Assessed"}
-        ],
+        "health_issues": [item for item in summary.get("health", {}).get("items", []) if item.get("status") in {"Critical", "Warning", "Not Assessed"}],
+        "best_practice_gaps": [item for item in summary.get("best_practices", {}).get("items", []) if item.get("status") in {"Fail", "Warning", "Not Assessed"}],
         "cas": [c.name for c in db.query(CertificateAuthority).filter_by(scan_id=scan.id).all()],
         "validation_summary": validation_summary,
         "findings": [
@@ -2733,39 +3234,24 @@ def export_json(scan_id: int, request: Request, db: Session = Depends(get_db)):
                 "remediation": f.remediation,
                 "accepted_risk": getattr(f, "accepted_risk", False),
                 "acceptance_id": getattr(getattr(f, "acceptance", None), "id", None),
-                "structured_evidence": {
-                    key: value
-                    for key, value in (f.evidence_json or {}).items()
-                    if key not in {"business_impact", "technical_impact", "score_breakdown"}
-                },
+                "structured_evidence": {key: value for key, value in (f.evidence_json or {}).items() if key not in {"business_impact", "technical_impact", "score_breakdown"}},
                 "validation": (
                     {
                         "validation_id": latest_validations[f.id].id,
                         "mode": latest_validations[f.id].mode,
                         "recipe_id": latest_validations[f.id].recipe_id,
-                        "recipe_version": (
-                            latest_validations[f.id].recipe_version
-                        ),
+                        "recipe_version": (latest_validations[f.id].recipe_version),
                         "result": latest_validations[f.id].result,
-                        "confidence": (
-                            latest_validations[f.id].confidence
-                        ),
-                        "completed_at": (
-                            latest_validations[f.id]
-                            .completed_at.isoformat()
-                            if latest_validations[f.id].completed_at
-                            else None
-                        ),
+                        "confidence": (latest_validations[f.id].confidence),
+                        "completed_at": (latest_validations[f.id].completed_at.isoformat() if latest_validations[f.id].completed_at else None),
                         "live_commands_executed": (
-                            latest_validations[f.id]
-                            .safety_json.get(
+                            latest_validations[f.id].safety_json.get(
                                 "live_commands_executed",
                                 False,
                             )
                         ),
                         "environment_changes": (
-                            latest_validations[f.id]
-                            .safety_json.get(
+                            latest_validations[f.id].safety_json.get(
                                 "environment_changes",
                                 False,
                             )
@@ -2777,18 +3263,21 @@ def export_json(scan_id: int, request: Request, db: Session = Depends(get_db)):
             }
             for f in findings
         ],
-        "accepted_risks": summary.get("registry", {}).get("accepted_risks", [
-            {
-                "fingerprint": a.fingerprint,
-                "object_name": a.object_name,
-                "risk_title": a.risk_title,
-                "accepted_by": a.accepted_by,
-                "expiry_date": a.expiry_date,
-                "business_justification": a.business_justification,
-                "compensating_control": a.compensating_control,
-            }
-            for a in acceptances.values()
-        ]),
+        "accepted_risks": summary.get("registry", {}).get(
+            "accepted_risks",
+            [
+                {
+                    "fingerprint": a.fingerprint,
+                    "object_name": a.object_name,
+                    "risk_title": a.risk_title,
+                    "accepted_by": a.accepted_by,
+                    "expiry_date": a.expiry_date,
+                    "business_justification": a.business_justification,
+                    "compensating_control": a.compensating_control,
+                }
+                for a in acceptances.values()
+            ],
+        ),
     }
     return JSONResponse(payload)
 
@@ -2835,18 +3324,10 @@ def evidence_gaps_page(request: Request, db: Session = Depends(get_db)):
     ca_aliases: dict[str, str] = {}
 
     if latest_scan:
-        template_rows = (
-            db.query(CertificateTemplate)
-            .filter_by(scan_id=latest_scan.id)
-            .all()
-        )
+        template_rows = db.query(CertificateTemplate).filter_by(scan_id=latest_scan.id).all()
 
         for template in template_rows:
-            canonical_name = (
-                template.display_name
-                or template.name
-                or "Unknown template"
-            )
+            canonical_name = template.display_name or template.name or "Unknown template"
 
             for candidate in (
                 template.name,
@@ -2856,11 +3337,7 @@ def evidence_gaps_page(request: Request, db: Session = Depends(get_db)):
                 if key:
                     template_aliases[key] = canonical_name
 
-        ca_rows = (
-            db.query(CertificateAuthority)
-            .filter_by(scan_id=latest_scan.id)
-            .all()
-        )
+        ca_rows = db.query(CertificateAuthority).filter_by(scan_id=latest_scan.id).all()
 
         for ca in ca_rows:
             canonical_name = ca.name or ca.dns_name or "Unknown CA"
@@ -2881,21 +3358,13 @@ def evidence_gaps_page(request: Request, db: Session = Depends(get_db)):
 
     for gap in gaps:
         object_type = normalize(gap.get("object_type"))
-        object_name = str(
-            gap.get("object_name") or "Unknown object"
-        ).strip()
+        object_name = str(gap.get("object_name") or "Unknown object").strip()
 
-        related_template = str(
-            gap.get("related_template") or ""
-        ).strip()
+        related_template = str(gap.get("related_template") or "").strip()
 
-        related_ca = str(
-            gap.get("related_ca") or ""
-        ).strip()
+        related_ca = str(gap.get("related_ca") or "").strip()
 
-        category = str(
-            gap.get("category") or "Other"
-        ).strip()
+        category = str(gap.get("category") or "Other").strip()
 
         object_key = normalize(object_name)
         related_template_key = normalize(related_template)
@@ -2936,11 +3405,7 @@ def evidence_gaps_page(request: Request, db: Session = Depends(get_db)):
 
         else:
             bucket_name = "other"
-            asset_name = (
-                f"{category} — {object_name}"
-                if object_name and object_name != category
-                else category
-            )
+            asset_name = f"{category} — {object_name}" if object_name and object_name != category else category
 
         buckets[bucket_name].setdefault(
             asset_name,
@@ -2997,10 +3462,7 @@ def evidence_gaps_page(request: Request, db: Session = Depends(get_db)):
                     "title": title,
                     "description": description,
                     "asset_count": len(assets),
-                    "gap_count": sum(
-                        asset["gap_count"]
-                        for asset in assets
-                    ),
+                    "gap_count": sum(asset["gap_count"] for asset in assets),
                     "assets": assets,
                 }
             )
@@ -3011,15 +3473,9 @@ def evidence_gaps_page(request: Request, db: Session = Depends(get_db)):
             "scan": latest_scan,
             "evidence_gap_count": len(gaps),
             "evidence_gap_groups": evidence_gap_groups,
-            "template_gap_assets": len(
-                buckets["templates"]
-            ),
-            "ca_gap_assets": len(
-                buckets["cas"]
-            ),
-            "other_gap_assets": len(
-                buckets["other"]
-            ),
+            "template_gap_assets": len(buckets["templates"]),
+            "ca_gap_assets": len(buckets["cas"]),
+            "other_gap_assets": len(buckets["other"]),
         }
     )
 

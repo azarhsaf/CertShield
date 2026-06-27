@@ -49,18 +49,78 @@ def _is_demo_payload(payload: CollectorPayload) -> bool:
 
 def _resolve_environment(db: Session, payload: CollectorPayload) -> PkiEnvironment:
     key = _environment_key(payload)
-    env = db.query(PkiEnvironment).filter_by(environment_key=key).first()
     now = datetime.utcnow()
+
+    env = db.query(PkiEnvironment).filter_by(environment_key=key).first()
+
+    collector_type = _normalize_key(payload.collector_type or "generic")
+    domain_name = _normalize_key(payload.domain_name)
+    forest_name = _normalize_key(payload.forest_name)
+    environment_name = _normalize_key(payload.environment_name)
+
+    if not env:
+        candidates = db.query(PkiEnvironment).filter_by(is_active=True).order_by(PkiEnvironment.id.asc()).all()
+
+        def same_collector_type(
+            candidate: PkiEnvironment,
+        ) -> bool:
+            return _normalize_key(candidate.collector_type or "generic") == collector_type
+
+        if domain_name:
+            env = next(
+                (candidate for candidate in candidates if same_collector_type(candidate) and _normalize_key(candidate.domain_name) == domain_name),
+                None,
+            )
+
+        if not env and forest_name:
+            env = next(
+                (candidate for candidate in candidates if same_collector_type(candidate) and _normalize_key(candidate.forest_name) == forest_name),
+                None,
+            )
+
+        if not env and environment_name and not domain_name and not forest_name:
+            env = next(
+                (candidate for candidate in candidates if same_collector_type(candidate) and _normalize_key(candidate.name) == environment_name),
+                None,
+            )
+
     if env:
+        env.environment_key = key
+        env.collector_type = payload.collector_type or env.collector_type or "generic"
+
+        if payload.environment_name.strip():
+            env.name = payload.environment_name.strip()
+
+        if payload.domain_name:
+            env.domain_name = payload.domain_name
+
+        if payload.forest_name:
+            env.forest_name = payload.forest_name
+
+        if payload.pki_label.strip():
+            env.pki_label = payload.pki_label.strip()
+        elif not env.pki_label:
+            env.pki_label = env.name
+
+        env.is_demo = _is_demo_payload(payload)
+        env.is_active = True
         env.updated_at = now
+
+        if env.description and env.description.startswith("Created automatically from a " "monitoring-agent heartbeat."):
+            env.description = "Monitoring agent and collector data " "are available."
+
+        db.flush()
         return env
+
     name = payload.environment_name.strip() or payload.pki_label.strip() or payload.domain_name or key
+
     if _is_demo_payload(payload) and not name.lower().startswith("demo"):
         name = f"Demo - {name}"
+
     env = PkiEnvironment(
         name=name,
         environment_key=key,
-        collector_type=payload.collector_type or "generic",
+        collector_type=(payload.collector_type or "generic"),
         domain_name=payload.domain_name or "",
         forest_name=payload.forest_name or "",
         pki_label=payload.pki_label or name,
@@ -142,16 +202,16 @@ class IngestService:
         certificates = []
         for cert in payload.issued_certificates:
             cert_row = IssuedCertificate(
-                    scan_id=scan.id,
-                    request_id=cert.request_id,
-                    requester=cert.requester,
-                    template_name=cert.template_name,
-                    subject=cert.subject,
-                    san=cert.san,
-                    issued_at=cert.issued_at,
-                    expires_at=cert.expires_at,
-                    status=cert.status,
-                )
+                scan_id=scan.id,
+                request_id=cert.request_id,
+                requester=cert.requester,
+                template_name=cert.template_name,
+                subject=cert.subject,
+                san=cert.san,
+                issued_at=cert.issued_at,
+                expires_at=cert.expires_at,
+                status=cert.status,
+            )
             db.add(cert_row)
             certificates.append(cert_row)
 
@@ -222,12 +282,8 @@ class IngestService:
             persisted_findings,
             governance_evidence_map(db),
         )
-        registry = build_assessment_registry(
-            cas, templates, certificates, persisted_findings, health, best_practices, active_acceptance_map(db)
-        )
-        posture = assess_pki_posture(
-            persisted_findings, health, best_practices, coverage, {**base_summary, "registry": registry}, set()
-        )
+        registry = build_assessment_registry(cas, templates, certificates, persisted_findings, health, best_practices, active_acceptance_map(db))
+        posture = assess_pki_posture(persisted_findings, health, best_practices, coverage, {**base_summary, "registry": registry}, set())
         posture["assurance"] = registry["assurance"]
         posture["score"] = registry["assurance"].get("score")
         posture["status"] = registry["assurance"].get("assurance_level")

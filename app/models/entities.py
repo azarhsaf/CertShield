@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -61,9 +61,7 @@ class Scan(Base):
     templates: Mapped[list["CertificateTemplate"]] = relationship(back_populates="scan")
     certificates: Mapped[list["IssuedCertificate"]] = relationship(back_populates="scan")
     findings: Mapped[list["Finding"]] = relationship(back_populates="scan")
-    validation_runs: Mapped[list["ValidationRun"]] = relationship(
-        back_populates="scan"
-    )
+    validation_runs: Mapped[list["ValidationRun"]] = relationship(back_populates="scan")
     environment: Mapped[PkiEnvironment | None] = relationship(back_populates="scans")
 
 
@@ -151,9 +149,7 @@ class Finding(Base):
     reference: Mapped[str] = mapped_column(String(500), default="")
 
     scan: Mapped[Scan] = relationship(back_populates="findings")
-    validation_runs: Mapped[list["ValidationRun"]] = relationship(
-        back_populates="finding"
-    )
+    validation_runs: Mapped[list["ValidationRun"]] = relationship(back_populates="finding")
 
 
 class ValidationRun(Base):
@@ -243,12 +239,8 @@ class ValidationRun(Base):
         default=dict,
     )
 
-    finding: Mapped["Finding"] = relationship(
-        back_populates="validation_runs"
-    )
-    scan: Mapped[Scan] = relationship(
-        back_populates="validation_runs"
-    )
+    finding: Mapped["Finding"] = relationship(back_populates="validation_runs")
+    scan: Mapped[Scan] = relationship(back_populates="validation_runs")
     steps: Mapped[list["ValidationStep"]] = relationship(
         back_populates="validation_run",
         cascade="all, delete-orphan",
@@ -294,9 +286,7 @@ class ValidationStep(Base):
         default=dict,
     )
 
-    validation_run: Mapped[ValidationRun] = relationship(
-        back_populates="steps"
-    )
+    validation_run: Mapped[ValidationRun] = relationship(back_populates="steps")
 
 
 class RiskAcceptance(Base):
@@ -385,3 +375,244 @@ class AuditLog(Base):
     action: Mapped[str] = mapped_column(String(255), nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     details_json: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class MonitoringAgent(Base):
+    __tablename__ = "monitoring_agents"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+    )
+    environment_id: Mapped[int] = mapped_column(
+        ForeignKey("pki_environments.id"),
+        nullable=False,
+        index=True,
+    )
+    agent_key: Mapped[str] = mapped_column(
+        String(128),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+    hostname: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+    ca_name: Mapped[str] = mapped_column(
+        String(255),
+        default="",
+    )
+    version: Mapped[str] = mapped_column(
+        String(50),
+        default="1.0.0",
+    )
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default="registered",
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+    )
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+        index=True,
+    )
+    audit_success_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+    )
+    audit_failure_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+    )
+    audit_filter: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    audit_ready: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+    )
+    capabilities_json: Mapped[list] = mapped_column(
+        JSON,
+        default=list,
+    )
+    metadata_json: Mapped[dict] = mapped_column(
+        JSON,
+        default=dict,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+    )
+
+
+class MonitoringEvent(Base):
+    __tablename__ = "monitoring_events"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+    )
+    environment_id: Mapped[int] = mapped_column(
+        ForeignKey("pki_environments.id"),
+        nullable=False,
+        index=True,
+    )
+    agent_id: Mapped[int] = mapped_column(
+        ForeignKey("monitoring_agents.id"),
+        nullable=False,
+        index=True,
+    )
+    event_key: Mapped[str] = mapped_column(
+        String(255),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+    category: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+    event_type: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+    )
+    severity: Mapped[str] = mapped_column(
+        String(30),
+        default="info",
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+    summary: Mapped[str] = mapped_column(
+        Text,
+        default="",
+    )
+    actor: Mapped[str] = mapped_column(
+        String(255),
+        default="",
+    )
+    source_ip: Mapped[str] = mapped_column(
+        String(100),
+        default="",
+    )
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        index=True,
+    )
+    details_json: Mapped[dict] = mapped_column(
+        JSON,
+        default=dict,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+    )
+
+
+class MonitoringMetric(Base):
+    __tablename__ = "monitoring_metrics"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+    )
+    environment_id: Mapped[int] = mapped_column(
+        ForeignKey("pki_environments.id"),
+        nullable=False,
+        index=True,
+    )
+    agent_id: Mapped[int] = mapped_column(
+        ForeignKey("monitoring_agents.id"),
+        nullable=False,
+        index=True,
+    )
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        index=True,
+    )
+    cpu_percent: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+    memory_percent: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+    disk_free_percent: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+    certsvc_state: Mapped[str] = mapped_column(
+        String(50),
+        default="",
+    )
+    iis_state: Mapped[str] = mapped_column(
+        String(50),
+        default="",
+    )
+    details_json: Mapped[dict] = mapped_column(
+        JSON,
+        default=dict,
+    )
+
+
+class MonitoringCommand(Base):
+    __tablename__ = "monitoring_commands"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+    )
+    environment_id: Mapped[int] = mapped_column(
+        ForeignKey("pki_environments.id"),
+        nullable=False,
+        index=True,
+    )
+    agent_id: Mapped[int] = mapped_column(
+        ForeignKey("monitoring_agents.id"),
+        nullable=False,
+        index=True,
+    )
+    command_type: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default="queued",
+        index=True,
+    )
+    requested_by: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+    )
+    claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+    result_json: Mapped[dict] = mapped_column(
+        JSON,
+        default=dict,
+    )

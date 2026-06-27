@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     bootstrap_admin_user: str = "admin"
     bootstrap_admin_password: str = "ChangeMeNow!"
     collector_api_token: str = "collector-dev-token-change-me"
+    monitoring_agent_token: str = "monitoring-dev-token-change-me"
 
 
 @lru_cache

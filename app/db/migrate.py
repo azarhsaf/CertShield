@@ -141,10 +141,134 @@ def _ensure_environment_schema(db: Session) -> None:
             db.execute(text("UPDATE pki_environments SET last_scan_id = :scan, last_scan_at = :at WHERE id = :env"), {"scan": latest[0], "at": latest[1], "env": env_id})
         db.execute(text("UPDATE validation_runs SET environment_id = (SELECT environment_id FROM scans WHERE scans.id = validation_runs.scan_id) WHERE environment_id IS NULL"))
 
+
+def _ensure_monitoring_schema(db: Session) -> None:
+    db.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS monitoring_agents ("
+            "id INTEGER PRIMARY KEY, "
+            "environment_id INTEGER NOT NULL, "
+            "agent_key VARCHAR(128) NOT NULL UNIQUE, "
+            "hostname VARCHAR(255) NOT NULL, "
+            "ca_name VARCHAR(255) DEFAULT '', "
+            "version VARCHAR(50) DEFAULT '1.0.0', "
+            "status VARCHAR(30) DEFAULT 'registered', "
+            "is_active BOOLEAN DEFAULT 1, "
+            "last_seen_at DATETIME, "
+            "audit_success_enabled BOOLEAN DEFAULT 0, "
+            "audit_failure_enabled BOOLEAN DEFAULT 0, "
+            "audit_filter INTEGER, "
+            "audit_ready BOOLEAN DEFAULT 0, "
+            "capabilities_json JSON DEFAULT '[]', "
+            "metadata_json JSON DEFAULT '{}', "
+            "created_at DATETIME, "
+            "updated_at DATETIME, "
+            "FOREIGN KEY(environment_id) "
+            "REFERENCES pki_environments(id)"
+            ")"
+        )
+    )
+
+    db.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS monitoring_events ("
+            "id INTEGER PRIMARY KEY, "
+            "environment_id INTEGER NOT NULL, "
+            "agent_id INTEGER NOT NULL, "
+            "event_key VARCHAR(255) NOT NULL UNIQUE, "
+            "category VARCHAR(50) NOT NULL, "
+            "event_type VARCHAR(100) NOT NULL, "
+            "severity VARCHAR(30) DEFAULT 'info', "
+            "title VARCHAR(255) NOT NULL, "
+            "summary TEXT DEFAULT '', "
+            "actor VARCHAR(255) DEFAULT '', "
+            "source_ip VARCHAR(100) DEFAULT '', "
+            "occurred_at DATETIME NOT NULL, "
+            "details_json JSON DEFAULT '{}', "
+            "created_at DATETIME, "
+            "FOREIGN KEY(environment_id) "
+            "REFERENCES pki_environments(id), "
+            "FOREIGN KEY(agent_id) "
+            "REFERENCES monitoring_agents(id)"
+            ")"
+        )
+    )
+
+    db.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS monitoring_metrics ("
+            "id INTEGER PRIMARY KEY, "
+            "environment_id INTEGER NOT NULL, "
+            "agent_id INTEGER NOT NULL, "
+            "occurred_at DATETIME NOT NULL, "
+            "cpu_percent FLOAT, "
+            "memory_percent FLOAT, "
+            "disk_free_percent FLOAT, "
+            "certsvc_state VARCHAR(50) DEFAULT '', "
+            "iis_state VARCHAR(50) DEFAULT '', "
+            "details_json JSON DEFAULT '{}', "
+            "FOREIGN KEY(environment_id) "
+            "REFERENCES pki_environments(id), "
+            "FOREIGN KEY(agent_id) "
+            "REFERENCES monitoring_agents(id)"
+            ")"
+        )
+    )
+
+    db.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS monitoring_commands ("
+            "id INTEGER PRIMARY KEY, "
+            "environment_id INTEGER NOT NULL, "
+            "agent_id INTEGER NOT NULL, "
+            "command_type VARCHAR(100) NOT NULL, "
+            "status VARCHAR(30) DEFAULT 'queued', "
+            "requested_by VARCHAR(100) NOT NULL, "
+            "requested_at DATETIME, "
+            "claimed_at DATETIME, "
+            "completed_at DATETIME, "
+            "result_json JSON DEFAULT '{}', "
+            "FOREIGN KEY(environment_id) "
+            "REFERENCES pki_environments(id), "
+            "FOREIGN KEY(agent_id) "
+            "REFERENCES monitoring_agents(id)"
+            ")"
+        )
+    )
+
+    statements = (
+        "CREATE INDEX IF NOT EXISTS "
+        "ix_monitoring_agents_environment_id "
+        "ON monitoring_agents(environment_id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS "
+        "ix_monitoring_agents_agent_key "
+        "ON monitoring_agents(agent_key)",
+        "CREATE INDEX IF NOT EXISTS "
+        "ix_monitoring_agents_last_seen "
+        "ON monitoring_agents(last_seen_at)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS "
+        "ix_monitoring_events_event_key "
+        "ON monitoring_events(event_key)",
+        "CREATE INDEX IF NOT EXISTS "
+        "ix_monitoring_events_environment_time "
+        "ON monitoring_events(environment_id, occurred_at)",
+        "CREATE INDEX IF NOT EXISTS "
+        "ix_monitoring_metrics_environment_time "
+        "ON monitoring_metrics(environment_id, occurred_at)",
+        "CREATE INDEX IF NOT EXISTS "
+        "ix_monitoring_commands_agent_status "
+        "ON monitoring_commands(agent_id, status)",
+    )
+
+    for statement in statements:
+        db.execute(text(statement))
+
+
 def run_ddl_migrations(db: Session) -> None:
     # Lightweight additive migrations for SQLite and compatibility upgrades.
     _create_validation_tables(db)
     _ensure_environment_schema(db)
+    _ensure_monitoring_schema(db)
     columns = {row[1] for row in db.execute(text("PRAGMA table_info(scans)")).fetchall()}
     if "coverage_json" not in columns:
         db.execute(text("ALTER TABLE scans ADD COLUMN coverage_json JSON DEFAULT '{}'"))

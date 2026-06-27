@@ -79,6 +79,217 @@
     <a href="/settings">Agent settings</a>
   </section>
 
+
+  <section
+    class="
+      monitoring-readiness-panel
+      monitoring-agent-inventory-panel
+    "
+    id="monitoringReadiness"
+  >
+    <div class="monitoring-section-heading">
+      <div>
+        <span>Data-source readiness</span>
+        <h2>Monitoring agents</h2>
+      </div>
+
+      <a href="/pki-monitoring/agent-package.zip">
+        Download Windows agent
+      </a>
+    </div>
+
+    {% if monitoring.agents %}
+    <div class="monitoring-agent-inventory-grid">
+      {% for agent in monitoring.agents %}
+
+      <article class="
+        monitoring-inventory-card
+        {% if agent.connected %}
+          monitoring-inventory-online
+        {% else %}
+          monitoring-inventory-offline
+        {% endif %}
+      ">
+        <header class="monitoring-inventory-header">
+          <div>
+            <span class="monitoring-inventory-role">
+              {{ agent.role_label }}
+            </span>
+
+            <h3>{{ agent.hostname }}</h3>
+
+            <small>
+              Agent {{ agent.version or 'unknown' }}
+              · Last heartbeat
+              {{ agent.last_seen_at or 'not received' }}
+            </small>
+          </div>
+
+          <span class="
+            monitoring-inventory-status
+            {% if agent.connected %}
+              monitoring-inventory-status-online
+            {% else %}
+              monitoring-inventory-status-offline
+            {% endif %}
+          ">
+            {{
+              'Connected'
+              if agent.connected
+              else 'Offline'
+            }}
+          </span>
+        </header>
+
+        <div class="monitoring-inventory-facts">
+          <div>
+            <span>Server role</span>
+            <strong>{{ agent.role_label }}</strong>
+          </div>
+
+          {% if agent.is_ca %}
+          <div>
+            <span>Certificate Services</span>
+            <strong>{{ agent.certsvc }}</strong>
+          </div>
+
+          <div>
+            <span>PKI auditing</span>
+            <strong>
+              {{
+                'Ready'
+                if agent.audit_ready
+                else 'Action required'
+              }}
+            </strong>
+          </div>
+
+          <div>
+            <span>CA AuditFilter</span>
+            <strong>
+              {{ agent.audit_filter or 0 }}
+            </strong>
+          </div>
+          {% else %}
+          <div>
+            <span>Certificate Services</span>
+            <strong>Not installed</strong>
+          </div>
+
+          <div>
+            <span>IIS service</span>
+            <strong>{{ agent.w3svc }}</strong>
+          </div>
+
+          <div>
+            <span>CA auditing</span>
+            <strong>Not applicable</strong>
+          </div>
+          {% endif %}
+        </div>
+
+        {% if agent.is_ca and agent.audit_ready %}
+        <div class="monitoring-inventory-success">
+          <span>✓</span>
+          <div>
+            <strong>PKI auditing is ready</strong>
+            <small>
+              Success and Failure auditing enabled;
+              AuditFilter is 127.
+            </small>
+          </div>
+        </div>
+
+        {% elif
+          agent.is_ca
+          and agent.connected
+          and not agent.audit_ready
+          and agent.command_status
+              not in ['queued', 'running']
+        %}
+        <form
+          class="monitoring-inventory-action"
+          method="post"
+          action="/pki-monitoring/agents/{{ agent.id }}/enable-auditing"
+          onsubmit="return confirm(
+            'This will enable Certification Services auditing, set CA AuditFilter to 127 and restart Certificate Services on {{ agent.hostname }}. Continue?'
+          );"
+        >
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+          <label>
+            <input
+              type="checkbox"
+              name="confirm"
+              value="enable"
+              required
+            >
+
+            <span>
+              I understand that Certificate Services
+              will restart briefly.
+            </span>
+          </label>
+
+          <button type="submit">
+            Enable PKI auditing
+          </button>
+        </form>
+
+        {% elif
+          agent.is_ca
+          and agent.command_status
+              in ['queued', 'running']
+        %}
+        <div class="monitoring-inventory-pending">
+          <span></span>
+          Enable-auditing action is
+          {{ agent.command_status }}.
+        </div>
+
+        {% elif not agent.is_ca %}
+        <div class="monitoring-inventory-neutral">
+          This server contributes Windows, session,
+          IIS and resource telemetry. CA auditing
+          controls are not applicable.
+        </div>
+        {% endif %}
+
+        {% if
+          agent.is_ca
+          and agent.command_status == 'failed'
+        %}
+        <div class="monitoring-inventory-error">
+          The latest auditing action failed.
+          Review the agent and command logs.
+        </div>
+        {% endif %}
+      </article>
+
+      {% endfor %}
+    </div>
+
+    {% else %}
+    <div class="monitor-agent-empty">
+      <div class="monitor-agent-empty-icon">CS</div>
+
+      <div>
+        <strong>No monitoring agent registered</strong>
+        <span>
+          Install the Windows monitoring agent
+          using Environment ID
+          <b>{{ monitoring.environment.id or '—' }}</b>.
+        </span>
+      </div>
+
+      <a href="/pki-monitoring/agent-package.zip">
+        Download Agent
+      </a>
+    </div>
+    {% endif %}
+  </section>
+
+
   <section class="monitoring-attention-panel">
     <div class="monitoring-section-heading">
       <div>
@@ -381,7 +592,9 @@
         </a>
       </article>
 
-      <article class="monitoring-card monitoring-agent-card">
+      <article
+        class="monitoring-card monitoring-agent-card"
+      >
         <div class="monitor-agent-orbit">
           <div class="monitor-agent-core">CS</div>
           <span></span>
@@ -390,12 +603,27 @@
         </div>
 
         <div>
-          <span>Monitoring agent</span>
-          <strong>Not connected</strong>
-          <p>
-            Connect the Windows monitoring service to activate
-            live sessions, IIS access, resources, event logs and
-            second-by-second certificate activity.
+          <span>Monitoring agents</span>
+
+          <strong id="monitorAgentConnectionState">
+            {% if monitoring.connected_agent_count %}
+              {{ monitoring.connected_agent_count }}
+              connected
+            {% else %}
+              Not connected
+            {% endif %}
+          </strong>
+
+          <p id="monitorAgentConnectionMessage">
+            {% if monitoring.connected_agent_count %}
+              Windows monitoring agents are reporting
+              server and session telemetry. Live PKI
+              events will appear when event ingestion
+              begins.
+            {% else %}
+              Install and connect the Windows agent to
+              activate operational telemetry.
+            {% endif %}
           </p>
         </div>
       </article>
@@ -475,24 +703,50 @@
         "monitorModeBadge"
       );
 
-      if (!badge) {
-        return;
+      const connectedCount = safeNumber(
+        data.connected_agent_count
+      );
+
+      const eventCount = Array.isArray(data.events)
+        ? data.events.length
+        : 0;
+
+      const liveEvents = Boolean(
+        connectedCount > 0 && eventCount > 0
+      );
+
+      if (badge) {
+        badge.classList.toggle(
+          "monitor-mode-live",
+          liveEvents
+        );
+
+        badge.classList.toggle(
+          "monitor-mode-snapshot",
+          !liveEvents
+        );
+
+        let modeLabel = "Snapshot mode";
+
+        if (liveEvents) {
+          modeLabel = "Live events";
+        } else if (connectedCount > 0) {
+          modeLabel = "Agents online";
+        }
+
+        badge.innerHTML = `
+          <span class="monitor-mode-dot"></span>
+          ${modeLabel}
+        `;
       }
 
-      badge.classList.toggle(
-        "monitor-mode-live",
-        Boolean(data.agent_connected)
+      const notice = document.getElementById(
+        "monitoringModeNotice"
       );
 
-      badge.classList.toggle(
-        "monitor-mode-snapshot",
-        !data.agent_connected
-      );
-
-      badge.innerHTML = `
-        <span class="monitor-mode-dot"></span>
-        ${data.agent_connected ? "Live" : "Snapshot mode"}
-      `;
+      if (notice) {
+        notice.hidden = connectedCount > 0;
+      }
 
       setText(
         "monitorStatusLabel",
@@ -501,7 +755,26 @@
 
       setText(
         "monitorLastUpdate",
-        data.last_update || "No scan available"
+        data.last_update
+          || "No monitoring evidence"
+      );
+
+      setText(
+        "monitorAgentConnectionState",
+        connectedCount > 0
+          ? `${connectedCount} connected`
+          : "Not connected"
+      );
+
+      setText(
+        "monitorAgentConnectionMessage",
+        connectedCount > 0
+          ? (
+              liveEvents
+                ? "Live operational events are being received."
+                : "Agents are connected. Event ingestion has not started yet."
+            )
+          : "Install and connect the Windows agent to activate operational telemetry."
       );
     }
 

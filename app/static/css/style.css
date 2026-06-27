@@ -5680,3 +5680,460 @@ summary:focus-visible {
 }
 
 /* pki-monitoring-soc:end */
+
+/* monitoring-agent-readiness:start */
+
+.monitoring-agent-readiness {
+  margin-bottom: 1rem;
+  padding: 1.1rem;
+  border: 1px solid #dfe7f2;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 10px 27px rgba(29, 50, 83, .055);
+}
+
+.monitor-agent-readiness-grid {
+  display: grid;
+  gap: .8rem;
+}
+
+.monitor-agent-readiness-card {
+  overflow: hidden;
+  border: 1px solid #dfe7f2;
+  border-radius: 12px;
+  background: #f9fbfe;
+}
+
+.monitor-agent-readiness-head {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  align-items: center;
+  gap: .7rem;
+  padding: .85rem 1rem;
+  background: #fff;
+}
+
+.monitor-agent-connection {
+  display: grid;
+  place-items: center;
+}
+
+.monitor-agent-connection span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.monitor-agent-connected span {
+  background: #1baa78;
+  box-shadow: 0 0 0 6px rgba(27, 170, 120, .12);
+  animation: monitor-pulse 1.5s infinite;
+}
+
+.monitor-agent-disconnected span {
+  background: #8d99a9;
+  box-shadow: 0 0 0 6px rgba(141, 153, 169, .12);
+}
+
+.monitor-agent-readiness-head > div:nth-child(2) span,
+.monitor-agent-readiness-head > div:nth-child(2) strong,
+.monitor-agent-readiness-head > div:nth-child(2) small {
+  display: block;
+}
+
+.monitor-agent-readiness-head > div:nth-child(2) span {
+  color: #3478e5;
+  font-size: .57rem;
+  font-weight: 850;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.monitor-agent-readiness-head > div:nth-child(2) strong {
+  margin-top: .1rem;
+  color: #10213a;
+  font-size: .78rem;
+}
+
+.monitor-agent-readiness-head > div:nth-child(2) small {
+  margin-top: .12rem;
+  color: #7c899a;
+  font-size: .59rem;
+}
+
+.monitor-audit-badge {
+  padding: .32rem .6rem;
+  border-radius: 999px;
+  font-size: .58rem;
+  font-weight: 800;
+}
+
+.monitor-audit-enabled {
+  background: #e2f6ee;
+  color: #137b56;
+}
+
+.monitor-audit-disabled {
+  background: #fbe7eb;
+  color: #b62e48;
+}
+
+.monitor-audit-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid #e4ebf4;
+}
+
+.monitor-audit-status-grid > div {
+  padding: .7rem 1rem;
+  border-right: 1px solid #e4ebf4;
+}
+
+.monitor-audit-status-grid > div:last-child {
+  border-right: 0;
+}
+
+.monitor-audit-status-grid span,
+.monitor-audit-status-grid strong {
+  display: block;
+}
+
+.monitor-audit-status-grid span {
+  color: #7a8798;
+  font-size: .55rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.monitor-audit-status-grid strong {
+  margin-top: .16rem;
+  color: #26374d;
+  font-size: .69rem;
+}
+
+.monitor-enable-audit-form {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .8rem 1rem;
+  border-top: 1px solid #f0d5da;
+  background: #fff7f8;
+}
+
+.monitor-enable-audit-form label {
+  display: flex;
+  align-items: flex-start;
+  gap: .55rem;
+  margin: 0;
+  color: #64535a;
+  font-size: .64rem;
+  line-height: 1.4;
+}
+
+.monitor-enable-audit-form input {
+  margin-top: .15rem;
+}
+
+.monitor-enable-audit-form button {
+  flex-shrink: 0;
+  padding: .46rem .75rem;
+  border: 0;
+  border-radius: 8px;
+  background: #c53750;
+  color: #fff;
+  font-size: .63rem;
+  font-weight: 760;
+}
+
+.monitor-enable-audit-form button:hover {
+  background: #a8273e;
+}
+
+.monitor-command-pending {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .75rem 1rem;
+  border-top: 1px solid #dce8f7;
+  background: #f0f6ff;
+  color: #386299;
+  font-size: .63rem;
+  font-weight: 720;
+}
+
+.monitor-command-spinner {
+  width: 15px;
+  height: 15px;
+  border: 2px solid #a9c3e7;
+  border-top-color: #3478e5;
+  border-radius: 50%;
+  animation: monitor-command-spin .8s linear infinite;
+}
+
+@keyframes monitor-command-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.monitor-agent-empty {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  align-items: center;
+  gap: .8rem;
+  padding: 1rem;
+  border: 1px dashed #bdcce0;
+  border-radius: 12px;
+  background: #f7faff;
+}
+
+.monitor-agent-empty-icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: 12px;
+  background: #3478e5;
+  color: #fff;
+  font-size: .68rem;
+  font-weight: 850;
+}
+
+.monitor-agent-empty strong,
+.monitor-agent-empty span {
+  display: block;
+}
+
+.monitor-agent-empty strong {
+  color: #10213a;
+  font-size: .75rem;
+}
+
+.monitor-agent-empty span {
+  margin-top: .16rem;
+  color: #6d7c90;
+  font-size: .64rem;
+}
+
+.monitor-agent-empty a {
+  padding: .45rem .7rem;
+  border-radius: 8px;
+  background: #3478e5;
+  color: #fff;
+  font-size: .63rem;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+@media (max-width: 760px) {
+  .monitor-agent-readiness-head,
+  .monitor-agent-empty {
+    grid-template-columns: 18px 1fr;
+  }
+
+  .monitor-audit-badge,
+  .monitor-agent-empty a {
+    grid-column: 2;
+    width: max-content;
+  }
+
+  .monitor-audit-status-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .monitor-enable-audit-form {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+/* monitoring-agent-readiness:end */
+
+/* monitoring-agent-inventory:start */
+
+.monitoring-agent-inventory-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.monitoring-inventory-card {
+  overflow: hidden;
+  border: 1px solid #d8e2ef;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(27, 53, 86, 0.05);
+}
+
+.monitoring-inventory-online {
+  border-left: 4px solid #20aa78;
+}
+
+.monitoring-inventory-offline {
+  border-left: 4px solid #98a6b7;
+}
+
+.monitoring-inventory-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 17px 18px 14px;
+}
+
+.monitoring-inventory-header h3 {
+  margin: 4px 0;
+  font-size: 17px;
+}
+
+.monitoring-inventory-header small {
+  color: #708096;
+}
+
+.monitoring-inventory-role {
+  color: #2473e8;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.monitoring-inventory-status {
+  flex: none;
+  padding: 6px 11px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.monitoring-inventory-status-online {
+  color: #087b55;
+  background: #dcf6ec;
+}
+
+.monitoring-inventory-status-offline {
+  color: #5c6878;
+  background: #edf1f5;
+}
+
+.monitoring-inventory-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid #e3e9f1;
+  border-bottom: 1px solid #e3e9f1;
+  background: #f8fafc;
+}
+
+.monitoring-inventory-facts > div {
+  min-height: 68px;
+  padding: 13px 16px;
+  border-right: 1px solid #e3e9f1;
+}
+
+.monitoring-inventory-facts > div:last-child {
+  border-right: 0;
+}
+
+.monitoring-inventory-facts span {
+  display: block;
+  margin-bottom: 5px;
+  color: #6b7c92;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.monitoring-inventory-facts strong {
+  color: #172c49;
+  font-size: 13px;
+}
+
+.monitoring-inventory-success,
+.monitoring-inventory-pending,
+.monitoring-inventory-neutral,
+.monitoring-inventory-error {
+  margin: 14px 16px 16px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.monitoring-inventory-success {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #087b55;
+  background: #edf9f5;
+}
+
+.monitoring-inventory-success span {
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.monitoring-inventory-success small {
+  display: block;
+  margin-top: 2px;
+}
+
+.monitoring-inventory-pending {
+  color: #72510a;
+  background: #fff6da;
+}
+
+.monitoring-inventory-neutral {
+  color: #52647b;
+  background: #f2f6fa;
+}
+
+.monitoring-inventory-error {
+  color: #a6243b;
+  background: #fff0f3;
+}
+
+.monitoring-inventory-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 14px 16px 16px;
+  background: #fff7f8;
+}
+
+.monitoring-inventory-action label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #5b6574;
+  font-size: 12px;
+}
+
+.monitoring-inventory-action button {
+  flex: none;
+  padding: 9px 15px;
+  border: 0;
+  border-radius: 8px;
+  color: #fff;
+  background: #cf3650;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+@media (max-width: 950px) {
+  .monitoring-inventory-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .monitoring-inventory-facts > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .monitoring-inventory-action {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+/* monitoring-agent-inventory:end */
