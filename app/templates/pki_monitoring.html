@@ -25,9 +25,15 @@
         {% if monitoring.environment.name %}
           {{ monitoring.environment.name }}
           ·
-          {{ monitoring.environment.collector_type|upper }}
+          {{ monitoring.environment.collector_type|upper if monitoring.environment.collector_type else 'ADCS' }}
           ·
-          Scan #{{ monitoring.environment.scan_id }}
+          {% if monitoring.operating_mode == 'monitoring_only' %}
+            Monitoring-only mode
+          {% elif monitoring.environment.scan_id %}
+            Scan #{{ monitoring.environment.scan_id }}
+          {% else %}
+            Collector scan not linked
+          {% endif %}
         {% else %}
           Select a PKI environment to begin monitoring.
         {% endif %}
@@ -353,7 +359,7 @@
         <strong id="counterIssued">
           {{ monitoring.counters.issued }}
         </strong>
-        <small>Captured in latest collection</small>
+        <small id="counterIssuedHint">Captured in latest collection</small>
       </div>
     </a>
 
@@ -366,7 +372,7 @@
         <strong id="counterDenied">
           {{ monitoring.counters.denied }}
         </strong>
-        <small>Recorded request failures</small>
+        <small id="counterDeniedHint">Recorded request failures</small>
       </div>
     </a>
 
@@ -379,7 +385,7 @@
         <strong id="counterPending">
           {{ monitoring.counters.pending }}
         </strong>
-        <small>Awaiting completion</small>
+        <small id="counterPendingHint">Awaiting completion</small>
       </div>
     </a>
 
@@ -394,7 +400,7 @@
           /
           {{ monitoring.counters.total_cas }}
         </strong>
-        <small>Latest collected CA state</small>
+        <small id="counterCasHint">Latest collected CA state</small>
       </div>
     </a>
 
@@ -405,7 +411,7 @@
       <div>
         <span>Active administrators</span>
         <strong id="counterAdmins">—</strong>
-        <small>Requires monitoring agent</small>
+        <small id="counterAdminsHint">Requires monitoring agent</small>
       </div>
     </div>
 
@@ -416,7 +422,7 @@
       <div>
         <span>Web Enrollment users</span>
         <strong id="counterWebUsers">—</strong>
-        <small>Requires IIS live telemetry</small>
+        <small id="counterWebUsersHint">Requires IIS live telemetry</small>
       </div>
     </div>
 
@@ -429,7 +435,7 @@
         <strong id="counterAlerts">
           {{ monitoring.counters.active_alerts }}
         </strong>
-        <small>Operational attention items</small>
+        <small id="counterAlertsHint">Operational attention items</small>
       </div>
     </a>
 
@@ -829,22 +835,157 @@
       }
     }
 
+    function setCounterHint(id, value) {
+      const node = document.getElementById(id);
+
+      if (node) {
+        node.textContent = value;
+      }
+    }
+
+    function setCounterCardState(counterId, disabled) {
+      const counter = document.getElementById(counterId);
+      const card = counter
+        ? counter.closest(".monitor-counter-card")
+        : null;
+
+      if (card) {
+        card.classList.toggle(
+          "monitor-counter-disabled",
+          Boolean(disabled)
+        );
+
+        card.setAttribute(
+          "aria-disabled",
+          disabled ? "true" : "false"
+        );
+      }
+    }
+
     function renderCounters(data) {
       const counters = data.counters || {};
+      const mode = data.operating_mode || "snapshot";
+      const monitoringOnly = mode === "monitoring_only";
+      const hasCollectorCharts = Boolean(
+        data.show_collector_charts
+      );
+      const hasConnectedMonitoring = Boolean(
+        data.has_connected_monitoring ||
+        safeNumber(counters.connected_agents) > 0
+      );
 
-      setText("counterIssued", safeNumber(counters.issued));
-      setText("counterDenied", safeNumber(counters.denied));
-      setText("counterPending", safeNumber(counters.pending));
+      if (monitoringOnly && !hasCollectorCharts) {
+        setText("counterIssued", "—");
+        setText("counterDenied", "—");
+        setText("counterPending", "—");
+
+        setCounterHint(
+          "counterIssuedHint",
+          "Collector scan not linked"
+        );
+        setCounterHint(
+          "counterDeniedHint",
+          "Collector scan not linked"
+        );
+        setCounterHint(
+          "counterPendingHint",
+          "Collector scan not linked"
+        );
+
+        setCounterCardState("counterIssued", true);
+        setCounterCardState("counterDenied", true);
+        setCounterCardState("counterPending", true);
+      } else {
+        setText("counterIssued", safeNumber(counters.issued));
+        setText("counterDenied", safeNumber(counters.denied));
+        setText("counterPending", safeNumber(counters.pending));
+
+        setCounterHint(
+          "counterIssuedHint",
+          "Captured in latest collection"
+        );
+        setCounterHint(
+          "counterDeniedHint",
+          "Recorded request failures"
+        );
+        setCounterHint(
+          "counterPendingHint",
+          "Awaiting completion"
+        );
+
+        setCounterCardState("counterIssued", false);
+        setCounterCardState("counterDenied", false);
+        setCounterCardState("counterPending", false);
+      }
+
       setText(
         "counterCas",
         `${safeNumber(counters.connected_cas)}/` +
         `${safeNumber(counters.total_cas)}`
       );
-      setText("counterAdmins", counters.active_admins);
-      setText("counterWebUsers", counters.web_users);
+
+      setCounterHint(
+        "counterCasHint",
+        counters.ca_connectivity_source === "monitoring_agent"
+          ? "Live from monitoring agent"
+          : "Latest collected CA state"
+      );
+
+      if (hasConnectedMonitoring) {
+        setText(
+          "counterAdmins",
+          counters.active_admins === null ||
+          counters.active_admins === undefined
+            ? 0
+            : counters.active_admins
+        );
+
+        setText(
+          "counterWebUsers",
+          counters.web_users === null ||
+          counters.web_users === undefined
+            ? 0
+            : counters.web_users
+        );
+
+        setCounterHint(
+          "counterAdminsHint",
+          "Live admin/session telemetry"
+        );
+        setCounterHint(
+          "counterWebUsersHint",
+          "Live IIS/Web telemetry"
+        );
+
+        setCounterCardState("counterAdmins", false);
+        setCounterCardState("counterWebUsers", false);
+      } else {
+        setText("counterAdmins", "—");
+        setText("counterWebUsers", "—");
+
+        setCounterHint(
+          "counterAdminsHint",
+          "Requires monitoring agent"
+        );
+        setCounterHint(
+          "counterWebUsersHint",
+          "Requires IIS live telemetry"
+        );
+
+        setCounterCardState("counterAdmins", true);
+        setCounterCardState("counterWebUsers", true);
+      }
+
       setText(
         "counterAlerts",
         safeNumber(counters.active_alerts)
+      );
+
+      setCounterHint(
+        "counterAlertsHint",
+        monitoringOnly
+          ? "Live operational attention items"
+          : "Operational attention items"
       );
     }
 
@@ -1154,17 +1295,25 @@
       container.innerHTML = "";
 
       if (!alerts.length) {
+        const monitoringOnly =
+          data.operating_mode === "monitoring_only";
+        const connected = Boolean(
+          data.has_connected_monitoring
+        );
+
         container.innerHTML = `
           <article class="monitor-no-alert">
             <div class="monitor-no-alert-icon">✓</div>
             <div>
               <strong>
                 No active service-impact alert was identified
-                in the latest snapshot
               </strong>
               <span>
-                Continuous alerts will appear here after the
-                monitoring agent is connected.
+                ${
+                  monitoringOnly && connected
+                    ? "Live monitoring is connected and the latest server metrics are normal."
+                    : "Continuous alerts will appear here after the monitoring agent is connected."
+                }
               </span>
             </div>
           </article>
@@ -1219,18 +1368,37 @@
       container.innerHTML = "";
 
       if (!filtered.length) {
-        const message = activeFilter === "access"
-          ? "Administrator session monitoring requires the agent."
+        const monitoringOnly =
+          data.operating_mode === "monitoring_only";
+        const hasConnectedMonitoring = Boolean(
+          data.has_connected_monitoring
+        );
+
+        let title = "No activity available";
+        let message = activeFilter === "access"
+          ? "No administrator session activity has been observed yet."
           : activeFilter === "web"
-            ? "Web Enrollment monitoring requires IIS telemetry."
+            ? "No IIS/Web Enrollment activity has been observed yet."
             : activeFilter === "infrastructure"
-              ? "No infrastructure event is available in snapshot mode."
-              : "No activity is available for this filter.";
+              ? "No infrastructure event has been raised by the agent."
+              : "No live PKI audit event has been received yet.";
+
+        if (monitoringOnly && hasConnectedMonitoring) {
+          title = "Agent connected; waiting for events";
+
+          if (activeFilter === "all") {
+            message =
+              "Heartbeat and server metrics are live. Certificate issuance, denial, revocation, admin access and IIS events will appear here when matching Windows/AD CS audit events are generated.";
+          }
+        } else if (!hasConnectedMonitoring) {
+          message =
+            "Connect the Windows monitoring agent to activate live operational events.";
+        }
 
         container.innerHTML = `
           <div class="monitor-timeline-empty">
             <div>◎</div>
-            <strong>No activity available</strong>
+            <strong>${title}</strong>
             <span>${message}</span>
           </div>
         `;
