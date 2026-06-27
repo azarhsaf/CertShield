@@ -904,6 +904,24 @@ def _monitoring_live_snapshot(
 
     if not environment_id:
         return snapshot
+
+    selected_environment = (
+        db.query(PkiEnvironment)
+        .filter_by(id=environment_id, is_active=True)
+        .first()
+    )
+
+    if selected_environment and not snapshot.get("environment"):
+        snapshot["environment"] = {
+            "id": selected_environment.id,
+            "name": selected_environment.name,
+            "collector_type": selected_environment.collector_type,
+            "domain_name": selected_environment.domain_name,
+            "forest_name": selected_environment.forest_name,
+            "scan_id": None,
+            "scan_sequence": None,
+        }
+
     now = datetime.now(timezone.utc)
     connected_after = now - timedelta(seconds=45)
 
@@ -1093,6 +1111,115 @@ def _monitoring_live_snapshot(
     counters["active_admins"] = sum(active_admin_values) if active_admin_values else None
 
     counters["web_users"] = sum(web_user_values) if web_user_values else None
+
+    ca_agents = [agent for agent in agent_rows if agent["is_ca"]]
+
+    live_ca_nodes = []
+
+    for agent in ca_agents:
+        certsvc_state = str(agent.get("certsvc") or "Unknown")
+        certsvc_normalized = certsvc_state.strip().lower()
+        agent_connected = bool(agent.get("connected"))
+
+        if agent_connected and certsvc_normalized == "running":
+            node_status = "Running"
+            node_tone = "healthy"
+        elif agent_connected:
+            node_status = certsvc_state
+            node_tone = "critical"
+        else:
+            node_status = "Offline"
+            node_tone = "critical"
+
+        live_ca_nodes.append(
+            {
+                "id": f"agent-{agent['id']}",
+                "name": agent.get("ca_name") or agent.get("hostname") or "Monitored CA",
+                "dns_name": agent.get("hostname") or "",
+                "status": node_status,
+                "tone": node_tone,
+                "connected": agent_connected,
+                "source": "monitoring_agent",
+            }
+        )
+
+    collector_counters = snapshot.get("counters") or {}
+
+    has_collector_activity = bool(
+        snapshot.get("trend")
+        or snapshot.get("templates")
+        or any(
+            int(collector_counters.get(key) or 0) > 0
+            for key in ("issued", "denied", "pending", "revoked")
+        )
+    )
+
+    has_collector_evidence = bool(
+        scan
+        and (
+            snapshot.get("ca_nodes")
+            or has_collector_activity
+        )
+    )
+
+    if agent_rows and scan:
+        operating_mode = "monitoring_plus_collector"
+    elif agent_rows:
+        operating_mode = "monitoring_only"
+    elif scan:
+        operating_mode = "collector_only"
+    else:
+        operating_mode = "empty"
+
+    snapshot["operating_mode"] = operating_mode
+    snapshot["has_live_monitoring"] = bool(agent_rows)
+    snapshot["has_connected_monitoring"] = bool(connected_agents)
+    snapshot["has_collector_evidence"] = has_collector_evidence
+    snapshot["show_certificate_activity"] = has_collector_activity
+    snapshot["show_collector_charts"] = has_collector_activity
+    snapshot["architecture_source"] = (
+        "monitoring_agent"
+        if live_ca_nodes and operating_mode == "monitoring_only"
+        else "collector"
+    )
+
+    if ca_agents:
+        counters["connected_cas"] = sum(
+            1
+            for agent in ca_agents
+            if agent["connected"]
+            and str(agent.get("certsvc") or "").strip().lower() == "running"
+        )
+        counters["total_cas"] = len(ca_agents)
+        counters["ca_connectivity_source"] = "monitoring_agent"
+
+        if operating_mode == "monitoring_only" or not snapshot.get("ca_nodes"):
+            snapshot["ca_nodes"] = live_ca_nodes
+            snapshot["ca_statuses"] = {
+                "Running": counters["connected_cas"],
+                "Offline": counters["total_cas"] - counters["connected_cas"],
+            }
+
+    if operating_mode == "monitoring_only" and connected_agents:
+        count = len(connected_agents)
+        noun = "agent" if count == 1 else "agents"
+        snapshot["status_label"] = f"{count} monitoring {noun} connected · monitoring-only"
+        snapshot["mode_description"] = (
+            "Live monitoring data is active. Collector posture and certificate inventory "
+            "will appear after a collector scan is linked to this environment."
+        )
+    elif operating_mode == "monitoring_plus_collector" and connected_agents:
+        snapshot["mode_description"] = (
+            "Live monitoring and collector evidence are both available for this environment."
+        )
+    elif operating_mode == "collector_only":
+        snapshot["mode_description"] = (
+            "Collector evidence is available. Install the monitoring agent to enable live operations."
+        )
+    else:
+        snapshot["mode_description"] = (
+            "No collector evidence or live monitoring data is available yet."
+        )
 
     events = (
         db.query(MonitoringEvent)
@@ -1618,7 +1745,7 @@ def monitoring_agent_commands(
         agent_key,
     )
 
-    return command or {}
+    return command or None
 
 
 @app.post("/api/v1/monitoring/agent/commands/" "{command_id}/complete")

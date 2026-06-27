@@ -778,6 +778,57 @@
       );
     }
 
+    function renderOperatingModePanel(data) {
+      const chartGrid = document.querySelector(
+        ".monitoring-chart-grid"
+      );
+
+      let panel = document.getElementById(
+        "monitoringLiveOnlyPanel"
+      );
+
+      if (!panel && chartGrid) {
+        panel = document.createElement("section");
+        panel.id = "monitoringLiveOnlyPanel";
+        panel.className =
+          "monitoring-mode-notice monitoring-live-only-panel";
+        chartGrid.parentNode.insertBefore(panel, chartGrid);
+      }
+
+      const mode = data.operating_mode || "snapshot";
+      const monitoringOnly = mode === "monitoring_only";
+      const showCollectorCharts = Boolean(
+        data.show_collector_charts
+      );
+
+      if (panel) {
+        panel.hidden = !monitoringOnly;
+
+        if (monitoringOnly) {
+          panel.innerHTML = `
+            <div class="monitoring-mode-notice-icon">✓</div>
+            <div>
+              <strong>
+                Monitoring-only mode is active
+              </strong>
+              <span>
+                Live agent telemetry is healthy for this environment.
+                Collector-only certificate charts are hidden until a
+                collector scan is linked. This is expected and not a failure.
+              </span>
+            </div>
+            <a href="/pki-monitoring/agent-package.zip">
+              Agent package
+            </a>
+          `;
+        }
+      }
+
+      if (chartGrid) {
+        chartGrid.hidden = monitoringOnly && !showCollectorCharts;
+      }
+    }
+
     function renderCounters(data) {
       const counters = data.counters || {};
 
@@ -1249,9 +1300,17 @@
       container.innerHTML = "";
 
       if (!nodes.length) {
+        const mode = data.operating_mode || "snapshot";
+
+        const message = mode === "monitoring_only"
+          ? "No live CA node was detected from the monitoring agent yet."
+          : mode === "collector_only"
+            ? "No Certificate Authority nodes were found in the collector snapshot."
+            : "No Certificate Authority nodes are available.";
+
         container.innerHTML = `
           <div class="monitor-empty-state">
-            No Certificate Authority nodes are available.
+            ${message}
           </div>
         `;
         return;
@@ -1295,7 +1354,11 @@
           </div>
 
           <div class="monitor-ca-node-copy">
-            <span>Certificate Authority</span>
+            <span>
+               ${node.source === "monitoring_agent"
+                 ? "Live monitored CA"
+                 : "Certificate Authority"}
+             </span>
             <strong>${node.name}</strong>
             <small>${node.dns_name || "Host not recorded"}</small>
           </div>
@@ -1315,6 +1378,7 @@
       monitoringData = data || {};
 
       renderMode(monitoringData);
+      renderOperatingModePanel(monitoringData);
       renderCounters(monitoringData);
       renderTrend(monitoringData);
       renderOutcomes(monitoringData);
