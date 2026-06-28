@@ -1,158 +1,113 @@
 {% extends 'base.html' %}
 {% block content %}
 
-<div class="monitoring-page cs-soc-page">
+<div class="monitoring-page pki-dash">
   <script id="monitoringInitialData" type="application/json">{{ monitoring|tojson }}</script>
 
   <style>
-    .cs-soc-page {
-      --cs-ink: #dbeafe;
-      --cs-text: #102033;
-      --cs-muted: #64748b;
-      --cs-subtle: #8aa0b8;
-      --cs-line: #d6e0ec;
-      --cs-panel: rgba(255, 255, 255, .94);
-      --cs-panel-strong: #ffffff;
-      --cs-blue: #2f80ed;
-      --cs-cyan: #06aed5;
-      --cs-green: #17b26a;
-      --cs-amber: #f59e0b;
-      --cs-red: #ef4444;
-      --cs-purple: #7c3aed;
+    .pki-dash {
+      --bg: #07111f;
+      --bg-2: #0b1829;
+      --panel: #101d2e;
+      --panel-2: #132338;
+      --panel-3: #0d1726;
+      --line: rgba(148, 163, 184, .18);
+      --line-strong: rgba(148, 163, 184, .28);
+      --text: #e6edf7;
+      --muted: #93a4ba;
+      --faint: #64748b;
+      --blue: #3b82f6;
+      --cyan: #22d3ee;
+      --green: #22c55e;
+      --amber: #f59e0b;
+      --red: #ef4444;
+      --purple: #a78bfa;
+      min-height: calc(100vh - 105px);
+      padding: 12px;
       background:
-        radial-gradient(circle at 18% 0%, rgba(47, 128, 237, .30), transparent 28%),
-        radial-gradient(circle at 88% 8%, rgba(6, 174, 213, .18), transparent 28%),
-        linear-gradient(180deg, #081a2d 0, #0d2741 172px, #eef4fb 172px, #f7fafc 100%);
-      color: var(--cs-text);
+        radial-gradient(circle at 20% 0%, rgba(59, 130, 246, .20), transparent 26%),
+        radial-gradient(circle at 74% 4%, rgba(34, 211, 238, .12), transparent 28%),
+        linear-gradient(180deg, #081426 0%, #07111f 100%);
+      color: var(--text);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      min-height: calc(100vh - 105px);
-      padding: 0;
+      overflow-x: hidden;
     }
 
-    .soc-shell {
+    .pki-dash * { box-sizing: border-box; }
+
+    .pki-shell {
+      width: min(100%, 1720px);
+      margin: 0 auto;
       display: grid;
-      grid-template-columns: 54px minmax(0, 1fr);
-      gap: 0;
-      min-height: calc(100vh - 105px);
-    }
-
-    .soc-rail {
-      background: linear-gradient(180deg, rgba(3, 14, 27, .96), rgba(9, 31, 54, .96));
-      border-right: 1px solid rgba(148, 163, 184, .20);
-      color: #9fb6cf;
-      padding: 10px 7px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .soc-mark {
-      width: 36px;
-      height: 36px;
-      display: grid;
-      place-items: center;
-      border-radius: 11px;
-      background: linear-gradient(135deg, var(--cs-blue), var(--cs-cyan));
-      color: #fff;
-      font-size: 13px;
-      font-weight: 950;
-      letter-spacing: -.05em;
-      box-shadow: 0 10px 22px rgba(47, 128, 237, .30);
-      margin-bottom: 6px;
-    }
-
-    .soc-nav {
-      width: 38px;
-      min-height: 34px;
-      border: 1px solid transparent;
-      border-radius: 10px;
-      background: transparent;
-      color: #9fb6cf;
-      font-size: 9px;
-      font-weight: 900;
-      letter-spacing: .06em;
-      text-transform: uppercase;
-    }
-
-    .soc-nav.active,
-    .soc-nav:hover {
-      background: rgba(47, 128, 237, .18);
-      border-color: rgba(125, 187, 255, .24);
-      color: #fff;
-    }
-
-    .soc-main {
-      min-width: 0;
-      display: grid;
-      grid-template-rows: auto auto minmax(0, 1fr);
+      grid-template-rows: auto auto minmax(0, 1fr) auto;
       gap: 10px;
-      padding: 10px;
     }
 
-    .soc-command {
+    .pki-header,
+    .pki-card,
+    .pki-panel {
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(19, 35, 56, .94), rgba(13, 23, 38, .96));
+      box-shadow: 0 18px 38px rgba(0, 0, 0, .22);
+      border-radius: 14px;
+    }
+
+    .pki-header {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
       gap: 12px;
       align-items: center;
-      color: var(--cs-ink);
-      min-height: 58px;
+      padding: 10px 12px;
     }
 
-    .soc-title-row {
+    .pki-titleline {
       display: flex;
-      align-items: center;
-      gap: 9px;
+      gap: 8px;
+      align-items: baseline;
       min-width: 0;
     }
 
-    .soc-title-row h1 {
+    .pki-titleline h1 {
       margin: 0;
-      color: #ffffff;
       font-size: 18px;
-      line-height: 1;
-      font-weight: 950;
-      letter-spacing: -.035em;
+      line-height: 1.05;
+      letter-spacing: -.03em;
+      font-weight: 900;
+      color: #fff;
+      white-space: nowrap;
+    }
+
+    .pki-env {
+      color: var(--cyan);
+      font-size: 12px;
+      font-weight: 800;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
-    .soc-scope {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      min-width: 0;
-      color: #b7c8dc;
-      font-size: 11px;
-      font-weight: 750;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .soc-subline {
-      margin-top: 6px;
+    .pki-meta,
+    .pki-header-actions {
       display: flex;
       gap: 6px;
       flex-wrap: wrap;
       align-items: center;
     }
 
-    .soc-actions {
-      display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-    }
+    .pki-meta { margin-top: 7px; }
+    .pki-header-actions { justify-content: flex-end; }
 
-    .soc-chip,
-    .soc-pill,
-    .soc-status {
+    .pki-chip,
+    .pki-state,
+    .pki-badge {
       display: inline-flex;
       align-items: center;
       gap: 6px;
       border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(148, 163, 184, .09);
+      color: #cbd5e1;
+      line-height: 1;
       white-space: nowrap;
       line-height: 1;
     }
@@ -166,162 +121,209 @@
       font-weight: 850;
     }
 
-    .soc-chip strong {
-      color: #fff;
-      font-weight: 950;
-    }
+    .pki-chip { padding: 5px 8px; font-size: 10px; font-weight: 800; }
+    .pki-chip strong { color: #fff; font-weight: 950; }
 
-    .soc-pulse-dot {
+    .pki-dot {
       width: 7px;
       height: 7px;
-      border-radius: 999px;
-      background: var(--cs-green);
-      box-shadow: 0 0 0 0 rgba(23, 178, 106, .62);
-      animation: socPulse 1.7s infinite;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 0 4px rgba(34, 197, 94, .12);
     }
 
-    .soc-pulse-dot.waiting {
-      background: var(--cs-amber);
-      box-shadow: 0 0 0 0 rgba(245, 158, 11, .55);
-    }
+    .pki-dot.waiting { background: var(--amber); box-shadow: 0 0 0 4px rgba(245, 158, 11, .12); }
+    .pki-dot.bad { background: var(--red); box-shadow: 0 0 0 4px rgba(239, 68, 68, .12); }
 
-    @keyframes socPulse {
-      0% { box-shadow: 0 0 0 0 currentColor; }
-      70% { box-shadow: 0 0 0 8px rgba(23, 178, 106, 0); }
-      100% { box-shadow: 0 0 0 0 rgba(23, 178, 106, 0); }
-    }
-
-    .soc-kpis {
+    .pki-kpis {
       display: grid;
       grid-template-columns: repeat(7, minmax(0, 1fr));
       gap: 8px;
     }
 
-    .soc-kpi {
-      position: relative;
+    .pki-card {
       min-width: 0;
+      padding: 9px 10px;
+      position: relative;
       overflow: hidden;
-      border: 1px solid rgba(203, 213, 225, .70);
-      border-radius: 12px;
-      background: var(--cs-panel);
-      box-shadow: 0 12px 26px rgba(15, 42, 69, .08);
-      padding: 9px 10px 8px;
     }
 
-    .soc-kpi::before {
+    .pki-card::after {
       content: "";
       position: absolute;
-      inset: 0 auto 0 0;
-      width: 3px;
-      background: var(--tone, var(--cs-blue));
+      inset: auto 0 0 0;
+      height: 2px;
+      background: var(--tone, var(--blue));
+      opacity: .9;
     }
 
-    .soc-kpi label,
-    .soc-panel-kicker,
-    .soc-feed-source {
-      color: #60758c;
+    .pki-card label,
+    .pki-kicker,
+    .pki-source {
+      display: block;
+      color: var(--muted);
       font-size: 9px;
-      font-weight: 950;
-      letter-spacing: .09em;
       text-transform: uppercase;
+      letter-spacing: .08em;
+      font-weight: 900;
     }
 
-    .soc-kpi strong {
+    .pki-card strong {
       display: block;
       margin-top: 5px;
-      color: #0f172a;
-      font-size: 17px;
+      color: #fff;
+      font-size: 16px;
       line-height: 1;
       font-weight: 950;
-      white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
-    .soc-kpi small {
+    .pki-card small {
       display: block;
-      margin-top: 5px;
-      color: var(--cs-muted);
+      margin-top: 6px;
+      color: var(--faint);
       font-size: 10px;
-      font-weight: 700;
-      white-space: nowrap;
+      font-weight: 750;
       overflow: hidden;
       text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
-    .soc-workspace {
-      min-height: 0;
+    .pki-grid {
       display: grid;
-      grid-template-columns: 290px minmax(430px, 1fr) 330px;
+      grid-template-columns: minmax(0, 1.45fr) minmax(320px, .82fr) minmax(300px, .72fr);
+      grid-auto-rows: minmax(0, 1fr);
       gap: 10px;
+      min-height: 525px;
     }
 
-    .soc-stack {
+    .pki-panel {
+      min-width: 0;
       min-height: 0;
       display: flex;
       flex-direction: column;
-      gap: 10px;
       overflow: hidden;
     }
 
-    .soc-panel {
-      min-height: 0;
-      display: flex;
-      flex-direction: column;
-      border: 1px solid rgba(203, 213, 225, .82);
-      border-radius: 14px;
-      background: var(--cs-panel-strong);
-      box-shadow: 0 16px 34px rgba(15, 42, 69, .085);
-      overflow: hidden;
-    }
-
-    .soc-panel-head {
-      flex: 0 0 auto;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
+    .pki-panel-head {
+      min-height: 42px;
       padding: 9px 10px;
-      background: linear-gradient(180deg, #ffffff, #f5f8fc);
-      border-bottom: 1px solid #e2e8f0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, .025);
     }
 
-    .soc-panel-title {
-      margin-top: 2px;
-      color: #102033;
+    .pki-panel-title {
+      color: #fff;
       font-size: 13px;
-      font-weight: 950;
+      font-weight: 900;
+      margin-top: 2px;
       letter-spacing: -.01em;
     }
 
-    .soc-panel-body {
+    .pki-panel-body {
       min-height: 0;
       overflow: auto;
-      padding: 9px;
+      padding: 10px;
     }
 
-    .soc-pill {
-      padding: 4px 7px;
-      border: 1px solid #d9e4f0;
-      background: #eef5ff;
-      color: #1d4ed8;
+    .pki-filterbar {
+      display: flex;
+      gap: 6px;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--line);
+      overflow-x: auto;
+      scrollbar-width: thin;
+    }
+
+    .pki-filter {
+      border: 1px solid var(--line);
+      background: rgba(148, 163, 184, .08);
+      color: #cbd5e1;
+      border-radius: 999px;
+      padding: 5px 8px;
       font-size: 10px;
-      font-style: normal;
-      font-weight: 950;
+      font-weight: 850;
+      white-space: nowrap;
+      cursor: pointer;
     }
 
-    .soc-pill.good { background: #e8fbf1; border-color: #b7f1d0; color: #067647; }
-    .soc-pill.warn { background: #fff6df; border-color: #fde3a7; color: #b54708; }
-    .soc-pill.bad { background: #feecec; border-color: #ffc9c9; color: #b42318; }
-    .soc-pill.dark { background: #102033; border-color: #263b55; color: #dbeafe; }
+    .pki-filter.active {
+      background: rgba(34, 211, 238, .16);
+      border-color: rgba(34, 211, 238, .42);
+      color: #e0fbff;
+    }
 
-    .soc-runtime-grid {
+    .pki-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 11px;
+    }
+
+    .pki-table th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      padding: 8px;
+      color: var(--muted);
+      background: #0d1726;
+      border-bottom: 1px solid var(--line);
+      font-size: 9px;
+      font-weight: 900;
+      letter-spacing: .08em;
+      text-align: left;
+      text-transform: uppercase;
+    }
+
+    .pki-table td {
+      padding: 8px;
+      border-bottom: 1px solid rgba(148, 163, 184, .10);
+      color: #dbe7f5;
+      vertical-align: middle;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .pki-table tr:hover td { background: rgba(59, 130, 246, .055); }
+    .pki-event-title { color: #fff; font-weight: 850; }
+    .pki-muted { color: var(--muted); }
+
+    .pki-state {
+      justify-content: center;
+      max-width: 116px;
+      padding: 4px 7px;
+      font-size: 9px;
+      font-weight: 950;
+      text-transform: uppercase;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .pki-state.good { color: #bbf7d0; background: rgba(34, 197, 94, .14); border-color: rgba(34, 197, 94, .34); }
+    .pki-state.warn { color: #fde68a; background: rgba(245, 158, 11, .14); border-color: rgba(245, 158, 11, .34); }
+    .pki-state.bad { color: #fecaca; background: rgba(239, 68, 68, .15); border-color: rgba(239, 68, 68, .36); }
+    .pki-state.info { color: #bfdbfe; background: rgba(59, 130, 246, .14); border-color: rgba(59, 130, 246, .34); }
+    .pki-state.none { color: #cbd5e1; background: rgba(148, 163, 184, .10); }
+
+    .pki-host-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 7px;
+      gap: 8px;
+      margin-bottom: 10px;
     }
 
-    .soc-mini-card {
+    .pki-mini {
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, .035);
+      border-radius: 10px;
+      padding: 8px;
       min-width: 0;
       padding: 8px;
       border: 1px solid #e1e8f1;
@@ -329,250 +331,168 @@
       background: linear-gradient(180deg, #fbfdff, #f7faff);
     }
 
-    .soc-mini-card label {
+    .pki-mini label {
       display: block;
-      color: var(--cs-muted);
+      color: var(--faint);
       font-size: 9px;
-      font-weight: 950;
-      letter-spacing: .07em;
+      letter-spacing: .08em;
       text-transform: uppercase;
+      font-weight: 900;
     }
 
-    .soc-mini-card strong {
+    .pki-mini strong {
       display: block;
       margin-top: 5px;
-      color: #0f172a;
+      color: #fff;
       font-size: 12px;
-      font-weight: 900;
+      font-weight: 850;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
-    .soc-meter-row {
+    .pki-meter-row {
       display: grid;
-      grid-template-columns: 52px minmax(0, 1fr) 58px;
-      gap: 7px;
+      grid-template-columns: 58px minmax(0, 1fr) 62px;
+      gap: 8px;
       align-items: center;
-      margin-top: 8px;
-      color: #475569;
-      font-size: 11px;
+      margin-top: 9px;
+      color: #cbd5e1;
+      font-size: 10.5px;
       font-weight: 800;
     }
 
-    .soc-meter {
+    .pki-meter {
       height: 7px;
       overflow: hidden;
       border-radius: 999px;
-      background: #dbe5f0;
+      background: rgba(148, 163, 184, .18);
     }
 
-    .soc-meter i {
+    .pki-meter i {
       display: block;
       width: var(--w, 0%);
       height: 100%;
       border-radius: inherit;
-      background: linear-gradient(90deg, var(--tone, var(--cs-blue)), var(--cs-cyan));
+      background: linear-gradient(90deg, var(--tone, var(--blue)), var(--cyan));
     }
 
-    .soc-net {
-      margin-top: 9px;
-      padding-top: 8px;
-      border-top: 1px dashed #d6e0ec;
-      color: #64748b;
+    .pki-netbox {
+      margin-top: 10px;
+      border-top: 1px dashed var(--line-strong);
+      padding-top: 9px;
+      color: var(--muted);
       font-size: 10.5px;
       line-height: 1.45;
     }
 
-    .soc-feed {
+    .pki-feed {
       display: flex;
       flex-direction: column;
-      gap: 7px;
+      gap: 8px;
     }
 
-    .soc-feed-card {
-      position: relative;
-      display: grid;
-      grid-template-columns: 6px minmax(0, 1fr) auto;
-      gap: 8px;
-      align-items: center;
-      min-width: 0;
-      padding: 8px;
-      border: 1px solid #e1e8f1;
+    .pki-feed-card,
+    .pki-check {
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, .035);
       border-radius: 11px;
-      background: #fff;
-      box-shadow: 0 6px 14px rgba(15, 42, 69, .035);
-    }
-
-    .soc-feed-card:hover { border-color: #bdd3ec; background: #fbfdff; }
-
-    .soc-severity {
-      width: 6px;
-      align-self: stretch;
-      border-radius: 999px;
-      background: var(--tone, var(--cs-blue));
-    }
-
-    .soc-feed-main { min-width: 0; }
-
-    .soc-feed-top {
-      display: flex;
-      gap: 6px;
-      align-items: center;
+      padding: 8px;
       min-width: 0;
     }
 
-    .soc-feed-title {
-      min-width: 0;
-      color: #0f172a;
-      font-size: 12px;
-      font-weight: 900;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .soc-feed-meta {
-      margin-top: 3px;
-      color: var(--cs-muted);
-      font-size: 10.5px;
-      line-height: 1.3;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .soc-status {
-      justify-content: center;
-      max-width: 112px;
-      padding: 4px 7px;
-      background: #edf4ff;
-      color: #1d4ed8;
-      font-size: 9px;
-      font-weight: 950;
-      text-transform: uppercase;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .soc-status.good { background: #e8fbf1; color: #067647; }
-    .soc-status.warn { background: #fff6df; color: #b54708; }
-    .soc-status.bad { background: #feecec; color: #b42318; }
-    .soc-status.neutral { background: #eef2f7; color: #475569; }
-
-    .soc-table-wrap {
-      min-height: 0;
-      overflow: auto;
-    }
-
-    .soc-table {
-      width: 100%;
-      border-collapse: separate;
-      border-spacing: 0;
-      table-layout: fixed;
-      font-size: 11.5px;
-    }
-
-    .soc-table th {
-      position: sticky;
-      top: 0;
-      z-index: 1;
-      padding: 8px 9px;
-      background: #f5f8fc;
-      color: #60758c;
-      border-bottom: 1px solid #e1e8f1;
-      font-size: 9px;
-      font-weight: 950;
-      letter-spacing: .08em;
-      text-align: left;
-      text-transform: uppercase;
-    }
-
-    .soc-table td {
-      padding: 8px 9px;
-      border-bottom: 1px solid #eef3f8;
-      color: #1f2f46;
-      vertical-align: middle;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .soc-table tr:hover td { background: #f8fbff; }
-    .soc-table .event-title { color: #0f172a; font-weight: 900; }
-    .soc-muted { color: var(--cs-muted); }
-
-    .soc-filter-row {
-      display: flex;
-      gap: 6px;
-      padding: 8px 9px;
-      border-bottom: 1px solid #e1e8f1;
-      background: #fbfdff;
-      overflow-x: auto;
-    }
-
-    .soc-filter {
-      border: 1px solid #d7e1ed;
-      border-radius: 999px;
-      background: #fff;
-      color: #475569;
-      padding: 5px 8px;
-      font-size: 10px;
-      font-weight: 900;
-      white-space: nowrap;
-      cursor: pointer;
-    }
-
-    .soc-filter.active {
-      background: #102033;
-      border-color: #102033;
-      color: #fff;
-    }
-
-    .soc-request-row {
+    .pki-feed-card {
       display: grid;
-      grid-template-columns: 64px minmax(0, 1fr) 34px;
+      grid-template-columns: 4px minmax(0, 1fr) auto;
       gap: 8px;
       align-items: center;
-      margin-bottom: 8px;
-      color: #475569;
-      font-size: 11px;
+    }
+
+    .pki-rail {
+      width: 4px;
+      align-self: stretch;
+      border-radius: 99px;
+      background: var(--tone, var(--blue));
+    }
+
+    .pki-feed-top {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      min-width: 0;
+    }
+
+    .pki-feed-title {
+      color: #fff;
+      margin-top: 3px;
+      font-size: 11.5px;
       font-weight: 850;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
-    .soc-action-form {
-      margin: 7px 0 0;
+    .pki-feed-meta {
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 10px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
-    .soc-action-button {
+    .pki-bottom {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .pki-summary-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .pki-request-row,
+    .pki-check {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      color: #dbe7f5;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .pki-request-row .pki-meter { grid-column: 1 / -1; }
+
+    .pki-empty {
+      padding: 10px;
+      border: 1px dashed var(--line-strong);
+      border-radius: 10px;
+      color: var(--muted);
+      background: rgba(148, 163, 184, .06);
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    .pki-audit-form { margin-top: 7px; }
+
+    .pki-audit-button {
       width: 100%;
-      border: 1px solid #f7c56b;
+      border: 1px solid rgba(245, 158, 11, .40);
       border-radius: 9px;
-      background: linear-gradient(180deg, #fff7e6, #ffedc2);
-      color: #92400e;
+      background: rgba(245, 158, 11, .12);
+      color: #fde68a;
       padding: 6px 8px;
       font-size: 10px;
       font-weight: 950;
-      letter-spacing: .03em;
       text-transform: uppercase;
       cursor: pointer;
     }
 
-    .soc-action-button:hover {
-      background: #ffe6aa;
-    }
+    .pki-audit-button:hover { background: rgba(245, 158, 11, .20); }
 
-    .soc-empty {
-      padding: 10px;
-      border: 1px dashed #cbd5e1;
-      border-radius: 11px;
-      background: #f8fbff;
-      color: #64748b;
-      font-size: 11px;
-      font-weight: 700;
-    }
-
-    .soc-sr-only {
+    .pki-sr-only {
       position: absolute;
       width: 1px;
       height: 1px;
@@ -584,175 +504,136 @@
       border: 0;
     }
 
-    @media (max-width: 1380px) {
-      .soc-workspace { grid-template-columns: 270px minmax(390px, 1fr) 310px; }
-      .soc-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    @media (max-width: 1300px) {
+      .pki-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .pki-grid { grid-template-columns: minmax(0, 1fr) minmax(300px, .8fr); }
+      .pki-watch { grid-column: 1 / -1; }
+      .pki-bottom { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
 
-    @media (max-width: 1120px) {
-      .soc-shell { grid-template-columns: 1fr; }
-      .soc-rail { display: none; }
-      .soc-workspace { grid-template-columns: 1fr; overflow: visible; }
-      .soc-stack { overflow: visible; }
-      .soc-main { overflow: visible; }
-      .soc-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .soc-command { grid-template-columns: 1fr; }
-      .soc-actions { justify-content: flex-start; }
+    @media (max-width: 860px) {
+      .pki-dash { padding: 8px; }
+      .pki-header { grid-template-columns: 1fr; }
+      .pki-header-actions { justify-content: flex-start; }
+      .pki-kpis,
+      .pki-grid,
+      .pki-bottom { grid-template-columns: 1fr; }
+      .pki-grid { min-height: 0; }
+      .pki-host-grid { grid-template-columns: 1fr; }
+      .pki-titleline { flex-wrap: wrap; }
     }
   </style>
 
-  <input id="socCsrfToken" type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <h2 class="soc-sr-only">PKI Live Operations Centre</h2>
-  <span class="soc-sr-only">Snapshot mode</span>
-  <span class="soc-sr-only">What needs attention now?</span>
-  <span class="soc-sr-only">Activity timeline</span>
+  <input id="pkiCsrfToken" type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <span class="pki-sr-only">PKI Live Operations Centre</span>
+  <span class="pki-sr-only">Snapshot mode</span>
+  <span class="pki-sr-only">What needs attention now?</span>
+  <span class="pki-sr-only">Activity timeline</span>
 
-  <section class="soc-shell" id="socOps">
-    <nav class="soc-rail" aria-label="PKI monitoring navigation">
-      <div class="soc-mark">CS</div>
-      <button class="soc-nav active" type="button">Ops</button>
-      <button class="soc-nav" type="button">CA</button>
-      <button class="soc-nav" type="button">Tape</button>
-      <button class="soc-nav" type="button">ACL</button>
-      <button class="soc-nav" type="button">Req</button>
-    </nav>
-
-    <main class="soc-main">
-      <section class="soc-command">
-        <div>
-          <div class="soc-title-row">
-            <h1 id="socTitle">PKI Ops</h1>
-            <span class="soc-scope" id="socScope">Loading telemetry…</span>
-          </div>
-          <div class="soc-subline" id="socSubline"></div>
+  <section class="pki-shell">
+    <header class="pki-header">
+      <div>
+        <div class="pki-titleline">
+          <h1>CertShield PKI Monitoring</h1>
+          <span class="pki-env" id="pkiEnvironment">Loading environment…</span>
         </div>
-        <div class="soc-actions">
-          <span class="soc-chip"><i class="soc-pulse-dot" id="socPulseDot"></i><strong id="socLiveState">Waiting</strong></span>
-          <span class="soc-chip">Sample <strong id="socLastSample">—</strong></span>
-          <span class="soc-chip">Refresh <strong id="socRefreshState">10s</strong></span>
+        <div class="pki-meta" id="pkiMeta"></div>
+      </div>
+      <div class="pki-header-actions">
+        <span class="pki-chip"><i class="pki-dot" id="pkiLiveDot"></i><strong id="pkiAgentStatus">Waiting</strong></span>
+        <span class="pki-chip">Sample <strong id="pkiSampleAge">—</strong></span>
+        <span class="pki-chip">Refresh <strong>10s</strong></span>
+      </div>
+    </header>
+
+    <section class="pki-kpis" id="pkiKpis"></section>
+
+    <section class="pki-grid">
+      <article class="pki-panel">
+        <header class="pki-panel-head">
+          <div><span class="pki-kicker">Live Operations</span><div class="pki-panel-title">ADCS / CAWE Event Stream</div></div>
+          <span class="pki-state info" id="pkiEventCount">0 rows</span>
+        </header>
+        <div class="pki-filterbar" id="pkiFilters"></div>
+        <div class="pki-panel-body" style="padding:0;">
+          <table class="pki-table">
+            <thead>
+              <tr>
+                <th style="width:76px;">Time</th>
+                <th style="width:74px;">Source</th>
+                <th>Signal</th>
+                <th style="width:155px;">Actor / Endpoint</th>
+                <th style="width:92px;">State</th>
+              </tr>
+            </thead>
+            <tbody id="pkiEventRows"></tbody>
+          </table>
         </div>
-      </section>
+      </article>
 
-      <section class="soc-kpis" id="socKpis"></section>
+      <article class="pki-panel">
+        <header class="pki-panel-head">
+          <div><span class="pki-kicker">Host / Sensor Pulse</span><div class="pki-panel-title">CA Runtime</div></div>
+          <span class="pki-state" id="pkiRuntimeState">—</span>
+        </header>
+        <div class="pki-panel-body">
+          <div class="pki-host-grid" id="pkiHostGrid"></div>
+          <div id="pkiMeters"></div>
+        </div>
+      </article>
 
-      <section class="soc-workspace">
-        <aside class="soc-stack">
-          <article class="soc-panel">
-            <header class="soc-panel-head">
-              <div><div class="soc-panel-kicker">CA Runtime</div><div class="soc-panel-title">Services</div></div>
-              <em class="soc-pill" id="socRuntimeState">—</em>
-            </header>
-            <div class="soc-panel-body">
-              <div class="soc-runtime-grid" id="socRuntimeCards"></div>
-            </div>
-          </article>
+      <article class="pki-panel pki-watch">
+        <header class="pki-panel-head">
+          <div><span class="pki-kicker">PKI Watchlist</span><div class="pki-panel-title">Attention Queue</div></div>
+          <span class="pki-state info" id="pkiWatchCount">0 items</span>
+        </header>
+        <div class="pki-panel-body"><div class="pki-feed" id="pkiWatchFeed"></div></div>
+      </article>
+    </section>
 
-          <article class="soc-panel">
-            <header class="soc-panel-head">
-              <div><div class="soc-panel-kicker">Host Pulse</div><div class="soc-panel-title">Resources</div></div>
-              <em class="soc-pill dark" id="socPulseType">sample</em>
-            </header>
-            <div class="soc-panel-body" id="socResources"></div>
-          </article>
+    <section class="pki-bottom">
+      <article class="pki-panel">
+        <header class="pki-panel-head"><div><span class="pki-kicker">Requests</span><div class="pki-panel-title">Request Mix</div></div><span class="pki-state info" id="pkiRequestTotal">0 total</span></header>
+        <div class="pki-panel-body"><div class="pki-summary-list" id="pkiRequests"></div></div>
+      </article>
 
-          <article class="soc-panel" style="flex:1;">
-            <header class="soc-panel-head">
-              <div><div class="soc-panel-kicker">Sensor</div><div class="soc-panel-title">Agent Pulse</div></div>
-              <em class="soc-pill" id="socAgentCount">—</em>
-            </header>
-            <div class="soc-panel-body"><div class="soc-feed" id="socAgentFeed"></div></div>
-          </article>
-        </aside>
+      <article class="pki-panel">
+        <header class="pki-panel-head"><div><span class="pki-kicker">Access</span><div class="pki-panel-title">Admin + CAWE</div></div><span class="pki-state info" id="pkiAccessCount">0</span></header>
+        <div class="pki-panel-body"><div class="pki-feed" id="pkiAccessFeed"></div></div>
+      </article>
 
-        <section class="soc-panel" style="min-height:420px;">
-          <header class="soc-panel-head">
-            <div><div class="soc-panel-kicker">Live Tape</div><div class="soc-panel-title">Operational Stream</div></div>
-            <em class="soc-pill dark" id="socEventCount">—</em>
-          </header>
-          <div class="soc-filter-row" id="socFilters"></div>
-          <div class="soc-table-wrap">
-            <table class="soc-table">
-              <thead>
-                <tr>
-                  <th style="width:72px;">Time</th>
-                  <th style="width:74px;">Source</th>
-                  <th>Signal</th>
-                  <th style="width:170px;">Actor / Endpoint</th>
-                  <th style="width:92px;">State</th>
-                </tr>
-              </thead>
-              <tbody id="socEventRows"></tbody>
-            </table>
-          </div>
-        </section>
+      <article class="pki-panel">
+        <header class="pki-panel-head"><div><span class="pki-kicker">Agent Channel</span><div class="pki-panel-title">Heartbeat</div></div><span class="pki-state info" id="pkiAgentCount">0</span></header>
+        <div class="pki-panel-body"><div class="pki-feed" id="pkiAgentFeed"></div></div>
+      </article>
 
-        <aside class="soc-stack">
-          <article class="soc-panel">
-            <header class="soc-panel-head">
-              <div><div class="soc-panel-kicker">Requests</div><div class="soc-panel-title">Request Mix</div></div>
-              <em class="soc-pill" id="socRequestTotal">0 total</em>
-            </header>
-            <div class="soc-panel-body" id="socRequests"></div>
-          </article>
-
-          <article class="soc-panel" style="flex:1;">
-            <header class="soc-panel-head">
-              <div><div class="soc-panel-kicker">Access</div><div class="soc-panel-title">Admins + CAWE</div></div>
-              <em class="soc-pill" id="socAccessCount">—</em>
-            </header>
-            <div class="soc-panel-body"><div class="soc-feed" id="socAccessFeed"></div></div>
-          </article>
-
-          <article class="soc-panel" style="flex:1;">
-            <header class="soc-panel-head">
-              <div><div class="soc-panel-kicker">Roles</div><div class="soc-panel-title">Privileged Watch</div></div>
-              <em class="soc-pill" id="socRoleCount">—</em>
-            </header>
-            <div class="soc-panel-body"><div class="soc-feed" id="socRoleFeed"></div></div>
-          </article>
-        </aside>
-      </section>
-    </main>
+      <article class="pki-panel">
+        <header class="pki-panel-head"><div><span class="pki-kicker">Readiness</span><div class="pki-panel-title">Audit / Services</div></div><span class="pki-state" id="pkiReadyState">—</span></header>
+        <div class="pki-panel-body"><div class="pki-summary-list" id="pkiReadiness"></div></div>
+      </article>
+    </section>
   </section>
 
   <script>
   (function () {
     const initialNode = document.getElementById("monitoringInitialData");
     const refreshSeconds = 10;
-    let currentData = {};
+    let data = {};
     let activeFilter = "All";
 
-    try {
-      currentData = JSON.parse(initialNode?.textContent || "{}");
-    } catch (error) {
-      currentData = {};
-    }
+    try { data = JSON.parse(initialNode?.textContent || "{}"); } catch (error) { data = {}; }
 
-    function esc(value) {
-      return String(value ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
-    }
-
-    function node(id) { return document.getElementById(id); }
-    function setText(id, value) { const el = node(id); if (el) el.textContent = value ?? "—"; }
-    function num(value) { const n = Number(value); return Number.isFinite(n) ? n : 0; }
-    function pct(value) { const n = Number(value); return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : null; }
-    function compact(value) { return value === undefined || value === null || value === "" ? "—" : value; }
-
-    function formatTime(value) {
-      if (!value) return "live";
-      const date = new Date(value);
-      if (!Number.isNaN(date.getTime())) {
-        return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-      }
-      const text = String(value);
-      if (text.includes(" ")) return text.split(" ").at(-1).slice(0, 8);
-      return text.slice(0, 8);
-    }
+    const $ = (id) => document.getElementById(id);
+    const esc = (value) => String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+    const setText = (id, value) => { const node = $(id); if (node) node.textContent = value ?? "—"; };
+    const num = (value) => { const n = Number(value); return Number.isFinite(n) ? n : 0; };
+    const pct = (value) => { const n = Number(value); return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : null; };
+    const clean = (value) => value === undefined || value === null || value === "" ? "—" : value;
 
     function age(value) {
       if (!value) return "no sample";
@@ -764,327 +645,267 @@
       return `${Math.floor(seconds / 3600)}h ago`;
     }
 
+    function time(value) {
+      if (!value) return "live";
+      const date = new Date(value);
+      if (!Number.isNaN(date.getTime())) return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      const text = String(value);
+      return text.includes(" ") ? text.split(" ").at(-1).slice(0, 8) : text.slice(0, 8);
+    }
+
     function severity(value) {
       const text = String(value || "").toLowerCase();
-      if (text.includes("403") || text.includes("401") || text.includes("denied") || text.includes("failed") || text.includes("critical") || text.includes("stopped") || text.includes("offline")) return "bad";
-      if (text.includes("pending") || text.includes("warning") || text.includes("check") || text.includes("active") || text.includes("unknown")) return "warn";
-      if (text.includes("200") || text.includes("running") || text.includes("ready") || text.includes("online") || text.includes("issued") || text.includes("success")) return "good";
-      return "neutral";
+      if (text.includes("offline") || text.includes("failed") || text.includes("stopped") || text.includes("denied") || text.includes("401") || text.includes("403") || text.includes("critical")) return "bad";
+      if (text.includes("warning") || text.includes("pending") || text.includes("check") || text.includes("unknown") || text.includes("active")) return "warn";
+      if (text.includes("running") || text.includes("ready") || text.includes("online") || text.includes("200") || text.includes("success") || text.includes("issued")) return "good";
+      return "info";
     }
 
-    function tone(value) {
+    function color(value) {
       const sev = severity(value);
-      if (sev === "good") return "#17b26a";
+      if (sev === "good") return "#22c55e";
       if (sev === "warn") return "#f59e0b";
       if (sev === "bad") return "#ef4444";
-      return "#2f80ed";
+      return "#3b82f6";
     }
 
-    function status(value) {
-      const text = compact(value);
-      return `<span class="soc-status ${severity(text)}">${esc(text)}</span>`;
+    function state(value) {
+      const text = clean(value);
+      return `<span class="pki-state ${severity(text)}">${esc(text)}</span>`;
     }
 
-    function pillClass(value) {
-      const sev = severity(value);
-      if (sev === "good") return "good";
-      if (sev === "warn") return "warn";
-      if (sev === "bad") return "bad";
-      return "";
-    }
-
-    function meter(name, value, unit, color) {
-      const numeric = unit === "Kbps" ? Number(value) : pct(value);
-      const valid = Number.isFinite(numeric);
-      const width = valid ? (unit === "Kbps" ? Math.min(100, Math.max(0, numeric)) : numeric) : 0;
-      const label = valid ? (unit === "Kbps" ? `${numeric.toFixed(1)} Kbps` : `${Math.round(numeric)}%`) : "N/A";
+    function meter(label, value, unit, tone) {
+      const n = unit === "Kbps" ? Number(value) : pct(value);
+      const ok = Number.isFinite(n);
+      const width = ok ? (unit === "Kbps" ? Math.min(100, Math.max(0, n)) : n) : 0;
+      const display = ok ? (unit === "Kbps" ? `${n.toFixed(1)} Kbps` : `${Math.round(n)}%`) : "N/A";
       return `
-        <div class="soc-meter-row">
-          <span>${esc(name)}</span>
-          <span class="soc-meter"><i style="--w:${width}%;--tone:${color || "#2f80ed"}"></i></span>
-          <b>${esc(label)}</b>
-        </div>
-      `;
+        <div class="pki-meter-row">
+          <span>${esc(label)}</span>
+          <span class="pki-meter"><i style="--w:${width}%;--tone:${tone || "#3b82f6"}"></i></span>
+          <b>${esc(display)}</b>
+        </div>`;
     }
 
-    function feedCard(item) {
-      const badge = item.badge || item.status || item.source || "info";
+    function feed(item) {
+      const badge = item.badge || item.source || "info";
       return `
-        <div class="soc-feed-card" style="--tone:${item.tone || tone(badge)}">
-          <i class="soc-severity"></i>
-          <div class="soc-feed-main">
-            <div class="soc-feed-top">
-              <span class="soc-feed-source">${esc(item.source || "Signal")}</span>
-              <span class="soc-muted" style="font-size:10px;">${esc(formatTime(item.time))}</span>
-            </div>
-            <div class="soc-feed-title">${esc(item.title || "Telemetry")}</div>
-            <div class="soc-feed-meta">${esc(item.meta || "—")}</div>
+        <div class="pki-feed-card" style="--tone:${item.tone || color(badge)}">
+          <i class="pki-rail"></i>
+          <div style="min-width:0;">
+            <div class="pki-feed-top"><span class="pki-source">${esc(item.source || "Signal")}</span><span class="pki-muted" style="font-size:10px;">${esc(time(item.time))}</span></div>
+            <div class="pki-feed-title">${esc(item.title || "Telemetry")}</div>
+            <div class="pki-feed-meta">${esc(item.meta || "—")}</div>
             ${item.actionHtml || ""}
           </div>
-          ${status(badge)}
-        </div>
-      `;
+          ${state(badge)}
+        </div>`;
     }
 
-    function buildEvents(web, events, sessions, roles) {
-      const roleEvents = roles.filter((role) => role.active_now).slice(0, 20).map((role) => ({
-        time: role.time || role.collected_at,
-        source: "Roles",
-        category: "Roles",
-        title: `${role.role_name || "PKI role"} active`,
-        actor: role.member || role.group_name || "member not listed",
-        status: "active",
-      }));
+    function check(label, value, badge) {
+      return `<div class="pki-check"><span>${esc(label)}</span>${state(value || badge)}</div>`;
+    }
 
-      const sessionEvents = sessions.slice(0, 20).map((session) => ({
-        time: session.logon,
-        source: "Access",
-        category: "Access",
-        title: session.username || "Admin session",
-        actor: `${session.hostname || "host"} · idle ${session.idle || "—"}`,
-        status: session.state || "online",
-      }));
+    function eventsFrom(snapshot) {
+      const web = Array.isArray(snapshot.web_enrollment_activity) ? snapshot.web_enrollment_activity : [];
+      const events = Array.isArray(snapshot.events) ? snapshot.events : [];
+      const sessions = Array.isArray(snapshot.admin_sessions) ? snapshot.admin_sessions : [];
+      const roles = Array.isArray(snapshot.pki_roles) ? snapshot.pki_roles : [];
 
       return [
-        ...web.slice(0, 50).map((item) => ({
-          time: item.time,
-          source: "CAWE",
-          category: "CAWE",
-          title: item.action || "CA Web Enrollment activity",
-          actor: item.username || item.source_ip || "user not recorded",
-          status: item.status ? `HTTP ${item.status}` : "web",
-        })),
-        ...events.slice(0, 50).map((item) => ({
+        ...events.slice(0, 60).map((item) => ({
+          category: "ADCS",
           time: item.time,
           source: String(item.kind || "ADCS").toUpperCase(),
-          category: "ADCS",
           title: item.title || item.summary || "ADCS event",
-          actor: item.actor || item.object || `Event ${item.event_id || ""}`.trim() || "actor not recorded",
-          status: item.tone || item.kind || item.event_id || "event",
+          actor: item.actor || item.object || (item.event_id ? `Event ${item.event_id}` : "actor not recorded"),
+          badge: item.tone || item.kind || item.event_id || "event",
         })),
-        ...sessionEvents,
-        ...roleEvents,
+        ...web.slice(0, 60).map((item) => ({
+          category: "CAWE",
+          time: item.time,
+          source: "CAWE",
+          title: item.action || "CA Web Enrollment activity",
+          actor: item.username || item.source_ip || "user not recorded",
+          badge: item.status ? `HTTP ${item.status}` : "web",
+        })),
+        ...sessions.slice(0, 24).map((item) => ({
+          category: "Access",
+          time: item.logon,
+          source: "ACCESS",
+          title: item.username || "Admin session",
+          actor: `${item.hostname || "host"} · idle ${item.idle || "—"}`,
+          badge: item.state || "online",
+        })),
+        ...roles.filter((role) => role.active_now).slice(0, 24).map((role) => ({
+          category: "Roles",
+          time: role.collected_at,
+          source: "ROLE",
+          title: role.role_name || "PKI role active",
+          actor: role.member || role.group_name || "member not listed",
+          badge: "active",
+        })),
       ].sort((a, b) => {
-        const da = new Date(a.time || 0).getTime();
-        const db = new Date(b.time || 0).getTime();
-        return (Number.isFinite(db) ? db : 0) - (Number.isFinite(da) ? da : 0);
-      }).slice(0, 80);
+        const ad = new Date(a.time || 0).getTime();
+        const bd = new Date(b.time || 0).getTime();
+        return (Number.isFinite(bd) ? bd : 0) - (Number.isFinite(ad) ? ad : 0);
+      }).slice(0, 90);
     }
 
     function renderFilters(events) {
-      const filters = ["All", "ADCS", "CAWE", "Access", "Roles", "System"];
-      const counts = filters.reduce((acc, filter) => {
-        acc[filter] = filter === "All" ? events.length : events.filter((event) => event.category === filter).length;
-        return acc;
-      }, {});
-
-      node("socFilters").innerHTML = filters.map((filter) => `
-        <button class="soc-filter ${activeFilter === filter ? "active" : ""}" type="button" data-filter="${esc(filter)}">
-          ${esc(filter)} ${counts[filter] || 0}
-        </button>
-      `).join("");
-
-      node("socFilters").querySelectorAll("button").forEach((button) => {
-        button.addEventListener("click", () => {
-          activeFilter = button.dataset.filter || "All";
-          render(currentData);
-        });
+      const filters = ["All", "ADCS", "CAWE", "Access", "Roles"];
+      $("pkiFilters").innerHTML = filters.map((filter) => {
+        const count = filter === "All" ? events.length : events.filter((item) => item.category === filter).length;
+        return `<button type="button" class="pki-filter ${activeFilter === filter ? "active" : ""}" data-filter="${esc(filter)}">${esc(filter)} ${count}</button>`;
+      }).join("");
+      $("pkiFilters").querySelectorAll("button").forEach((button) => {
+        button.addEventListener("click", () => { activeFilter = button.dataset.filter || "All"; render(data); });
       });
     }
 
-    function render(data) {
-      const env = data.environment || {};
-      const counters = data.counters || {};
-      const outcomes = data.outcomes || {};
-      const agents = Array.isArray(data.agents) ? data.agents : [];
+    function render(snapshot) {
+      const env = snapshot.environment || {};
+      const counters = snapshot.counters || {};
+      const outcomes = snapshot.outcomes || {};
+      const agents = Array.isArray(snapshot.agents) ? snapshot.agents : [];
       const ca = agents.find((agent) => agent.is_ca) || agents[0] || {};
-      const sessions = Array.isArray(data.admin_sessions) ? data.admin_sessions : [];
-      const web = Array.isArray(data.web_enrollment_activity) ? data.web_enrollment_activity : [];
-      const events = Array.isArray(data.events) ? data.events : [];
-      const roles = Array.isArray(data.pki_roles) ? data.pki_roles : [];
-      const activeRoles = Array.isArray(data.active_pki_roles) ? data.active_pki_roles : [];
-      const pulse = data.resource_pulse || ca.resources || {};
+      const web = Array.isArray(snapshot.web_enrollment_activity) ? snapshot.web_enrollment_activity : [];
+      const sessions = Array.isArray(snapshot.admin_sessions) ? snapshot.admin_sessions : [];
+      const roles = Array.isArray(snapshot.pki_roles) ? snapshot.pki_roles : [];
+      const activeRoles = Array.isArray(snapshot.active_pki_roles) ? snapshot.active_pki_roles : [];
+      const pulse = snapshot.resource_pulse || ca.resources || {};
       const network = pulse.network || {};
-      const connected = num(counters.connected_agents) > 0 || Boolean(data.has_connected_monitoring);
-      const lastSample = pulse.collected_at || ca.last_seen_at || data.last_update;
+      const connected = num(counters.connected_agents) > 0 || Boolean(snapshot.has_connected_monitoring);
+      const lastSample = pulse.collected_at || ca.last_seen_at || snapshot.last_update;
 
-      setText("socTitle", `${env.name || "PKI"} Ops`);
-      setText("socScope", `${(env.collector_type || "ADCS").toUpperCase()} · ${env.domain_name || env.forest_name || "domain unknown"}`);
-      setText("socLiveState", connected ? "Live sensor" : "Waiting");
-      setText("socLastSample", age(lastSample));
-      setText("socRefreshState", `${refreshSeconds}s`);
-      node("socPulseDot")?.classList.toggle("waiting", !connected);
+      setText("pkiEnvironment", env.name || "PKI environment");
+      setText("pkiAgentStatus", connected ? "Live agent" : "Waiting");
+      setText("pkiSampleAge", age(lastSample));
+      $("pkiLiveDot").className = `pki-dot ${connected ? "" : "waiting"}`;
 
-      node("socSubline").innerHTML = [
-        ["Mode", data.operating_mode || "monitoring"],
-        ["Architecture", data.architecture_source || "live"],
-        ["Agents", `${num(counters.connected_agents)}/${num(counters.monitoring_agents || agents.length)}`],
-        ["Collector", data.has_collector_evidence ? "evidence" : "none"],
-      ].map(([label, value]) => `<span class="soc-chip">${esc(label)} <strong>${esc(value)}</strong></span>`).join("");
+      $("pkiMeta").innerHTML = [
+        ["Domain", env.domain_name || env.forest_name || "unknown"],
+        ["Mode", snapshot.operating_mode || "monitoring"],
+        ["Collector", snapshot.has_collector_evidence ? "evidence" : "none"],
+        ["Architecture", snapshot.architecture_source || "live"],
+      ].map(([label, value]) => `<span class="pki-chip">${esc(label)} <strong>${esc(value)}</strong></span>`).join("");
 
       const kpis = [
-        ["CA Link", `${num(counters.connected_cas || data.connected_ca_agent_count)}/${num(counters.total_cas || counters.monitored_ca_agents || data.ca_agent_count)}`, ca.hostname || pulse.hostname || "CA node", "#17b26a"],
-        ["CertSvc", ca.certsvc || "—", ca.ca_name || pulse.ca_name || "service", "#2f80ed"],
-        ["IIS/CAWE", ca.w3svc || "—", `${web.length} web hits`, "#06aed5"],
-        ["Audit", ca.audit_ready ? "READY" : "CHECK", `Filter ${ca.audit_filter ?? 0}`, "#20c997"],
-        ["Events", events.length, "ADCS tape", "#7c3aed"],
-        ["Access", sessions.length + web.length, "admin + CAWE", "#f59e0b"],
-        ["Roles", `${activeRoles.length}/${roles.length}`, "active / known", "#ef4444"],
+        ["CA Link", `${num(counters.connected_cas || snapshot.connected_ca_agent_count)}/${num(counters.total_cas || counters.monitored_ca_agents || snapshot.ca_agent_count)}`, ca.hostname || pulse.hostname || "CA node", "#22c55e"],
+        ["CertSvc", ca.certsvc || "—", ca.ca_name || pulse.ca_name || "service", color(ca.certsvc)],
+        ["IIS/CAWE", ca.w3svc || "—", `${web.length} web hits`, color(ca.w3svc)],
+        ["Audit", ca.audit_ready ? "READY" : "CHECK", `Filter ${ca.audit_filter ?? 0}`, ca.audit_ready ? "#22c55e" : "#f59e0b"],
+        ["Events", eventsFrom(snapshot).length, "live rows", "#a78bfa"],
+        ["Access", sessions.length + web.length, "admin + web", "#22d3ee"],
+        ["Roles", `${activeRoles.length}/${roles.length}`, "active / known", activeRoles.length ? "#ef4444" : "#3b82f6"],
       ];
+      $("pkiKpis").innerHTML = kpis.map(([label, value, hint, tone]) => `<article class="pki-card" style="--tone:${tone}"><label>${esc(label)}</label><strong>${esc(value)}</strong><small>${esc(hint)}</small></article>`).join("");
 
-      node("socKpis").innerHTML = kpis.map(([label, value, hint, color]) => `
-        <article class="soc-kpi" style="--tone:${color}">
-          <label>${esc(label)}</label>
-          <strong>${esc(value)}</strong>
-          <small>${esc(hint)}</small>
-        </article>
-      `).join("");
+      const liveEvents = eventsFrom(snapshot);
+      renderFilters(liveEvents);
+      const visible = activeFilter === "All" ? liveEvents : liveEvents.filter((event) => event.category === activeFilter);
+      setText("pkiEventCount", `${visible.length} rows`);
+      $("pkiEventRows").innerHTML = visible.length ? visible.map((event) => `
+        <tr>
+          <td class="pki-muted">${esc(time(event.time))}</td>
+          <td><span class="pki-source">${esc(event.source)}</span></td>
+          <td><span class="pki-event-title">${esc(event.title)}</span></td>
+          <td class="pki-muted">${esc(event.actor)}</td>
+          <td>${state(event.badge)}</td>
+        </tr>`).join("") : `<tr><td colspan="5"><div class="pki-empty">Waiting for live samples.</div></td></tr>`;
 
-      const runtimeState = ca.connected ? "online" : "offline";
-      const runtimeEl = node("socRuntimeState");
-      runtimeEl.className = `soc-pill ${pillClass(runtimeState)}`;
-      runtimeEl.textContent = runtimeState;
-
-      node("socRuntimeCards").innerHTML = [
+      const runtime = ca.connected ? "online" : "offline";
+      const runtimeNode = $("pkiRuntimeState");
+      runtimeNode.className = `pki-state ${severity(runtime)}`;
+      runtimeNode.textContent = runtime;
+      $("pkiHostGrid").innerHTML = [
         ["CA", ca.ca_name || pulse.ca_name || env.name || "—"],
         ["Host", ca.hostname || pulse.hostname || "—"],
         ["CertSvc", ca.certsvc || "—"],
         ["IIS", ca.w3svc || "—"],
         ["Security", ca.security_log_access ? "Readable" : "Unknown"],
-        ["Agent", ca.version || "—"],
-      ].map(([label, value]) => `<div class="soc-mini-card"><label>${esc(label)}</label><strong>${esc(value)}</strong></div>`).join("");
+        ["Sample", pulse.sample_type || "—"],
+      ].map(([label, value]) => `<div class="pki-mini"><label>${esc(label)}</label><strong>${esc(value)}</strong></div>`).join("");
 
-      const cpu = pct(pulse.cpu_percent);
-      const mem = pct(pulse.memory_percent);
       const diskFree = pct(pulse.disk_free_percent);
       const diskUsed = pct(pulse.disk_used_percent ?? (diskFree === null ? null : 100 - diskFree));
       const net = Number(network.total_kbps);
       const send = Number(network.send_kbps);
       const recv = Number(network.receive_kbps);
-      setText("socPulseType", pulse.sample_type || "sample");
-      node("socResources").innerHTML = [
-        meter("CPU", cpu, "%", "#2f80ed"),
-        meter("Memory", mem, "%", "#7c3aed"),
+      $("pkiMeters").innerHTML = [
+        meter("CPU", pulse.cpu_percent, "%", "#3b82f6"),
+        meter("Memory", pulse.memory_percent, "%", "#a78bfa"),
         meter("Disk", diskUsed, "%", "#f59e0b"),
-        meter("Net", Number.isFinite(net) ? net : null, "Kbps", "#06aed5"),
-        `<div class="soc-net">
-          <strong>${esc(network.interface_name || "NIC")}</strong>${network.ipv4_address ? ` · ${esc(network.ipv4_address)}` : ""}<br>
-          ${network.link_speed ? `${esc(network.link_speed)} · ` : ""}${Number.isFinite(send) && Number.isFinite(recv) ? `S ${send.toFixed(1)} / R ${recv.toFixed(1)} Kbps` : "No network delta yet"}
-        </div>`,
+        meter("Network", Number.isFinite(net) ? net : null, "Kbps", "#22d3ee"),
+        `<div class="pki-netbox"><strong>${esc(network.interface_name || "NIC")}</strong>${network.ipv4_address ? ` · ${esc(network.ipv4_address)}` : ""}<br>${network.link_speed ? `${esc(network.link_speed)} · ` : ""}${Number.isFinite(send) && Number.isFinite(recv) ? `S ${send.toFixed(1)} / R ${recv.toFixed(1)} Kbps` : "Waiting for network delta"}</div>`,
       ].join("");
 
-      const allEvents = buildEvents(web, events, sessions, roles);
-      renderFilters(allEvents);
-      const visibleEvents = activeFilter === "All" ? allEvents : allEvents.filter((event) => event.category === activeFilter);
-      setText("socEventCount", `${visibleEvents.length} rows`);
-      node("socEventRows").innerHTML = visibleEvents.length ? visibleEvents.map((event) => `
-        <tr>
-          <td class="soc-muted">${esc(formatTime(event.time))}</td>
-          <td><span class="soc-feed-source">${esc(event.source)}</span></td>
-          <td><span class="event-title">${esc(event.title)}</span></td>
-          <td class="soc-muted">${esc(event.actor)}</td>
-          <td>${status(event.status)}</td>
-        </tr>
-      `).join("") : `<tr><td colspan="5"><div class="soc-empty">No live telemetry for this filter.</div></td></tr>`;
+      const watchItems = [];
+      if (!connected) watchItems.push({ source: "Sensor", title: "No connected monitoring agent", meta: "Waiting for heartbeat", badge: "waiting", tone: "#f59e0b" });
+      if (ca.is_ca !== false && !ca.audit_ready) watchItems.push({ source: "Audit", title: "ADCS auditing needs attention", meta: `Filter ${ca.audit_filter ?? 0}`, badge: "check", tone: "#f59e0b" });
+      activeRoles.slice(0, 5).forEach((role) => watchItems.push({ source: "Role", title: role.role_name || "Privileged role active", meta: role.member || role.group_name || "member not listed", badge: "active", tone: "#ef4444" }));
+      sessions.slice(0, 4).forEach((session) => watchItems.push({ source: "Admin", title: session.username || "Admin session", meta: `${session.hostname || "host"} · idle ${session.idle || "—"}`, badge: session.state || "online", tone: "#22d3ee" }));
+      web.slice(0, 4).forEach((item) => watchItems.push({ source: "CAWE", time: item.time, title: item.action || "CAWE hit", meta: `${item.username || "user not recorded"} · ${item.source_ip || "source unknown"}`, badge: item.status ? `HTTP ${item.status}` : "web", tone: color(item.status ? `HTTP ${item.status}` : "web") }));
+      setText("pkiWatchCount", `${watchItems.length} items`);
+      $("pkiWatchFeed").innerHTML = watchItems.length ? watchItems.map(feed).join("") : `<div class="pki-empty">No watchlist items. Waiting for notable live activity.</div>`;
 
       const issued = num(counters.issued || outcomes.issued);
       const denied = num(counters.denied || outcomes.denied);
       const pending = num(counters.pending || outcomes.pending);
       const revoked = num(counters.revoked || outcomes.revoked);
-      const totalReq = issued + denied + pending + revoked;
-      const maxReq = Math.max(issued, denied, pending, revoked, 1);
-      setText("socRequestTotal", `${totalReq} total`);
-      node("socRequests").innerHTML = [["Issued", issued, "#17b26a"], ["Denied", denied, "#ef4444"], ["Pending", pending, "#f59e0b"], ["Revoked", revoked, "#64748b"]].map(([name, value, color]) => `
-        <div class="soc-request-row">
-          <span>${esc(name)}</span>
-          <span class="soc-meter"><i style="--w:${(value / maxReq) * 100}%;--tone:${color}"></i></span>
-          <b>${value}</b>
-        </div>
-      `).join("");
+      const total = issued + denied + pending + revoked;
+      const max = Math.max(issued, denied, pending, revoked, 1);
+      setText("pkiRequestTotal", `${total} total`);
+      $("pkiRequests").innerHTML = [["Issued", issued, "#22c55e"], ["Denied", denied, "#ef4444"], ["Pending", pending, "#f59e0b"], ["Revoked", revoked, "#64748b"]].map(([label, value, tone]) => `
+        <div class="pki-request-row"><span>${esc(label)}</span><b>${value}</b><span class="pki-meter"><i style="--w:${(value / max) * 100}%;--tone:${tone}"></i></span></div>`).join("");
 
-      const accessCards = [
-        ...sessions.slice(0, 6).map((session) => ({
-          source: "Admin",
-          time: session.logon,
-          title: session.username || "Admin session",
-          meta: `${session.hostname || "host"} · idle ${session.idle || "—"}`,
-          badge: session.state || "online",
-          tone: "#f59e0b",
-        })),
-        ...web.slice(0, 8).map((item) => ({
-          source: "CAWE",
-          time: item.time,
-          title: item.action || "CAWE hit",
-          meta: `${item.username || "user not recorded"} · ${item.source_ip || "source unknown"}`,
-          badge: item.status ? `HTTP ${item.status}` : "CAWE",
-          tone: tone(item.status ? `HTTP ${item.status}` : "CAWE"),
-        })),
+      const access = [
+        ...sessions.slice(0, 3).map((session) => ({ source: "Admin", time: session.logon, title: session.username || "Admin session", meta: `${session.hostname || "host"} · idle ${session.idle || "—"}`, badge: session.state || "online", tone: "#22d3ee" })),
+        ...web.slice(0, 3).map((item) => ({ source: "CAWE", time: item.time, title: item.action || "CAWE hit", meta: `${item.username || "user not recorded"} · ${item.source_ip || "source unknown"}`, badge: item.status ? `HTTP ${item.status}` : "web" })),
       ];
-      setText("socAccessCount", `${accessCards.length}`);
-      node("socAccessFeed").innerHTML = accessCards.length ? accessCards.map(feedCard).join("") : `<div class="soc-empty">No access telemetry yet.</div>`;
+      setText("pkiAccessCount", `${access.length}`);
+      $("pkiAccessFeed").innerHTML = access.length ? access.map(feed).join("") : `<div class="pki-empty">No admin or CAWE activity.</div>`;
 
-      setText("socRoleCount", `${activeRoles.length}/${roles.length}`);
-      node("socRoleFeed").innerHTML = roles.length ? roles.slice(0, 12).map((role) => feedCard({
-        source: role.active_now ? "Active" : "Known",
-        title: role.role_name || "PKI role",
-        meta: `${role.member || role.group_name || "member not listed"} · ${role.meaning || role.role_type || "privileged role"}`,
-        badge: role.active_now ? "active" : "known",
-        tone: role.active_now ? "#ef4444" : "#2f80ed",
-      })).join("") : `<div class="soc-empty">No privileged role data from the agent.</div>`;
-
-      setText("socAgentCount", `${agents.length} agent${agents.length === 1 ? "" : "s"}`);
-      const csrfToken = node("socCsrfToken")?.value || "";
-      node("socAgentFeed").innerHTML = agents.length ? agents.map((agent) => {
-        const canEnableAudit = agent.is_ca && agent.audit_applicable !== false && !agent.audit_ready;
-        const auditAction = canEnableAudit ? `
-          <form class="soc-action-form" method="post" action="/pki-monitoring/agents/${encodeURIComponent(agent.id)}/enable-auditing?environment_id=${encodeURIComponent(env.id || "")}">
+      const csrfToken = $("pkiCsrfToken")?.value || "";
+      setText("pkiAgentCount", `${agents.length}`);
+      $("pkiAgentFeed").innerHTML = agents.length ? agents.map((agent) => {
+        const actionHtml = agent.is_ca && agent.audit_applicable !== false && !agent.audit_ready ? `
+          <form class="pki-audit-form" method="post" action="/pki-monitoring/agents/${encodeURIComponent(agent.id)}/enable-auditing?environment_id=${encodeURIComponent(env.id || "")}">
             <input type="hidden" name="csrf_token" value="${esc(csrfToken)}">
-            <button class="soc-action-button" type="submit">Enable PKI auditing</button>
-          </form>
-        ` : "";
+            <button class="pki-audit-button" type="submit">Enable PKI auditing</button>
+          </form>` : "";
+        return feed({ source: agent.is_ca ? "CA" : "Agent", time: agent.last_seen_at, title: agent.hostname || "Monitoring agent", meta: `${agent.ca_name || "No CA"} · ${age(agent.last_seen_at)}`, badge: agent.connected ? "online" : "offline", tone: agent.connected ? "#22c55e" : "#ef4444", actionHtml });
+      }).join("") : `<div class="pki-empty">No monitoring agents registered.</div>`;
 
-        return feedCard({
-          source: agent.is_ca ? "CA" : "Agent",
-          time: agent.last_seen_at,
-          title: agent.hostname || "Monitoring agent",
-          meta: `${agent.ca_name || "No CA"} · ${age(agent.last_seen_at)}`,
-          badge: agent.connected ? "online" : "offline",
-          tone: agent.connected ? "#17b26a" : "#ef4444",
-          actionHtml: auditAction,
-        });
-      }).join("") : `<div class="soc-empty">No monitoring agent registered.</div>`;
+      const ready = ca.audit_ready && String(ca.certsvc || "").toLowerCase().includes("running") ? "ready" : "check";
+      const readyNode = $("pkiReadyState");
+      readyNode.className = `pki-state ${severity(ready)}`;
+      readyNode.textContent = ready;
+      $("pkiReadiness").innerHTML = [
+        check("CertSvc", ca.certsvc || "Unknown"),
+        check("IIS / CAWE", ca.w3svc || "Unknown"),
+        check("Security log", ca.security_log_access ? "Readable" : "Unknown"),
+        check("ADCS audit", ca.audit_ready ? "Ready" : "Check"),
+      ].join("");
     }
 
     async function refresh() {
-      const envId = currentData?.environment?.id;
-      if (!envId) {
-        render(currentData);
-        return;
-      }
-
-      const urls = [
-        `/api/v1/monitoring/live?environment_id=${encodeURIComponent(envId)}`,
-        `/api/v1/pki-monitoring/live?environment_id=${encodeURIComponent(envId)}`,
-      ];
-
+      const envId = data?.environment?.id;
+      if (!envId) { render(data); return; }
+      const urls = [`/api/v1/monitoring/live?environment_id=${encodeURIComponent(envId)}`, `/api/v1/pki-monitoring/live?environment_id=${encodeURIComponent(envId)}`];
       for (const url of urls) {
         try {
           const response = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
           if (!response.ok) continue;
           const json = await response.json();
           const next = json.snapshot || json.data || json;
-          if (next && typeof next === "object" && next.counters) {
-            currentData = next;
-            render(currentData);
-            return;
-          }
+          if (next && typeof next === "object" && next.counters) { data = next; render(data); return; }
         } catch (error) {}
       }
-
-      render(currentData);
+      render(data);
     }
 
-    render(currentData);
+    render(data);
     refresh();
     setInterval(refresh, refreshSeconds * 1000);
   })();
