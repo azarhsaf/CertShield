@@ -951,6 +951,9 @@ def _monitoring_live_snapshot(
     web_user_values = []
 
     connected_heartbeats = []
+    live_admin_sessions = []
+    live_web_activity = []
+    live_pki_roles = []
 
     for agent in agents:
         last_seen_at = getattr(agent, "last_heartbeat", None) or agent.last_seen_at
@@ -974,6 +977,11 @@ def _monitoring_live_snapshot(
 
         if not isinstance(services, dict):
             services = {}
+
+        resources = state.get("resources")
+
+        if not isinstance(resources, dict):
+            resources = {}
 
         auditing = state.get("auditing")
 
@@ -1009,16 +1017,78 @@ def _monitoring_live_snapshot(
 
         if connected and isinstance(sessions, list):
             active_admin_values.append(len(sessions))
+
+            for session in sessions[:25]:
+                if not isinstance(session, dict):
+                    continue
+
+                live_admin_sessions.append(
+                    {
+                        "agent_id": agent.id,
+                        "hostname": agent.hostname,
+                        "ca_name": agent.ca_name,
+                        "username": session.get("username", ""),
+                        "state": session.get("state", ""),
+                        "idle": session.get("idle", ""),
+                        "logon": session.get("logon", ""),
+                        "raw": session.get("raw", ""),
+                    }
+                )
         else:
             admin_count = metadata.get("active_session_count")
 
             if connected and isinstance(admin_count, int):
                 active_admin_values.append(admin_count)
 
+        pki_roles = state.get("pki_roles")
+
+        if connected and isinstance(pki_roles, list):
+            for role in pki_roles[:100]:
+                if not isinstance(role, dict):
+                    continue
+
+                live_pki_roles.append(
+                    {
+                        "agent_id": agent.id,
+                        "hostname": agent.hostname,
+                        "ca_name": agent.ca_name,
+                        "role_name": role.get("role_name", ""),
+                        "group_name": role.get("group_name", ""),
+                        "role_type": role.get("role_type", ""),
+                        "member": role.get("member", ""),
+                        "source": role.get("source", ""),
+                        "active_now": bool(role.get("active_now")),
+                        "meaning": role.get("meaning", ""),
+                    }
+                )
+
         web_activity = state.get("web_activity")
 
         if connected and isinstance(web_activity, list):
             web_user_values.append(len(web_activity))
+
+            for item in web_activity[:50]:
+                if not isinstance(item, dict):
+                    continue
+
+                live_web_activity.append(
+                    {
+                        "agent_id": agent.id,
+                        "hostname": agent.hostname,
+                        "ca_name": agent.ca_name,
+                        "time": item.get("time", ""),
+                        "username": item.get("username", ""),
+                        "source_ip": item.get("source_ip", ""),
+                        "method": item.get("method", ""),
+                        "uri": item.get("uri", ""),
+                        "status": item.get("status", ""),
+                        "action": item.get("action", ""),
+                        "user_agent": item.get("user_agent", ""),
+                        "time_taken": item.get("time_taken", ""),
+                        "log_file": item.get("log_file", ""),
+                        "raw": item.get("raw", ""),
+                    }
+                )
         else:
             web_count = metadata.get("web_enrollment_user_count")
 
@@ -1053,6 +1123,10 @@ def _monitoring_live_snapshot(
                 "role_label": role_label,
                 "certsvc": certsvc,
                 "w3svc": w3svc,
+                "resources": resources,
+                "cpu_percent": resources.get("cpu_percent"),
+                "memory_percent": resources.get("memory_percent"),
+                "disk_free_percent": resources.get("disk_free_percent"),
                 "audit_applicable": is_ca,
                 "audit_success_enabled": (bool(agent.audit_success_enabled) if is_ca else None),
                 "audit_failure_enabled": (bool(agent.audit_failure_enabled) if is_ca else None),
@@ -1065,6 +1139,51 @@ def _monitoring_live_snapshot(
         )
 
     snapshot["agents"] = agent_rows
+
+    resource_agent = None
+
+    for candidate in agent_rows:
+        if candidate.get("connected") and candidate.get("is_ca"):
+            resource_agent = candidate
+            break
+
+    if resource_agent is None:
+        for candidate in agent_rows:
+            if candidate.get("connected"):
+                resource_agent = candidate
+                break
+
+    resource_values = (
+        resource_agent.get("resources")
+        if isinstance(resource_agent, dict)
+        else {}
+    ) or {}
+
+    resource_network = resource_values.get("network")
+
+    if not isinstance(resource_network, dict):
+        resource_network = {}
+
+    snapshot["resource_pulse"] = {
+        "hostname": (
+            resource_agent.get("hostname")
+            if isinstance(resource_agent, dict)
+            else ""
+        ),
+        "ca_name": (
+            resource_agent.get("ca_name")
+            if isinstance(resource_agent, dict)
+            else ""
+        ),
+        "cpu_percent": resource_values.get("cpu_percent"),
+        "memory_percent": resource_values.get("memory_percent"),
+        "disk_free_percent": resource_values.get("disk_free_percent"),
+        "disk_used_percent": resource_values.get("disk_used_percent"),
+        "network": resource_network,
+        "collected_at": resource_values.get("collected_at"),
+        "sample_type": resource_values.get("sample_type"),
+    }
+
     snapshot["agent_connected"] = bool(connected_agents)
 
     snapshot["connected_agent_count"] = len(connected_agents)
@@ -1111,6 +1230,15 @@ def _monitoring_live_snapshot(
     counters["active_admins"] = sum(active_admin_values) if active_admin_values else None
 
     counters["web_users"] = sum(web_user_values) if web_user_values else None
+
+    snapshot["admin_sessions"] = live_admin_sessions[:50]
+    snapshot["web_enrollment_activity"] = live_web_activity[:100]
+    snapshot["pki_roles"] = live_pki_roles[:150]
+    snapshot["active_pki_roles"] = [
+        role
+        for role in live_pki_roles
+        if role.get("active_now")
+    ][:50]
 
     ca_agents = [agent for agent in agent_rows if agent["is_ca"]]
 
@@ -1314,32 +1442,80 @@ def _monitoring_live_snapshot(
             "info": "info",
         }
 
-        snapshot["events"] = [
-            {
+        def _display_monitoring_event(event: MonitoringEvent) -> dict:
+            details = event.details_json if isinstance(event.details_json, dict) else {}
+            event_type = str(event.event_type or "")
+            category = str(event.category or "")
+            severity = str(event.severity or "info").lower()
+
+            kind = category
+            tone = tone_map.get(severity, "info")
+            title = event.title
+            summary = event.summary
+
+            if category == "adcs_audit":
+                kind = "infrastructure"
+
+                adcs_event_id = event_type.replace("windows_event_", "").strip()
+
+                adcs_titles = {
+                    "4880": "Certificate Services started",
+                    "4881": "Certificate Services stopped",
+                    "4886": "Certificate Services received a certificate request",
+                    "4887": "Certificate Services approved and issued a certificate",
+                    "4888": "Certificate Services denied a certificate request",
+                    "4889": "Certificate Services set a request to pending",
+                    "4890": "Certificate Services certificate manager settings changed",
+                    "4896": "One or more rows were deleted from the certificate database",
+                    "4897": "Certificate Services role separation setting changed",
+                }
+
+                title = adcs_titles.get(
+                    adcs_event_id,
+                    f"AD CS audit event {adcs_event_id or event.id}",
+                )
+
+                if adcs_event_id in {"4881", "4888", "4896", "4897"}:
+                    tone = "warning"
+                elif adcs_event_id in {"4880", "4887"}:
+                    tone = "success"
+                else:
+                    tone = "info"
+
+                if not summary:
+                    summary = (
+                        f"Real Windows Security audit event {adcs_event_id} "
+                        "was collected from the monitored Certification Authority."
+                    )
+
+            return {
                 "id": event.id,
-                "kind": event.category,
-                "tone": tone_map.get(
-                    event.severity.lower(),
-                    "info",
-                ),
-                "title": event.title,
-                "summary": event.summary,
+                "kind": kind,
+                "tone": tone,
+                "title": title,
+                "summary": summary,
                 "actor": event.actor,
                 "source_ip": event.source_ip,
                 "time": event.occurred_at.isoformat(),
-                "object": (
-                    event.details_json.get("object", "")
-                    if isinstance(
-                        event.details_json,
-                        dict,
-                    )
-                    else ""
-                ),
+                "object": details.get("object", ""),
             }
+
+        snapshot["events"] = [
+            _display_monitoring_event(event)
             for event in events[:60]
         ]
 
-        active_alert_events = [event for event in events if event.severity.lower() in {"critical", "high"}]
+        active_alert_events = [
+            event
+            for event in events
+            if (
+                event.severity.lower() in {"critical", "high"}
+                or (
+                    event.category == "adcs_audit"
+                    and str(event.event_type or "").replace("windows_event_", "") in {"4881", "4888", "4896", "4897"}
+                )
+            )
+        ]
 
         counters["active_alerts"] = len(active_alert_events)
 
