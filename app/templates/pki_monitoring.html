@@ -1,208 +1,236 @@
 {% extends 'base.html' %}
 {% block content %}
 
-
-<div class="monitoring-page kfops-page">
-
-  <script
-    id="monitoringInitialData"
-    type="application/json"
-  >{{ monitoring|tojson }}</script>
+<div class="monitoring-page cs-soc-page">
+  <script id="monitoringInitialData" type="application/json">{{ monitoring|tojson }}</script>
 
   <style>
-    .kfops-page {
-      background: #f3f6fa;
+    .cs-soc-page {
+      --cs-ink: #dbeafe;
+      --cs-text: #102033;
+      --cs-muted: #64748b;
+      --cs-subtle: #8aa0b8;
+      --cs-line: #d6e0ec;
+      --cs-panel: rgba(255, 255, 255, .94);
+      --cs-panel-strong: #ffffff;
+      --cs-blue: #2f80ed;
+      --cs-cyan: #06aed5;
+      --cs-green: #17b26a;
+      --cs-amber: #f59e0b;
+      --cs-red: #ef4444;
+      --cs-purple: #7c3aed;
+      background:
+        radial-gradient(circle at 18% 0%, rgba(47, 128, 237, .30), transparent 28%),
+        radial-gradient(circle at 88% 8%, rgba(6, 174, 213, .18), transparent 28%),
+        linear-gradient(180deg, #081a2d 0, #0d2741 172px, #eef4fb 172px, #f7fafc 100%);
+      color: var(--cs-text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       min-height: calc(100vh - 105px);
       padding: 0;
-      color: #172033;
-      font-family:
-        Inter,
-        ui-sans-serif,
-        system-ui,
-        -apple-system,
-        BlinkMacSystemFont,
-        "Segoe UI",
-        sans-serif;
     }
 
-    .kf-shell {
+    .soc-shell {
       display: grid;
-      grid-template-columns: 72px minmax(0, 1fr);
+      grid-template-columns: 54px minmax(0, 1fr);
+      gap: 0;
       min-height: calc(100vh - 105px);
-      border-top: 1px solid #d9e2ef;
     }
 
-    .kf-rail {
-      background: #0f2a45;
-      color: #c9d9ea;
-      padding: 14px 10px;
+    .soc-rail {
+      background: linear-gradient(180deg, rgba(3, 14, 27, .96), rgba(9, 31, 54, .96));
+      border-right: 1px solid rgba(148, 163, 184, .20);
+      color: #9fb6cf;
+      padding: 10px 7px;
       display: flex;
       flex-direction: column;
-      gap: 10px;
-      box-shadow: inset -1px 0 0 rgba(255,255,255,.08);
-    }
-
-    .kf-logo {
-      height: 42px;
-      border-radius: 12px;
-      background: linear-gradient(135deg, #2f80ed, #20c997);
-      color: #fff;
-      font-weight: 900;
-      display: grid;
-      place-items: center;
-      letter-spacing: -.04em;
-      margin-bottom: 8px;
-    }
-
-    .kf-nav {
-      border: 0;
-      background: transparent;
-      color: #9fb6cf;
-      height: 44px;
-      border-radius: 12px;
-      cursor: pointer;
-      font-size: 11px;
-      font-weight: 800;
-      letter-spacing: .08em;
-      text-transform: uppercase;
-    }
-
-    .kf-nav.active,
-    .kf-nav:hover {
-      background: rgba(255,255,255,.10);
-      color: #fff;
-    }
-
-    .kf-main {
-      min-width: 0;
-      display: grid;
-      grid-template-rows: auto auto minmax(0, 1fr);
-      gap: 12px;
-      padding: 14px;
-      overflow: hidden;
-    }
-
-    .kf-command {
-      background: #ffffff;
-      border: 1px solid #d9e2ef;
-      border-radius: 14px;
-      box-shadow: 0 10px 28px rgba(15, 42, 69, .08);
-      padding: 14px 16px;
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 16px;
-      align-items: center;
-    }
-
-    .kf-breadcrumb {
-      color: #64748b;
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: .12em;
-      font-weight: 900;
-    }
-
-    .kf-title-row {
-      margin-top: 4px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      min-width: 0;
-    }
-
-    .kf-title-row h1 {
-      margin: 0;
-      color: #0f172a;
-      font-size: 24px;
-      line-height: 1.1;
-      letter-spacing: -.04em;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .kf-scope {
-      color: #475569;
-      font-size: 13px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .kf-actions {
-      display: flex;
       align-items: center;
       gap: 8px;
     }
 
-    .kf-live {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      border-radius: 999px;
-      padding: 7px 11px;
-      background: #e8fbf1;
-      color: #067647;
-      border: 1px solid #b7f1d0;
-      font-size: 12px;
-      font-weight: 900;
-      white-space: nowrap;
-    }
-
-    .kf-live i {
-      width: 9px;
-      height: 9px;
-      border-radius: 999px;
-      background: #17b26a;
-      box-shadow: 0 0 0 0 rgba(23,178,106,.55);
-      animation: kfPulse 1.7s infinite;
-    }
-
-    @keyframes kfPulse {
-      0% { box-shadow: 0 0 0 0 rgba(23,178,106,.55); }
-      70% { box-shadow: 0 0 0 10px rgba(23,178,106,0); }
-      100% { box-shadow: 0 0 0 0 rgba(23,178,106,0); }
-    }
-
-    .kf-small {
-      color: #64748b;
-      font-size: 12px;
-      white-space: nowrap;
-    }
-
-    .kf-kpis {
+    .soc-mark {
+      width: 36px;
+      height: 36px;
       display: grid;
-      grid-template-columns: repeat(7, minmax(0, 1fr));
-      gap: 10px;
+      place-items: center;
+      border-radius: 11px;
+      background: linear-gradient(135deg, var(--cs-blue), var(--cs-cyan));
+      color: #fff;
+      font-size: 13px;
+      font-weight: 950;
+      letter-spacing: -.05em;
+      box-shadow: 0 10px 22px rgba(47, 128, 237, .30);
+      margin-bottom: 6px;
     }
 
-    .kf-kpi {
-      background: #ffffff;
-      border: 1px solid #d9e2ef;
-      border-radius: 12px;
-      box-shadow: 0 8px 18px rgba(15, 42, 69, .055);
-      padding: 10px 12px;
-      min-width: 0;
-      border-top: 3px solid var(--tone, #2f80ed);
-    }
-
-    .kf-kpi label {
-      display: block;
-      color: #64748b;
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: .10em;
+    .soc-nav {
+      width: 38px;
+      min-height: 34px;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      background: transparent;
+      color: #9fb6cf;
+      font-size: 9px;
       font-weight: 900;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    .soc-nav.active,
+    .soc-nav:hover {
+      background: rgba(47, 128, 237, .18);
+      border-color: rgba(125, 187, 255, .24);
+      color: #fff;
+    }
+
+    .soc-main {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      gap: 10px;
+      padding: 10px;
+    }
+
+    .soc-command {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      color: var(--cs-ink);
+      min-height: 58px;
+    }
+
+    .soc-title-row {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+    }
+
+    .soc-title-row h1 {
+      margin: 0;
+      color: #ffffff;
+      font-size: 18px;
+      line-height: 1;
+      font-weight: 950;
+      letter-spacing: -.035em;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
-    .kf-kpi strong {
+    .soc-scope {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      color: #b7c8dc;
+      font-size: 11px;
+      font-weight: 750;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .soc-subline {
+      margin-top: 6px;
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .soc-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .soc-chip,
+    .soc-pill,
+    .soc-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      white-space: nowrap;
+      line-height: 1;
+    }
+
+    .soc-chip {
+      padding: 5px 8px;
+      color: #c7d7ea;
+      background: rgba(255, 255, 255, .08);
+      border: 1px solid rgba(203, 213, 225, .16);
+      font-size: 10px;
+      font-weight: 850;
+    }
+
+    .soc-chip strong {
+      color: #fff;
+      font-weight: 950;
+    }
+
+    .soc-pulse-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: var(--cs-green);
+      box-shadow: 0 0 0 0 rgba(23, 178, 106, .62);
+      animation: socPulse 1.7s infinite;
+    }
+
+    .soc-pulse-dot.waiting {
+      background: var(--cs-amber);
+      box-shadow: 0 0 0 0 rgba(245, 158, 11, .55);
+    }
+
+    @keyframes socPulse {
+      0% { box-shadow: 0 0 0 0 currentColor; }
+      70% { box-shadow: 0 0 0 8px rgba(23, 178, 106, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(23, 178, 106, 0); }
+    }
+
+    .soc-kpis {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .soc-kpi {
+      position: relative;
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid rgba(203, 213, 225, .70);
+      border-radius: 12px;
+      background: var(--cs-panel);
+      box-shadow: 0 12px 26px rgba(15, 42, 69, .08);
+      padding: 9px 10px 8px;
+    }
+
+    .soc-kpi::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 3px;
+      background: var(--tone, var(--cs-blue));
+    }
+
+    .soc-kpi label,
+    .soc-panel-kicker,
+    .soc-feed-source {
+      color: #60758c;
+      font-size: 9px;
+      font-weight: 950;
+      letter-spacing: .09em;
+      text-transform: uppercase;
+    }
+
+    .soc-kpi strong {
       display: block;
-      color: #0f172a;
       margin-top: 5px;
-      font-size: 22px;
+      color: #0f172a;
+      font-size: 17px;
       line-height: 1;
       font-weight: 950;
       white-space: nowrap;
@@ -210,461 +238,477 @@
       text-overflow: ellipsis;
     }
 
-    .kf-kpi small {
+    .soc-kpi small {
       display: block;
       margin-top: 5px;
-      color: #64748b;
-      font-size: 11px;
+      color: var(--cs-muted);
+      font-size: 10px;
+      font-weight: 700;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
-    .kf-workspace {
+    .soc-workspace {
       min-height: 0;
       display: grid;
-      grid-template-columns: minmax(0, 1.55fr) 380px;
-      gap: 12px;
-      overflow: hidden;
+      grid-template-columns: 290px minmax(430px, 1fr) 330px;
+      gap: 10px;
     }
 
-    .kf-left,
-    .kf-right {
+    .soc-stack {
       min-height: 0;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
       overflow: hidden;
     }
 
-    .kf-panel {
-      background: #ffffff;
-      border: 1px solid #d9e2ef;
+    .soc-panel {
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      border: 1px solid rgba(203, 213, 225, .82);
       border-radius: 14px;
-      box-shadow: 0 10px 24px rgba(15, 42, 69, .06);
+      background: var(--cs-panel-strong);
+      box-shadow: 0 16px 34px rgba(15, 42, 69, .085);
       overflow: hidden;
-      min-height: 0;
-      display: flex;
-      flex-direction: column;
     }
 
-    .kf-panel-head {
+    .soc-panel-head {
       flex: 0 0 auto;
-      padding: 10px 12px;
-      border-bottom: 1px solid #e2e8f0;
-      background: linear-gradient(180deg, #fff, #f9fbfd);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
-    }
-
-    .kf-panel-head span {
-      display: block;
-      color: #2563eb;
-      font-size: 10px;
-      letter-spacing: .12em;
-      text-transform: uppercase;
-      font-weight: 900;
-    }
-
-    .kf-panel-head strong {
-      display: block;
-      color: #0f172a;
-      font-size: 14px;
-      margin-top: 2px;
-      font-weight: 950;
-    }
-
-    .kf-chip {
-      border-radius: 999px;
-      padding: 4px 8px;
-      background: #edf4ff;
-      color: #1d4ed8;
-      font-size: 11px;
-      font-weight: 900;
-      white-space: nowrap;
-    }
-
-    .kf-body {
-      min-height: 0;
-      overflow: auto;
-      padding: 10px;
-    }
-
-    .kf-ca-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
-
-    .kf-ca-card {
-      border: 1px solid #e2e8f0;
-      background: #f8fbff;
-      border-radius: 11px;
-      padding: 9px;
-      min-width: 0;
-    }
-
-    .kf-ca-card label {
-      display: block;
-      color: #64748b;
-      font-size: 10px;
-      font-weight: 900;
-      letter-spacing: .08em;
-      text-transform: uppercase;
-    }
-
-    .kf-ca-card strong {
-      display: block;
-      color: #0f172a;
-      margin-top: 5px;
-      font-size: 13px;
-      font-weight: 900;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .kf-resource-line {
-      display: grid;
-      grid-template-columns: 48px minmax(0, 1fr) 58px;
-      gap: 8px;
-      align-items: center;
-      font-size: 11px;
-      color: #475569;
-      margin-bottom: 7px;
-    }
-
-    .kf-bar {
-      height: 7px;
-      border-radius: 999px;
-      background: #dbe5f0;
-      overflow: hidden;
-    }
-
-    .kf-bar i {
-      display: block;
-      height: 100%;
-      width: var(--w, 0%);
-      border-radius: inherit;
-      background: linear-gradient(90deg, #2f80ed, #20c997);
-    }
-
-    .kf-netline {
-      border-top: 1px dashed #d9e2ef;
-      margin-top: 8px;
-      padding-top: 8px;
-      color: #64748b;
-      font-size: 11px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .kf-table-wrap {
-      min-height: 0;
-      overflow: auto;
-    }
-
-    .kf-table {
-      width: 100%;
-      border-collapse: collapse;
-      table-layout: fixed;
-      font-size: 12px;
-    }
-
-    .kf-table thead th {
-      position: sticky;
-      top: 0;
-      z-index: 1;
-      background: #f8fbff;
-      color: #64748b;
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: .08em;
-      text-align: left;
-      padding: 8px 10px;
+      gap: 10px;
+      padding: 9px 10px;
+      background: linear-gradient(180deg, #ffffff, #f5f8fc);
       border-bottom: 1px solid #e2e8f0;
     }
 
-    .kf-table tbody td {
-      padding: 8px 10px;
-      border-bottom: 1px solid #eef2f7;
-      color: #172033;
-      vertical-align: middle;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+    .soc-panel-title {
+      margin-top: 2px;
+      color: #102033;
+      font-size: 13px;
+      font-weight: 950;
+      letter-spacing: -.01em;
     }
 
-    .kf-table tbody tr:hover {
-      background: #f8fbff;
+    .soc-panel-body {
+      min-height: 0;
+      overflow: auto;
+      padding: 9px;
     }
 
-    .kf-event-title {
-      font-weight: 800;
-      color: #0f172a;
-    }
-
-    .kf-muted {
-      color: #64748b;
-    }
-
-    .kf-status {
-      display: inline-flex;
-      align-items: center;
-      border-radius: 999px;
-      padding: 3px 8px;
-      font-size: 10px;
-      font-weight: 900;
-      text-transform: uppercase;
-      background: #edf4ff;
+    .soc-pill {
+      padding: 4px 7px;
+      border: 1px solid #d9e4f0;
+      background: #eef5ff;
       color: #1d4ed8;
-      max-width: 100%;
+      font-size: 10px;
+      font-style: normal;
+      font-weight: 950;
     }
 
-    .kf-status.success,
-    .kf-status.running,
-    .kf-status.online,
-    .kf-status.ready,
-    .kf-status.http-200 {
-      background: #e8fbf1;
-      color: #067647;
-    }
+    .soc-pill.good { background: #e8fbf1; border-color: #b7f1d0; color: #067647; }
+    .soc-pill.warn { background: #fff6df; border-color: #fde3a7; color: #b54708; }
+    .soc-pill.bad { background: #feecec; border-color: #ffc9c9; color: #b42318; }
+    .soc-pill.dark { background: #102033; border-color: #263b55; color: #dbeafe; }
 
-    .kf-status.warning,
-    .kf-status.http-401,
-    .kf-status.http-403 {
-      background: #fff6df;
-      color: #b54708;
-    }
-
-    .kf-status.danger,
-    .kf-status.high,
-    .kf-status.critical,
-    .kf-status.offline {
-      background: #feecec;
-      color: #b42318;
-    }
-
-    .kf-split {
+    .soc-runtime-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 12px;
-      min-height: 210px;
+      gap: 7px;
     }
 
-    .kf-request-row {
-      display: grid;
-      grid-template-columns: 68px minmax(0, 1fr) 32px;
-      gap: 8px;
-      align-items: center;
-      margin-bottom: 8px;
+    .soc-mini-card {
+      min-width: 0;
+      padding: 8px;
+      border: 1px solid #e1e8f1;
+      border-radius: 10px;
+      background: linear-gradient(180deg, #fbfdff, #f7faff);
+    }
+
+    .soc-mini-card label {
+      display: block;
+      color: var(--cs-muted);
+      font-size: 9px;
+      font-weight: 950;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+    }
+
+    .soc-mini-card strong {
+      display: block;
+      margin-top: 5px;
+      color: #0f172a;
       font-size: 12px;
-      color: #475569;
+      font-weight: 900;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
-    .kf-list {
+    .soc-meter-row {
+      display: grid;
+      grid-template-columns: 52px minmax(0, 1fr) 58px;
+      gap: 7px;
+      align-items: center;
+      margin-top: 8px;
+      color: #475569;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .soc-meter {
+      height: 7px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #dbe5f0;
+    }
+
+    .soc-meter i {
+      display: block;
+      width: var(--w, 0%);
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--tone, var(--cs-blue)), var(--cs-cyan));
+    }
+
+    .soc-net {
+      margin-top: 9px;
+      padding-top: 8px;
+      border-top: 1px dashed #d6e0ec;
+      color: #64748b;
+      font-size: 10.5px;
+      line-height: 1.45;
+    }
+
+    .soc-feed {
       display: flex;
       flex-direction: column;
       gap: 7px;
     }
 
-    .kf-list-item {
+    .soc-feed-card {
+      position: relative;
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-columns: 6px minmax(0, 1fr) auto;
       gap: 8px;
       align-items: center;
-      border: 1px solid #e2e8f0;
+      min-width: 0;
+      padding: 8px;
+      border: 1px solid #e1e8f1;
+      border-radius: 11px;
       background: #fff;
-      border-radius: 10px;
-      padding: 8px 9px;
+      box-shadow: 0 6px 14px rgba(15, 42, 69, .035);
+    }
+
+    .soc-feed-card:hover { border-color: #bdd3ec; background: #fbfdff; }
+
+    .soc-severity {
+      width: 6px;
+      align-self: stretch;
+      border-radius: 999px;
+      background: var(--tone, var(--cs-blue));
+    }
+
+    .soc-feed-main { min-width: 0; }
+
+    .soc-feed-top {
+      display: flex;
+      gap: 6px;
+      align-items: center;
       min-width: 0;
     }
 
-    .kf-list-item strong {
-      display: block;
-      font-size: 12px;
+    .soc-feed-title {
+      min-width: 0;
       color: #0f172a;
-      font-weight: 850;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .kf-list-item span {
-      display: block;
-      margin-top: 2px;
-      font-size: 11px;
-      color: #64748b;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .kf-empty {
-      color: #64748b;
       font-size: 12px;
+      font-weight: 900;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .soc-feed-meta {
+      margin-top: 3px;
+      color: var(--cs-muted);
+      font-size: 10.5px;
+      line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .soc-status {
+      justify-content: center;
+      max-width: 112px;
+      padding: 4px 7px;
+      background: #edf4ff;
+      color: #1d4ed8;
+      font-size: 9px;
+      font-weight: 950;
+      text-transform: uppercase;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .soc-status.good { background: #e8fbf1; color: #067647; }
+    .soc-status.warn { background: #fff6df; color: #b54708; }
+    .soc-status.bad { background: #feecec; color: #b42318; }
+    .soc-status.neutral { background: #eef2f7; color: #475569; }
+
+    .soc-table-wrap {
+      min-height: 0;
+      overflow: auto;
+    }
+
+    .soc-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      table-layout: fixed;
+      font-size: 11.5px;
+    }
+
+    .soc-table th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      padding: 8px 9px;
+      background: #f5f8fc;
+      color: #60758c;
+      border-bottom: 1px solid #e1e8f1;
+      font-size: 9px;
+      font-weight: 950;
+      letter-spacing: .08em;
+      text-align: left;
+      text-transform: uppercase;
+    }
+
+    .soc-table td {
+      padding: 8px 9px;
+      border-bottom: 1px solid #eef3f8;
+      color: #1f2f46;
+      vertical-align: middle;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .soc-table tr:hover td { background: #f8fbff; }
+    .soc-table .event-title { color: #0f172a; font-weight: 900; }
+    .soc-muted { color: var(--cs-muted); }
+
+    .soc-filter-row {
+      display: flex;
+      gap: 6px;
+      padding: 8px 9px;
+      border-bottom: 1px solid #e1e8f1;
+      background: #fbfdff;
+      overflow-x: auto;
+    }
+
+    .soc-filter {
+      border: 1px solid #d7e1ed;
+      border-radius: 999px;
+      background: #fff;
+      color: #475569;
+      padding: 5px 8px;
+      font-size: 10px;
+      font-weight: 900;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+
+    .soc-filter.active {
+      background: #102033;
+      border-color: #102033;
+      color: #fff;
+    }
+
+    .soc-request-row {
+      display: grid;
+      grid-template-columns: 64px minmax(0, 1fr) 34px;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+      color: #475569;
+      font-size: 11px;
+      font-weight: 850;
+    }
+
+    .soc-action-form {
+      margin: 7px 0 0;
+    }
+
+    .soc-action-button {
+      width: 100%;
+      border: 1px solid #f7c56b;
+      border-radius: 9px;
+      background: linear-gradient(180deg, #fff7e6, #ffedc2);
+      color: #92400e;
+      padding: 6px 8px;
+      font-size: 10px;
+      font-weight: 950;
+      letter-spacing: .03em;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+
+    .soc-action-button:hover {
+      background: #ffe6aa;
+    }
+
+    .soc-empty {
       padding: 10px;
       border: 1px dashed #cbd5e1;
-      border-radius: 10px;
+      border-radius: 11px;
       background: #f8fbff;
+      color: #64748b;
+      font-size: 11px;
+      font-weight: 700;
     }
 
-    .kf-bottom-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-      min-height: 0;
+    .soc-sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
     }
 
-    @media (max-width: 1280px) {
-      .kf-kpis {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-      }
+    @media (max-width: 1380px) {
+      .soc-workspace { grid-template-columns: 270px minmax(390px, 1fr) 310px; }
+      .soc-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    }
 
-      .kf-workspace {
-        grid-template-columns: 1fr;
-        overflow: visible;
-      }
-
-      .kf-shell {
-        grid-template-columns: 1fr;
-      }
-
-      .kf-rail {
-        display: none;
-      }
-
-      .kf-main {
-        overflow: visible;
-      }
+    @media (max-width: 1120px) {
+      .soc-shell { grid-template-columns: 1fr; }
+      .soc-rail { display: none; }
+      .soc-workspace { grid-template-columns: 1fr; overflow: visible; }
+      .soc-stack { overflow: visible; }
+      .soc-main { overflow: visible; }
+      .soc-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .soc-command { grid-template-columns: 1fr; }
+      .soc-actions { justify-content: flex-start; }
     }
   </style>
 
-  <section class="kf-shell" id="kfOps">
-    <nav class="kf-rail">
-      <div class="kf-logo">CS</div>
-      <button class="kf-nav active">Ops</button>
-      <button class="kf-nav">CA</button>
-      <button class="kf-nav">Events</button>
-      <button class="kf-nav">Users</button>
-      <button class="kf-nav">Req</button>
+  <input id="socCsrfToken" type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <h2 class="soc-sr-only">PKI Live Operations Centre</h2>
+  <span class="soc-sr-only">Snapshot mode</span>
+  <span class="soc-sr-only">What needs attention now?</span>
+  <span class="soc-sr-only">Activity timeline</span>
+
+  <section class="soc-shell" id="socOps">
+    <nav class="soc-rail" aria-label="PKI monitoring navigation">
+      <div class="soc-mark">CS</div>
+      <button class="soc-nav active" type="button">Ops</button>
+      <button class="soc-nav" type="button">CA</button>
+      <button class="soc-nav" type="button">Tape</button>
+      <button class="soc-nav" type="button">ACL</button>
+      <button class="soc-nav" type="button">Req</button>
     </nav>
 
-    <main class="kf-main">
-      <section class="kf-command">
+    <main class="soc-main">
+      <section class="soc-command">
         <div>
-          <div class="kf-breadcrumb">CertShield / PKI Monitoring / Live Operations</div>
-          <div class="kf-title-row">
-            <h1 id="kfTitle">PKI Operations</h1>
-            <span class="kf-scope" id="kfScope">Loading telemetry…</span>
+          <div class="soc-title-row">
+            <h1 id="socTitle">PKI Ops</h1>
+            <span class="soc-scope" id="socScope">Loading telemetry…</span>
           </div>
+          <div class="soc-subline" id="socSubline"></div>
         </div>
-
-        <div class="kf-actions">
-          <span class="kf-live"><i></i><span id="kfLiveState">Live</span></span>
-          <span class="kf-small" id="kfLastSeen">—</span>
+        <div class="soc-actions">
+          <span class="soc-chip"><i class="soc-pulse-dot" id="socPulseDot"></i><strong id="socLiveState">Waiting</strong></span>
+          <span class="soc-chip">Sample <strong id="socLastSample">—</strong></span>
+          <span class="soc-chip">Refresh <strong id="socRefreshState">10s</strong></span>
         </div>
       </section>
 
-      <section class="kf-kpis" id="kfKpis"></section>
+      <section class="soc-kpis" id="socKpis"></section>
 
-      <section class="kf-workspace">
-        <div class="kf-left">
-          <article class="kf-panel" style="flex: 1.15;">
-            <header class="kf-panel-head">
-              <div>
-                <span>Live tape</span>
-                <strong>Operational activity stream</strong>
-              </div>
-              <em class="kf-chip" id="kfEventCount">—</em>
+      <section class="soc-workspace">
+        <aside class="soc-stack">
+          <article class="soc-panel">
+            <header class="soc-panel-head">
+              <div><div class="soc-panel-kicker">CA Runtime</div><div class="soc-panel-title">Services</div></div>
+              <em class="soc-pill" id="socRuntimeState">—</em>
             </header>
-
-            <div class="kf-table-wrap">
-              <table class="kf-table">
-                <thead>
-                  <tr>
-                    <th style="width: 86px;">Time</th>
-                    <th style="width: 92px;">Source</th>
-                    <th>Action</th>
-                    <th style="width: 170px;">Actor / Endpoint</th>
-                    <th style="width: 92px;">Status</th>
-                  </tr>
-                </thead>
-                <tbody id="kfEventRows"></tbody>
-              </table>
+            <div class="soc-panel-body">
+              <div class="soc-runtime-grid" id="socRuntimeCards"></div>
             </div>
           </article>
 
-          <div class="kf-bottom-grid">
-            <article class="kf-panel">
-              <header class="kf-panel-head">
-                <div>
-                  <span>CA runtime</span>
-                  <strong>Service and host pulse</strong>
-                </div>
-                <em class="kf-chip" id="kfRuntimeState">—</em>
-              </header>
-              <div class="kf-body">
-                <div class="kf-ca-grid" id="kfRuntimeCards"></div>
-                <div style="height: 10px;"></div>
-                <div id="kfResources"></div>
-              </div>
-            </article>
+          <article class="soc-panel">
+            <header class="soc-panel-head">
+              <div><div class="soc-panel-kicker">Host Pulse</div><div class="soc-panel-title">Resources</div></div>
+              <em class="soc-pill dark" id="socPulseType">sample</em>
+            </header>
+            <div class="soc-panel-body" id="socResources"></div>
+          </article>
 
-            <article class="kf-panel">
-              <header class="kf-panel-head">
-                <div>
-                  <span>Requests</span>
-                  <strong>Certificate request mix</strong>
-                </div>
-                <em class="kf-chip" id="kfRequestTotal">0 total</em>
-              </header>
-              <div class="kf-body" id="kfRequests"></div>
-            </article>
+          <article class="soc-panel" style="flex:1;">
+            <header class="soc-panel-head">
+              <div><div class="soc-panel-kicker">Sensor</div><div class="soc-panel-title">Agent Pulse</div></div>
+              <em class="soc-pill" id="socAgentCount">—</em>
+            </header>
+            <div class="soc-panel-body"><div class="soc-feed" id="socAgentFeed"></div></div>
+          </article>
+        </aside>
+
+        <section class="soc-panel" style="min-height:420px;">
+          <header class="soc-panel-head">
+            <div><div class="soc-panel-kicker">Live Tape</div><div class="soc-panel-title">Operational Stream</div></div>
+            <em class="soc-pill dark" id="socEventCount">—</em>
+          </header>
+          <div class="soc-filter-row" id="socFilters"></div>
+          <div class="soc-table-wrap">
+            <table class="soc-table">
+              <thead>
+                <tr>
+                  <th style="width:72px;">Time</th>
+                  <th style="width:74px;">Source</th>
+                  <th>Signal</th>
+                  <th style="width:170px;">Actor / Endpoint</th>
+                  <th style="width:92px;">State</th>
+                </tr>
+              </thead>
+              <tbody id="socEventRows"></tbody>
+            </table>
           </div>
-        </div>
+        </section>
 
-        <aside class="kf-right">
-          <article class="kf-panel" style="flex: 1;">
-            <header class="kf-panel-head">
-              <div>
-                <span>Access plane</span>
-                <strong>Admin and CAWE sessions</strong>
-              </div>
-              <em class="kf-chip" id="kfAccessCount">—</em>
+        <aside class="soc-stack">
+          <article class="soc-panel">
+            <header class="soc-panel-head">
+              <div><div class="soc-panel-kicker">Requests</div><div class="soc-panel-title">Request Mix</div></div>
+              <em class="soc-pill" id="socRequestTotal">0 total</em>
             </header>
-            <div class="kf-body">
-              <div class="kf-list" id="kfAccessList"></div>
-            </div>
+            <div class="soc-panel-body" id="socRequests"></div>
           </article>
 
-          <article class="kf-panel" style="flex: 1;">
-            <header class="kf-panel-head">
-              <div>
-                <span>Privileged roles</span>
-                <strong>Role watch</strong>
-              </div>
-              <em class="kf-chip" id="kfRoleCount">—</em>
+          <article class="soc-panel" style="flex:1;">
+            <header class="soc-panel-head">
+              <div><div class="soc-panel-kicker">Access</div><div class="soc-panel-title">Admins + CAWE</div></div>
+              <em class="soc-pill" id="socAccessCount">—</em>
             </header>
-            <div class="kf-body">
-              <div class="kf-list" id="kfRoleList"></div>
-            </div>
+            <div class="soc-panel-body"><div class="soc-feed" id="socAccessFeed"></div></div>
           </article>
 
-          <article class="kf-panel" style="flex: .75;">
-            <header class="kf-panel-head">
-              <div>
-                <span>Sensor</span>
-                <strong>Agent channel</strong>
-              </div>
-              <em class="kf-chip" id="kfAgentCount">—</em>
+          <article class="soc-panel" style="flex:1;">
+            <header class="soc-panel-head">
+              <div><div class="soc-panel-kicker">Roles</div><div class="soc-panel-title">Privileged Watch</div></div>
+              <em class="soc-pill" id="socRoleCount">—</em>
             </header>
-            <div class="kf-body">
-              <div class="kf-list" id="kfAgentList"></div>
-            </div>
+            <div class="soc-panel-body"><div class="soc-feed" id="socRoleFeed"></div></div>
           </article>
         </aside>
       </section>
@@ -674,7 +718,9 @@
   <script>
   (function () {
     const initialNode = document.getElementById("monitoringInitialData");
+    const refreshSeconds = 10;
     let currentData = {};
+    let activeFilter = "All";
 
     try {
       currentData = JSON.parse(initialNode?.textContent || "{}");
@@ -691,100 +737,165 @@
         .replaceAll("'", "&#039;");
     }
 
-    function setText(id, value) {
-      const node = document.getElementById(id);
-      if (node) node.textContent = value ?? "—";
-    }
-
-    function num(value) {
-      const number = Number(value);
-      return Number.isFinite(number) ? number : 0;
-    }
-
-    function pct(value) {
-      const number = Number(value);
-      if (!Number.isFinite(number)) return null;
-      return Math.min(100, Math.max(0, number));
-    }
+    function node(id) { return document.getElementById(id); }
+    function setText(id, value) { const el = node(id); if (el) el.textContent = value ?? "—"; }
+    function num(value) { const n = Number(value); return Number.isFinite(n) ? n : 0; }
+    function pct(value) { const n = Number(value); return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : null; }
+    function compact(value) { return value === undefined || value === null || value === "" ? "—" : value; }
 
     function formatTime(value) {
       if (!value) return "live";
       const date = new Date(value);
       if (!Number.isNaN(date.getTime())) {
-        return date.toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        });
+        return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
       }
-
       const text = String(value);
       if (text.includes(" ")) return text.split(" ").at(-1).slice(0, 8);
       return text.slice(0, 8);
     }
 
     function age(value) {
-      if (!value) return "No sample";
+      if (!value) return "no sample";
       const date = new Date(value);
       if (Number.isNaN(date.getTime())) return String(value).slice(0, 19);
       const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
       if (seconds < 60) return `${seconds}s ago`;
-      return `${Math.floor(seconds / 60)}m ago`;
+      if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+      return `${Math.floor(seconds / 3600)}h ago`;
     }
 
-    function statusClass(value) {
-      const text = String(value || "info").toLowerCase();
-      if (text.includes("200")) return "http-200";
-      if (text.includes("401")) return "http-401";
-      if (text.includes("403")) return "http-403";
-      if (["running", "ready", "online", "success"].some((x) => text.includes(x))) return "success";
-      if (["warning", "pending", "active"].some((x) => text.includes(x))) return "warning";
-      if (["offline", "failed", "critical", "high", "stopped"].some((x) => text.includes(x))) return "danger";
-      return "info";
+    function severity(value) {
+      const text = String(value || "").toLowerCase();
+      if (text.includes("403") || text.includes("401") || text.includes("denied") || text.includes("failed") || text.includes("critical") || text.includes("stopped") || text.includes("offline")) return "bad";
+      if (text.includes("pending") || text.includes("warning") || text.includes("check") || text.includes("active") || text.includes("unknown")) return "warn";
+      if (text.includes("200") || text.includes("running") || text.includes("ready") || text.includes("online") || text.includes("issued") || text.includes("success")) return "good";
+      return "neutral";
+    }
+
+    function tone(value) {
+      const sev = severity(value);
+      if (sev === "good") return "#17b26a";
+      if (sev === "warn") return "#f59e0b";
+      if (sev === "bad") return "#ef4444";
+      return "#2f80ed";
     }
 
     function status(value) {
-      return `<span class="kf-status ${statusClass(value)}">${esc(value || "info")}</span>`;
+      const text = compact(value);
+      return `<span class="soc-status ${severity(text)}">${esc(text)}</span>`;
     }
 
-    function bar(name, value, unit) {
-      const numeric = pct(value);
-      const label = numeric === null
-        ? "N/A"
-        : unit === "Kbps"
-          ? `${Number(value).toFixed(1)} Kbps`
-          : `${Math.round(numeric)}%`;
+    function pillClass(value) {
+      const sev = severity(value);
+      if (sev === "good") return "good";
+      if (sev === "warn") return "warn";
+      if (sev === "bad") return "bad";
+      return "";
+    }
 
-      const width = numeric === null
-        ? 0
-        : unit === "Kbps"
-          ? Math.min(100, numeric)
-          : numeric;
-
+    function meter(name, value, unit, color) {
+      const numeric = unit === "Kbps" ? Number(value) : pct(value);
+      const valid = Number.isFinite(numeric);
+      const width = valid ? (unit === "Kbps" ? Math.min(100, Math.max(0, numeric)) : numeric) : 0;
+      const label = valid ? (unit === "Kbps" ? `${numeric.toFixed(1)} Kbps` : `${Math.round(numeric)}%`) : "N/A";
       return `
-        <div class="kf-resource-line">
+        <div class="soc-meter-row">
           <span>${esc(name)}</span>
-          <span class="kf-bar"><i style="--w:${width}%"></i></span>
+          <span class="soc-meter"><i style="--w:${width}%;--tone:${color || "#2f80ed"}"></i></span>
           <b>${esc(label)}</b>
         </div>
       `;
     }
 
-    function listItem(title, sub, badge) {
+    function feedCard(item) {
+      const badge = item.badge || item.status || item.source || "info";
       return `
-        <div class="kf-list-item">
-          <div>
-            <strong>${esc(title)}</strong>
-            <span>${esc(sub)}</span>
+        <div class="soc-feed-card" style="--tone:${item.tone || tone(badge)}">
+          <i class="soc-severity"></i>
+          <div class="soc-feed-main">
+            <div class="soc-feed-top">
+              <span class="soc-feed-source">${esc(item.source || "Signal")}</span>
+              <span class="soc-muted" style="font-size:10px;">${esc(formatTime(item.time))}</span>
+            </div>
+            <div class="soc-feed-title">${esc(item.title || "Telemetry")}</div>
+            <div class="soc-feed-meta">${esc(item.meta || "—")}</div>
+            ${item.actionHtml || ""}
           </div>
           ${status(badge)}
         </div>
       `;
     }
 
+    function buildEvents(web, events, sessions, roles) {
+      const roleEvents = roles.filter((role) => role.active_now).slice(0, 20).map((role) => ({
+        time: role.time || role.collected_at,
+        source: "Roles",
+        category: "Roles",
+        title: `${role.role_name || "PKI role"} active`,
+        actor: role.member || role.group_name || "member not listed",
+        status: "active",
+      }));
+
+      const sessionEvents = sessions.slice(0, 20).map((session) => ({
+        time: session.logon,
+        source: "Access",
+        category: "Access",
+        title: session.username || "Admin session",
+        actor: `${session.hostname || "host"} · idle ${session.idle || "—"}`,
+        status: session.state || "online",
+      }));
+
+      return [
+        ...web.slice(0, 50).map((item) => ({
+          time: item.time,
+          source: "CAWE",
+          category: "CAWE",
+          title: item.action || "CA Web Enrollment activity",
+          actor: item.username || item.source_ip || "user not recorded",
+          status: item.status ? `HTTP ${item.status}` : "web",
+        })),
+        ...events.slice(0, 50).map((item) => ({
+          time: item.time,
+          source: String(item.kind || "ADCS").toUpperCase(),
+          category: "ADCS",
+          title: item.title || item.summary || "ADCS event",
+          actor: item.actor || item.object || `Event ${item.event_id || ""}`.trim() || "actor not recorded",
+          status: item.tone || item.kind || item.event_id || "event",
+        })),
+        ...sessionEvents,
+        ...roleEvents,
+      ].sort((a, b) => {
+        const da = new Date(a.time || 0).getTime();
+        const db = new Date(b.time || 0).getTime();
+        return (Number.isFinite(db) ? db : 0) - (Number.isFinite(da) ? da : 0);
+      }).slice(0, 80);
+    }
+
+    function renderFilters(events) {
+      const filters = ["All", "ADCS", "CAWE", "Access", "Roles", "System"];
+      const counts = filters.reduce((acc, filter) => {
+        acc[filter] = filter === "All" ? events.length : events.filter((event) => event.category === filter).length;
+        return acc;
+      }, {});
+
+      node("socFilters").innerHTML = filters.map((filter) => `
+        <button class="soc-filter ${activeFilter === filter ? "active" : ""}" type="button" data-filter="${esc(filter)}">
+          ${esc(filter)} ${counts[filter] || 0}
+        </button>
+      `).join("");
+
+      node("socFilters").querySelectorAll("button").forEach((button) => {
+        button.addEventListener("click", () => {
+          activeFilter = button.dataset.filter || "All";
+          render(currentData);
+        });
+      });
+    }
+
     function render(data) {
       const env = data.environment || {};
       const counters = data.counters || {};
+      const outcomes = data.outcomes || {};
       const agents = Array.isArray(data.agents) ? data.agents : [];
       const ca = agents.find((agent) => agent.is_ca) || agents[0] || {};
       const sessions = Array.isArray(data.admin_sessions) ? data.admin_sessions : [];
@@ -794,164 +905,154 @@
       const activeRoles = Array.isArray(data.active_pki_roles) ? data.active_pki_roles : [];
       const pulse = data.resource_pulse || ca.resources || {};
       const network = pulse.network || {};
+      const connected = num(counters.connected_agents) > 0 || Boolean(data.has_connected_monitoring);
+      const lastSample = pulse.collected_at || ca.last_seen_at || data.last_update;
 
-      const connected = num(counters.connected_agents) > 0;
+      setText("socTitle", `${env.name || "PKI"} Ops`);
+      setText("socScope", `${(env.collector_type || "ADCS").toUpperCase()} · ${env.domain_name || env.forest_name || "domain unknown"}`);
+      setText("socLiveState", connected ? "Live sensor" : "Waiting");
+      setText("socLastSample", age(lastSample));
+      setText("socRefreshState", `${refreshSeconds}s`);
+      node("socPulseDot")?.classList.toggle("waiting", !connected);
 
-      setText("kfTitle", `${env.name || "PKI"} Operations`);
-      setText(
-        "kfScope",
-        `${(env.collector_type || "ADCS").toUpperCase()} · ${env.domain_name || env.forest_name || "domain unknown"} · ${data.operating_mode || "monitoring"}`
-      );
-      setText("kfLiveState", connected ? "Live sensor" : "Waiting");
-      setText("kfLastSeen", `Last sample ${age(pulse.collected_at || ca.last_seen_at || data.last_update)}`);
+      node("socSubline").innerHTML = [
+        ["Mode", data.operating_mode || "monitoring"],
+        ["Architecture", data.architecture_source || "live"],
+        ["Agents", `${num(counters.connected_agents)}/${num(counters.monitoring_agents || agents.length)}`],
+        ["Collector", data.has_collector_evidence ? "evidence" : "none"],
+      ].map(([label, value]) => `<span class="soc-chip">${esc(label)} <strong>${esc(value)}</strong></span>`).join("");
 
       const kpis = [
-        ["CA Link", `${num(counters.connected_cas)}/${num(counters.total_cas)}`, ca.hostname || "CA node", "#17b26a"],
-        ["CertSvc", ca.certsvc || "—", ca.ca_name || "service", "#2f80ed"],
-        ["IIS", ca.w3svc || "—", `${web.length} CAWE hits`, "#06aed5"],
-        ["Audit", ca.audit_ready ? "READY" : "CHECK", `Filter ${ca.audit_filter || 0}`, "#20c997"],
+        ["CA Link", `${num(counters.connected_cas || data.connected_ca_agent_count)}/${num(counters.total_cas || counters.monitored_ca_agents || data.ca_agent_count)}`, ca.hostname || pulse.hostname || "CA node", "#17b26a"],
+        ["CertSvc", ca.certsvc || "—", ca.ca_name || pulse.ca_name || "service", "#2f80ed"],
+        ["IIS/CAWE", ca.w3svc || "—", `${web.length} web hits`, "#06aed5"],
+        ["Audit", ca.audit_ready ? "READY" : "CHECK", `Filter ${ca.audit_filter ?? 0}`, "#20c997"],
         ["Events", events.length, "ADCS tape", "#7c3aed"],
-        ["Access", sessions.length, "admin sessions", "#f59e0b"],
+        ["Access", sessions.length + web.length, "admin + CAWE", "#f59e0b"],
         ["Roles", `${activeRoles.length}/${roles.length}`, "active / known", "#ef4444"],
       ];
 
-      document.getElementById("kfKpis").innerHTML = kpis.map(([label, value, hint, tone]) => `
-        <article class="kf-kpi" style="--tone:${tone}">
+      node("socKpis").innerHTML = kpis.map(([label, value, hint, color]) => `
+        <article class="soc-kpi" style="--tone:${color}">
           <label>${esc(label)}</label>
           <strong>${esc(value)}</strong>
           <small>${esc(hint)}</small>
         </article>
       `).join("");
 
-      const feedRows = [
-        ...web.slice(0, 40).map((item) => ({
-          time: item.time,
-          source: "CAWE",
-          action: item.action || "CA Web Enrollment activity",
-          actor: item.username || item.source_ip || "user not recorded",
-          status: item.status ? `HTTP ${item.status}` : "web",
-        })),
-        ...events.slice(0, 40).map((item) => ({
-          time: item.time,
-          source: String(item.kind || "event").toUpperCase(),
-          action: item.title || item.summary || "ADCS event",
-          actor: item.actor || item.object || "actor not recorded",
-          status: item.tone || item.kind || "event",
-        })),
-      ].slice(0, 50);
+      const runtimeState = ca.connected ? "online" : "offline";
+      const runtimeEl = node("socRuntimeState");
+      runtimeEl.className = `soc-pill ${pillClass(runtimeState)}`;
+      runtimeEl.textContent = runtimeState;
 
-      setText("kfEventCount", `${feedRows.length} rows`);
-
-      document.getElementById("kfEventRows").innerHTML = feedRows.length
-        ? feedRows.map((row) => `
-            <tr>
-              <td class="kf-muted">${esc(formatTime(row.time))}</td>
-              <td>${esc(row.source)}</td>
-              <td><span class="kf-event-title">${esc(row.action)}</span></td>
-              <td class="kf-muted">${esc(row.actor)}</td>
-              <td>${status(row.status)}</td>
-            </tr>
-          `).join("")
-        : `<tr><td colspan="5"><div class="kf-empty">No live events received yet.</div></td></tr>`;
-
-      setText("kfRuntimeState", ca.connected ? "online" : "offline");
-
-      document.getElementById("kfRuntimeCards").innerHTML = [
-        ["CA", ca.ca_name || env.name || "—"],
-        ["Host", ca.hostname || "—"],
+      node("socRuntimeCards").innerHTML = [
+        ["CA", ca.ca_name || pulse.ca_name || env.name || "—"],
+        ["Host", ca.hostname || pulse.hostname || "—"],
         ["CertSvc", ca.certsvc || "—"],
         ["IIS", ca.w3svc || "—"],
-        ["Security Log", ca.security_log_access ? "Readable" : "Unknown"],
+        ["Security", ca.security_log_access ? "Readable" : "Unknown"],
         ["Agent", ca.version || "—"],
-      ].map(([label, value]) => `
-        <div class="kf-ca-card">
-          <label>${esc(label)}</label>
-          <strong>${esc(value)}</strong>
-        </div>
-      `).join("");
+      ].map(([label, value]) => `<div class="soc-mini-card"><label>${esc(label)}</label><strong>${esc(value)}</strong></div>`).join("");
 
       const cpu = pct(pulse.cpu_percent);
       const mem = pct(pulse.memory_percent);
       const diskFree = pct(pulse.disk_free_percent);
-      const diskUsed = diskFree === null ? null : 100 - diskFree;
+      const diskUsed = pct(pulse.disk_used_percent ?? (diskFree === null ? null : 100 - diskFree));
       const net = Number(network.total_kbps);
       const send = Number(network.send_kbps);
       const recv = Number(network.receive_kbps);
-
-      document.getElementById("kfResources").innerHTML = [
-        bar("CPU", cpu, "%"),
-        bar("Memory", mem, "%"),
-        bar("Disk", diskUsed, "%"),
-        bar("Net", Number.isFinite(net) ? net : null, "Kbps"),
-        `
-          <div class="kf-netline">
-            ${esc(network.interface_name || "NIC")}
-            ${network.ipv4_address ? ` · ${esc(network.ipv4_address)}` : ""}
-            ${Number.isFinite(send) && Number.isFinite(recv) ? ` · S ${send.toFixed(1)} / R ${recv.toFixed(1)} Kbps` : ""}
-          </div>
-        `
+      setText("socPulseType", pulse.sample_type || "sample");
+      node("socResources").innerHTML = [
+        meter("CPU", cpu, "%", "#2f80ed"),
+        meter("Memory", mem, "%", "#7c3aed"),
+        meter("Disk", diskUsed, "%", "#f59e0b"),
+        meter("Net", Number.isFinite(net) ? net : null, "Kbps", "#06aed5"),
+        `<div class="soc-net">
+          <strong>${esc(network.interface_name || "NIC")}</strong>${network.ipv4_address ? ` · ${esc(network.ipv4_address)}` : ""}<br>
+          ${network.link_speed ? `${esc(network.link_speed)} · ` : ""}${Number.isFinite(send) && Number.isFinite(recv) ? `S ${send.toFixed(1)} / R ${recv.toFixed(1)} Kbps` : "No network delta yet"}
+        </div>`,
       ].join("");
 
-      const outcomes = data.outcomes || {};
+      const allEvents = buildEvents(web, events, sessions, roles);
+      renderFilters(allEvents);
+      const visibleEvents = activeFilter === "All" ? allEvents : allEvents.filter((event) => event.category === activeFilter);
+      setText("socEventCount", `${visibleEvents.length} rows`);
+      node("socEventRows").innerHTML = visibleEvents.length ? visibleEvents.map((event) => `
+        <tr>
+          <td class="soc-muted">${esc(formatTime(event.time))}</td>
+          <td><span class="soc-feed-source">${esc(event.source)}</span></td>
+          <td><span class="event-title">${esc(event.title)}</span></td>
+          <td class="soc-muted">${esc(event.actor)}</td>
+          <td>${status(event.status)}</td>
+        </tr>
+      `).join("") : `<tr><td colspan="5"><div class="soc-empty">No live telemetry for this filter.</div></td></tr>`;
+
       const issued = num(counters.issued || outcomes.issued);
       const denied = num(counters.denied || outcomes.denied);
       const pending = num(counters.pending || outcomes.pending);
       const revoked = num(counters.revoked || outcomes.revoked);
-      const maxReq = Math.max(issued, denied, pending, revoked, 1);
       const totalReq = issued + denied + pending + revoked;
-
-      setText("kfRequestTotal", `${totalReq} total`);
-
-      document.getElementById("kfRequests").innerHTML = [
-        ["Issued", issued],
-        ["Denied", denied],
-        ["Pending", pending],
-        ["Revoked", revoked],
-      ].map(([name, value]) => `
-        <div class="kf-request-row">
+      const maxReq = Math.max(issued, denied, pending, revoked, 1);
+      setText("socRequestTotal", `${totalReq} total`);
+      node("socRequests").innerHTML = [["Issued", issued, "#17b26a"], ["Denied", denied, "#ef4444"], ["Pending", pending, "#f59e0b"], ["Revoked", revoked, "#64748b"]].map(([name, value, color]) => `
+        <div class="soc-request-row">
           <span>${esc(name)}</span>
-          <span class="kf-bar"><i style="--w:${(value / maxReq) * 100}%"></i></span>
+          <span class="soc-meter"><i style="--w:${(value / maxReq) * 100}%;--tone:${color}"></i></span>
           <b>${value}</b>
         </div>
       `).join("");
 
-      setText("kfAccessCount", `${sessions.length + web.length}`);
-
-      const accessItems = [
-        ...sessions.slice(0, 6).map((item) => listItem(
-          item.username || "Admin session",
-          `${item.hostname || "host"} · idle ${item.idle || "—"}`,
-          "online"
-        )),
-        ...web.slice(0, 8).map((item) => listItem(
-          item.action || "CAWE hit",
-          `${item.username || "user not recorded"} · ${item.source_ip || "source unknown"}`,
-          item.status ? `HTTP ${item.status}` : "CAWE"
-        )),
+      const accessCards = [
+        ...sessions.slice(0, 6).map((session) => ({
+          source: "Admin",
+          time: session.logon,
+          title: session.username || "Admin session",
+          meta: `${session.hostname || "host"} · idle ${session.idle || "—"}`,
+          badge: session.state || "online",
+          tone: "#f59e0b",
+        })),
+        ...web.slice(0, 8).map((item) => ({
+          source: "CAWE",
+          time: item.time,
+          title: item.action || "CAWE hit",
+          meta: `${item.username || "user not recorded"} · ${item.source_ip || "source unknown"}`,
+          badge: item.status ? `HTTP ${item.status}` : "CAWE",
+          tone: tone(item.status ? `HTTP ${item.status}` : "CAWE"),
+        })),
       ];
+      setText("socAccessCount", `${accessCards.length}`);
+      node("socAccessFeed").innerHTML = accessCards.length ? accessCards.map(feedCard).join("") : `<div class="soc-empty">No access telemetry yet.</div>`;
 
-      document.getElementById("kfAccessList").innerHTML =
-        accessItems.join("") || `<div class="kf-empty">No access telemetry.</div>`;
+      setText("socRoleCount", `${activeRoles.length}/${roles.length}`);
+      node("socRoleFeed").innerHTML = roles.length ? roles.slice(0, 12).map((role) => feedCard({
+        source: role.active_now ? "Active" : "Known",
+        title: role.role_name || "PKI role",
+        meta: `${role.member || role.group_name || "member not listed"} · ${role.meaning || role.role_type || "privileged role"}`,
+        badge: role.active_now ? "active" : "known",
+        tone: role.active_now ? "#ef4444" : "#2f80ed",
+      })).join("") : `<div class="soc-empty">No privileged role data from the agent.</div>`;
 
-      setText("kfRoleCount", `${activeRoles.length}/${roles.length}`);
+      setText("socAgentCount", `${agents.length} agent${agents.length === 1 ? "" : "s"}`);
+      const csrfToken = node("socCsrfToken")?.value || "";
+      node("socAgentFeed").innerHTML = agents.length ? agents.map((agent) => {
+        const canEnableAudit = agent.is_ca && agent.audit_applicable !== false && !agent.audit_ready;
+        const auditAction = canEnableAudit ? `
+          <form class="soc-action-form" method="post" action="/pki-monitoring/agents/${encodeURIComponent(agent.id)}/enable-auditing?environment_id=${encodeURIComponent(env.id || "")}">
+            <input type="hidden" name="csrf_token" value="${esc(csrfToken)}">
+            <button class="soc-action-button" type="submit">Enable PKI auditing</button>
+          </form>
+        ` : "";
 
-      document.getElementById("kfRoleList").innerHTML = roles.length
-        ? roles.slice(0, 12).map((role) => listItem(
-            role.role_name || "PKI role",
-            role.member || role.group_name || "member not listed",
-            role.active_now ? "active" : "known"
-          )).join("")
-        : `<div class="kf-empty">No privileged role data.</div>`;
-
-      setText("kfAgentCount", `${agents.length} agent`);
-
-      document.getElementById("kfAgentList").innerHTML = agents.length
-        ? agents.map((agent) => listItem(
-            agent.hostname || "Agent",
-            `${agent.ca_name || "No CA"} · ${agent.last_seen_at || "no heartbeat"}`,
-            agent.connected ? "online" : "offline"
-          )).join("")
-        : `<div class="kf-empty">No monitoring agent registered.</div>`;
+        return feedCard({
+          source: agent.is_ca ? "CA" : "Agent",
+          time: agent.last_seen_at,
+          title: agent.hostname || "Monitoring agent",
+          meta: `${agent.ca_name || "No CA"} · ${age(agent.last_seen_at)}`,
+          badge: agent.connected ? "online" : "offline",
+          tone: agent.connected ? "#17b26a" : "#ef4444",
+          actionHtml: auditAction,
+        });
+      }).join("") : `<div class="soc-empty">No monitoring agent registered.</div>`;
     }
 
     async function refresh() {
@@ -968,16 +1069,10 @@
 
       for (const url of urls) {
         try {
-          const response = await fetch(url, {
-            headers: { Accept: "application/json" },
-            cache: "no-store",
-          });
-
+          const response = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
           if (!response.ok) continue;
-
           const json = await response.json();
           const next = json.snapshot || json.data || json;
-
           if (next && typeof next === "object" && next.counters) {
             currentData = next;
             render(currentData);
@@ -991,7 +1086,7 @@
 
     render(currentData);
     refresh();
-    setInterval(refresh, 10000);
+    setInterval(refresh, refreshSeconds * 1000);
   })();
   </script>
 </div>
