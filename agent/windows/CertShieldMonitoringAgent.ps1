@@ -175,46 +175,226 @@ function Get-NamedServiceState {
 }
 
 function Get-ResourceState {
-    $cpu = $null
-    $memory = $null
-    $disk = $null
+    $cpuPercent = $null
+    $memoryPercent = $null
+    $diskFreePercent = $null
+    $diskUsedPercent = $null
 
     try {
-        $processors = Get-CimInstance Win32_Processor -ErrorAction Stop
-        $cpu = [math]::Round(
-            (
-                $processors |
-                Measure-Object -Property LoadPercentage -Average
-            ).Average
+        $cpuCounter = Get-Counter `
+            -Counter "\Processor(_Total)\% Processor Time" `
+            -SampleInterval 1 `
+            -MaxSamples 2 `
+            -ErrorAction Stop
+
+        $cpuPercent = [math]::Round(
+            [double](($cpuCounter.CounterSamples | Select-Object -Last 1).CookedValue),
+            1
         )
     }
-    catch {}
+    catch {
+        try {
+            $cpu = Get-CimInstance Win32_Processor |
+                Measure-Object -Property LoadPercentage -Average
+
+            $cpuPercent = [math]::Round([double]$cpu.Average, 1)
+        }
+        catch {
+            $cpuPercent = $null
+        }
+    }
 
     try {
         $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
-        if ($os.TotalVisibleMemorySize -gt 0) {
-            $used = $os.TotalVisibleMemorySize - $os.FreePhysicalMemory
-            $memory = [math]::Round(
-                ($used / $os.TotalVisibleMemorySize) * 100
+        $totalKb = [double]$os.TotalVisibleMemorySize
+        $freeKb = [double]$os.FreePhysicalMemory
+
+        if ($totalKb -gt 0) {
+            $memoryPercent = [math]::Round(
+                (($totalKb - $freeKb) / $totalKb) * 100,
+                1
             )
         }
     }
-    catch {}
+    catch {
+        $memoryPercent = $null
+    }
 
     try {
-        $systemDrive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$env:SystemDrive'" -ErrorAction Stop
-        if ($systemDrive.Size -gt 0) {
-            $disk = [math]::Round(
-                ($systemDrive.FreeSpace / $systemDrive.Size) * 100
+        $systemDrive = $env:SystemDrive
+        if (-not $systemDrive) {
+            $systemDrive = "C:"
+        }
+
+        $disk = Get-CimInstance `
+            -ClassName Win32_LogicalDisk `
+            -Filter "DeviceID='$systemDrive'" `
+            -ErrorAction Stop
+
+        if ([double]$disk.Size -gt 0) {
+            $diskFreePercent = [math]::Round(
+                ([double]$disk.FreeSpace / [double]$disk.Size) * 100,
+                1
+            )
+
+            $diskUsedPercent = [math]::Round(
+                100 - $diskFreePercent,
+                1
             )
         }
+    }
+    catch {
+        $diskFreePercent = $null
+        $diskUsedPercent = $null
+    }
+
+    $network = [ordered]@{
+        interface_name = ""
+        interface_description = ""
+        link_speed = ""
+        mac_address = ""
+        ipv4_address = ""
+        gateway = ""
+        dns_servers = @()
+        send_kbps = $null
+        receive_kbps = $null
+        total_kbps = $null
+        adapter_count = 0
+        sample_type = "adapter_statistics_delta"
+    }
+
+    try {
+        $activeAdapters = @(
+            Get-NetAdapter -ErrorAction Stop |
+                Where-Object {
+                    $_.Status -eq "Up" -and
+                    $_.Name -notmatch "Loopback|isatap|Teredo|Bluetooth"
+                } |
+                Sort-Object ifIndex
+        )
+
+        $network.adapter_count = $activeAdapters.Count
+
+        $primary = $activeAdapters | Select-Object -First 1
+
+        if ($primary) {
+            $network.interface_name = [string]$primary.Name
+            $network.interface_description = [string]$primary.InterfaceDescription
+            $network.link_speed = [string]$primary.LinkSpeed
+            $network.mac_address = [string]$primary.MacAddress
+        }
+
+        try {
+            $ipConfig = Get-NetIPConfiguration `
+                -InterfaceIndex $primary.ifIndex `
+                -ErrorAction Stop
+
+            $network.ipv4_address = [string](
+                $ipConfig.IPv4Address.IPAddress |
+                    Select-Object -First 1
+            )
+
+            if ($ipConfig.IPv4DefaultGateway) {
+                $network.gateway = [string](
+                    $ipConfig.IPv4DefaultGateway.NextHop |
+                        Select-Object -First 1
+                )
+            }
+
+            if ($ipConfig.DNSServer) {
+                $network.dns_servers = @(
+                    $ipConfig.DNSServer.ServerAddresses
+                )
+            }
+        }
+        catch {}
+
+        $nowUtc = (Get-Date).ToUniversalTime()
+        $runtime = Read-AgentRuntimeState
+
+        $rxNow = 0.0
+        $txNow = 0.0
+
+        foreach ($adapter in $activeAdapters) {
+            try {
+                $stats = Get-NetAdapterStatistics `
+                    -Name $adapter.Name `
+                    -ErrorAction Stop
+
+                $rxNow += [double]$stats.ReceivedBytes
+                $txNow += [double]$stats.SentBytes
+            }
+            catch {}
+        }
+
+        $prevRx = 0.0
+        $prevTx = 0.0
+        $prevTime = $null
+
+        try { $prevRx = [double]$runtime.network_received_bytes } catch {}
+        try { $prevTx = [double]$runtime.network_sent_bytes } catch {}
+
+        try {
+            if ($runtime.network_sample_time) {
+                $prevTime = [datetime]$runtime.network_sample_time
+            }
+        }
+        catch {
+            $prevTime = $null
+        }
+
+        if ($prevTime) {
+            $seconds = ($nowUtc - $prevTime.ToUniversalTime()).TotalSeconds
+
+            if ($seconds -gt 0) {
+                $rxDelta = [math]::Max(0, $rxNow - $prevRx)
+                $txDelta = [math]::Max(0, $txNow - $prevTx)
+
+                $receiveKbps = (($rxDelta * 8) / 1000) / $seconds
+                $sendKbps = (($txDelta * 8) / 1000) / $seconds
+
+                $network.receive_kbps = [math]::Round($receiveKbps, 1)
+                $network.send_kbps = [math]::Round($sendKbps, 1)
+                $network.total_kbps = [math]::Round(
+                    $receiveKbps + $sendKbps,
+                    1
+                )
+            }
+        }
+
+        if ($runtime.PSObject.Properties.Name -contains "network_received_bytes") {
+            $runtime.network_received_bytes = $rxNow
+        }
+        else {
+            $runtime | Add-Member -NotePropertyName network_received_bytes -NotePropertyValue $rxNow -Force
+        }
+
+        if ($runtime.PSObject.Properties.Name -contains "network_sent_bytes") {
+            $runtime.network_sent_bytes = $txNow
+        }
+        else {
+            $runtime | Add-Member -NotePropertyName network_sent_bytes -NotePropertyValue $txNow -Force
+        }
+
+        if ($runtime.PSObject.Properties.Name -contains "network_sample_time") {
+            $runtime.network_sample_time = $nowUtc.ToString("o")
+        }
+        else {
+            $runtime | Add-Member -NotePropertyName network_sample_time -NotePropertyValue $nowUtc.ToString("o") -Force
+        }
+
+        Write-AgentRuntimeState -State $runtime
     }
     catch {}
 
     return [ordered]@{
-        cpu_percent       = $cpu
-        memory_percent    = $memory
-        disk_free_percent = $disk
+        cpu_percent       = $cpuPercent
+        memory_percent    = $memoryPercent
+        disk_free_percent = $diskFreePercent
+        disk_used_percent = $diskUsedPercent
+        network           = $network
+        collected_at      = (Get-Date).ToUniversalTime().ToString("o")
+        sample_type       = "sampled_counter"
     }
 }
 
@@ -257,34 +437,162 @@ function Get-WebEnrollmentActivity {
         return @()
     }
 
-    try {
-        $latest = Get-ChildItem -LiteralPath $root -Recurse -Filter *.log -ErrorAction Stop |
-            Sort-Object LastWriteTime -Descending |
-            Select-Object -First 1
+    function Convert-CaweAction {
+        param(
+            [string]$UriStem,
+            [string]$UriQuery
+        )
 
-        if (-not $latest) {
-            return @()
+        $stem = ([string]$UriStem).ToLowerInvariant()
+        $query = ([string]$UriQuery)
+
+        if ($stem -eq "/certsrv/" -or $stem -eq "/certsrv/default.asp") {
+            return "Opened Web Enrollment portal"
         }
 
-        $lines = Get-Content -LiteralPath $latest.FullName -Tail 250 -ErrorAction Stop |
-            Where-Object {
-                $_ -notmatch "^#" -and
-                $_ -match "/certsrv"
-            }
+        if ($stem -like "*/certrqxt.asp") {
+            return "Opened certificate request page"
+        }
 
-        foreach ($line in ($lines | Select-Object -Last 25)) {
-            $activity += [ordered]@{
-                username  = ""
-                source_ip = ""
-                raw       = [string]$line
+        if ($stem -like "*/certfnsh.asp") {
+            return "Submitted or completed certificate request"
+        }
+
+        if ($stem -like "*/certnew.cer") {
+            return "Downloaded issued certificate"
+        }
+
+        if ($stem -like "*/certcarc.asp") {
+            return "Browsed CA certificate / chain"
+        }
+
+        if ($stem -like "*/certckpn.asp") {
+            return "Checked pending certificate request"
+        }
+
+        if ($stem -like "*/certcrl.asp") {
+            return "Downloaded CRL"
+        }
+
+        if ($query -match "ReqID|RequestID") {
+            return "Viewed certificate request details"
+        }
+
+        return "CA Web Enrollment activity"
+    }
+
+    try {
+        $logs = @(
+            Get-ChildItem -LiteralPath $root -Recurse -Filter *.log -ErrorAction Stop |
+                Sort-Object LastWriteTime -Descending |
+                Select-Object -First 5
+        )
+
+        foreach ($log in $logs) {
+            $fields = @()
+
+            $lines = Get-Content -LiteralPath $log.FullName -Tail 500 -ErrorAction Stop
+
+            foreach ($line in $lines) {
+                $text = [string]$line
+
+                if ($text -match "^#Fields:\s+(.+)$") {
+                    $fields = $Matches[1] -split "\s+"
+                    continue
+                }
+
+                if ($text -match "^#" -or $text -notmatch "/certsrv") {
+                    continue
+                }
+
+                if (-not $fields -or $fields.Count -eq 0) {
+                    $activity += [ordered]@{
+                        time        = ""
+                        username    = ""
+                        source_ip   = ""
+                        method      = ""
+                        uri         = ""
+                        status      = ""
+                        action      = "CA Web Enrollment activity"
+                        user_agent  = ""
+                        time_taken  = ""
+                        log_file    = $log.Name
+                        raw         = $text
+                    }
+                    continue
+                }
+
+                $parts = $text -split "\s+"
+                $row = @{}
+
+                for ($i = 0; $i -lt $fields.Count -and $i -lt $parts.Count; $i++) {
+                    $row[$fields[$i]] = $parts[$i]
+                }
+
+                $date = [string]$row["date"]
+                $time = [string]$row["time"]
+                $uriStem = [string]$row["cs-uri-stem"]
+                $uriQuery = [string]$row["cs-uri-query"]
+
+                $username = [string]$row["cs-username"]
+                if ($username -eq "-") {
+                    $username = ""
+                }
+
+                $sourceIp = [string]$row["c-ip"]
+                if ($sourceIp -eq "-") {
+                    $sourceIp = ""
+                }
+
+                $method = [string]$row["cs-method"]
+                if ($method -eq "-") {
+                    $method = ""
+                }
+
+                $status = [string]$row["sc-status"]
+                if ($status -eq "-") {
+                    $status = ""
+                }
+
+                $userAgent = [string]$row["cs(User-Agent)"]
+                if ($userAgent -eq "-") {
+                    $userAgent = ""
+                }
+
+                $timeTaken = [string]$row["time-taken"]
+                if ($timeTaken -eq "-") {
+                    $timeTaken = ""
+                }
+
+                $uri = $uriStem
+                if ($uriQuery -and $uriQuery -ne "-") {
+                    $uri = "$uriStem`?$uriQuery"
+                }
+
+                $activity += [ordered]@{
+                    time        = ("$date $time").Trim()
+                    username    = $username
+                    source_ip   = $sourceIp
+                    method      = $method
+                    uri         = $uri
+                    status      = $status
+                    action      = Convert-CaweAction -UriStem $uriStem -UriQuery $uriQuery
+                    user_agent  = $userAgent
+                    time_taken  = $timeTaken
+                    log_file    = $log.Name
+                    raw         = $text
+                }
             }
         }
     }
     catch {}
 
-    return @($activity)
+    return @(
+        $activity |
+            Sort-Object time -Descending |
+            Select-Object -First 50
+    )
 }
-
 
 function Get-WindowsEnvironmentIdentity {
     param(
@@ -461,6 +769,190 @@ function Initialize-AgentIdentity {
 
 
 
+function Get-CertShieldLocalGroupMembers {
+    param(
+        [Parameter(Mandatory)]
+        [string]$GroupName
+    )
+
+    $members = @()
+
+    try {
+        $group = [ADSI]"WinNT://$env:COMPUTERNAME/$GroupName,group"
+
+        foreach ($member in @($group.psbase.Invoke("Members"))) {
+            $name = ""
+            $path = ""
+
+            try {
+                $name = [string]$member.GetType().InvokeMember(
+                    "Name",
+                    "GetProperty",
+                    $null,
+                    $member,
+                    $null
+                )
+            }
+            catch {}
+
+            try {
+                $path = [string]$member.GetType().InvokeMember(
+                    "ADsPath",
+                    "GetProperty",
+                    $null,
+                    $member,
+                    $null
+                )
+            }
+            catch {}
+
+            if ($name) {
+                $members += [ordered]@{
+                    name = $name
+                    path = $path
+                    source = "local_group"
+                }
+            }
+        }
+    }
+    catch {}
+
+    return @($members)
+}
+
+function Test-CertShieldMemberActive {
+    param(
+        [Parameter(Mandatory)]
+        [string]$MemberName,
+
+        [Parameter(Mandatory)]
+        [object[]]$Sessions
+    )
+
+    $member = ([string]$MemberName).Trim().ToLowerInvariant()
+
+    if (-not $member) {
+        return $false
+    }
+
+    foreach ($session in @($Sessions)) {
+        if (-not $session) {
+            continue
+        }
+
+        $username = ""
+
+        try {
+            $username = ([string]$session.username).Trim().ToLowerInvariant()
+        }
+        catch {
+            $username = ""
+        }
+
+        if (-not $username) {
+            continue
+        }
+
+        if ($member -eq $username) {
+            return $true
+        }
+
+        if ($member.EndsWith("\$username")) {
+            return $true
+        }
+
+        if ($member.EndsWith("/$username")) {
+            return $true
+        }
+
+        if ($username.EndsWith("\$member")) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Get-PkiPrivilegedRoles {
+    $sessions = @(Get-InteractiveSessions)
+    $roles = @()
+
+    $roleMap = @(
+        [ordered]@{
+            role_name = "Local Administrators"
+            group_name = "Administrators"
+            role_type = "host_admin"
+            meaning = "Can administer the CA server and usually control AD CS service configuration."
+        },
+        [ordered]@{
+            role_name = "Backup Operators"
+            group_name = "Backup Operators"
+            role_type = "backup_operator"
+            meaning = "Can perform backup/restore style operations on the CA host."
+        },
+        [ordered]@{
+            role_name = "Event Log Readers"
+            group_name = "Event Log Readers"
+            role_type = "audit_reader"
+            meaning = "Can read Windows event logs used for AD CS audit visibility."
+        },
+        [ordered]@{
+            role_name = "Remote Management Users"
+            group_name = "Remote Management Users"
+            role_type = "remote_management"
+            meaning = "Can use remote management channels such as WinRM where permitted."
+        },
+        [ordered]@{
+            role_name = "Certificate Service DCOM Access"
+            group_name = "Certificate Service DCOM Access"
+            role_type = "ca_dcom_access"
+            meaning = "Can access AD CS DCOM/RPC interfaces remotely where CA permissions allow."
+        },
+        [ordered]@{
+            role_name = "IIS_IUSRS"
+            group_name = "IIS_IUSRS"
+            role_type = "cawe_runtime"
+            meaning = "Local IIS worker/runtime group used by web applications including CA Web Enrollment."
+        }
+    )
+
+    foreach ($role in $roleMap) {
+        $members = @(Get-CertShieldLocalGroupMembers -GroupName $role.group_name)
+
+        foreach ($member in $members) {
+            $display = [string]$member.name
+
+            if ($member.path -match "WinNT://(.+)$") {
+                $display = $Matches[1].Replace("/", "\")
+            }
+
+            $roles += [ordered]@{
+                role_name = [string]$role.role_name
+                group_name = [string]$role.group_name
+                role_type = [string]$role.role_type
+                member = $display
+                source = [string]$member.source
+                active_now = [bool](Test-CertShieldMemberActive -MemberName $display -Sessions $sessions)
+                meaning = [string]$role.meaning
+            }
+        }
+
+        if ($members.Count -eq 0) {
+            $roles += [ordered]@{
+                role_name = [string]$role.role_name
+                group_name = [string]$role.group_name
+                role_type = [string]$role.role_type
+                member = ""
+                source = "local_group"
+                active_now = $false
+                meaning = [string]$role.meaning
+            }
+        }
+    }
+
+    return @($roles)
+}
+
 function Get-AgentState {
     $caName = Get-ActiveCaName
     $policy = Get-CertificationAuditPolicy
@@ -498,6 +990,7 @@ function Get-AgentState {
         resources = Get-ResourceState
         sessions = @(Get-InteractiveSessions)
         web_activity = @(Get-WebEnrollmentActivity)
+        pki_roles = @(Get-PkiPrivilegedRoles)
     }
 }
 
@@ -776,6 +1269,83 @@ function Send-MonitoringMetrics {
 }
 
 
+function ConvertFrom-CertShieldAdcsMessage {
+    param(
+        [string]$Message
+    )
+
+    $details = [ordered]@{}
+
+    foreach ($line in (($Message -split "`r?`n") | Where-Object { $_ })) {
+        $text = ([string]$line).Trim()
+
+        if ($text -match "^([^:]{2,120}):\s*(.*)$") {
+            $key = $Matches[1].Trim()
+            $value = $Matches[2].Trim()
+
+            $normalized = (
+                $key `
+                    -replace "[^A-Za-z0-9]+", "_" `
+            ).Trim("_").ToLowerInvariant()
+
+            if ($normalized -and -not $details.Contains($normalized)) {
+                $details[$normalized] = $value
+            }
+        }
+    }
+
+    if ($Message -match "Request\s+ID:\s*([^\r\n]+)") {
+        $details["request_id"] = $Matches[1].Trim()
+    }
+
+    if ($Message -match "Requester:\s*([^\r\n]+)") {
+        $details["requester"] = $Matches[1].Trim()
+    }
+
+    if ($Message -match "Subject:\s*([^\r\n]+)") {
+        $details["subject"] = $Matches[1].Trim()
+    }
+
+    if ($Message -match "Certificate\s+Template:\s*([^\r\n]+)") {
+        $details["template"] = $Matches[1].Trim()
+    }
+
+    if ($Message -match "CertificateTemplate:([A-Za-z0-9_.-]+)") {
+        $details["template"] = $Matches[1].Trim()
+    }
+
+    if (-not $details.Contains("template") -and $details.Contains("attributes")) {
+        $attributes = [string]$details["attributes"]
+
+        if ($attributes -match "CertificateTemplate:([A-Za-z0-9_.-]+)") {
+            $details["template"] = $Matches[1].Trim()
+        }
+    }
+
+    return $details
+}
+
+function Get-CertShieldDetail {
+    param(
+        [Parameter(Mandatory)]
+        [object]$Details,
+
+        [Parameter(Mandatory)]
+        [string[]]$Names
+    )
+
+    foreach ($name in $Names) {
+        try {
+            if ($Details.Contains($name) -and $Details[$name]) {
+                return [string]$Details[$name]
+            }
+        }
+        catch {}
+    }
+
+    return ""
+}
+
 function New-CertShieldAuditEventItem {
     param(
         [Parameter(Mandatory)]
@@ -795,20 +1365,122 @@ function New-CertShieldAuditEventItem {
         $message = "Certification Services security audit event."
     }
 
+    $parsed = ConvertFrom-CertShieldAdcsMessage -Message $message
+
     $summary = $message
 
-    if ($summary.Length -gt 600) {
-        $summary = $summary.Substring(0, 600)
+    if ($summary.Length -gt 900) {
+        $summary = $summary.Substring(0, 900)
     }
 
+    $eventId = [int]$Event.Id
+
+    $category = "adcs_audit"
+    $eventType = "windows_event_{0}" -f $eventId
     $severity = "info"
+    $title = "AD CS audit event {0}" -f $eventId
 
-    if ($Event.LevelDisplayName -match "Error|Critical") {
-        $severity = "critical"
+    switch ($eventId) {
+        4886 {
+            $category = "certificate"
+            $eventType = "certificate_requested"
+            $severity = "info"
+            $title = "Certificate request received"
+        }
+
+        4887 {
+            $category = "certificate"
+            $eventType = "certificate_issued"
+            $severity = "success"
+            $title = "Certificate issued"
+        }
+
+        4888 {
+            $category = "certificate"
+            $eventType = "certificate_denied"
+            $severity = "high"
+            $title = "Certificate request denied"
+        }
+
+        4889 {
+            $category = "certificate"
+            $eventType = "certificate_pending"
+            $severity = "warning"
+            $title = "Certificate request pending"
+        }
+
+        4880 {
+            $category = "infrastructure"
+            $eventType = "certsvc_started"
+            $severity = "success"
+            $title = "Certificate Services started"
+        }
+
+        4881 {
+            $category = "infrastructure"
+            $eventType = "certsvc_stopped"
+            $severity = "high"
+            $title = "Certificate Services stopped"
+        }
+
+        4890 {
+            $category = "configuration"
+            $eventType = "ca_configuration_changed"
+            $severity = "warning"
+            $title = "CA configuration changed"
+        }
+
+        4897 {
+            $category = "configuration"
+            $eventType = "role_separation_changed"
+            $severity = "warning"
+            $title = "CA role separation setting changed"
+        }
     }
-    elseif ($Event.LevelDisplayName -match "Warning") {
-        $severity = "warning"
+
+    $requestId = Get-CertShieldDetail `
+        -Details $parsed `
+        -Names @("request_id", "requestid", "request")
+
+    $requester = Get-CertShieldDetail `
+        -Details $parsed `
+        -Names @("requester", "caller", "account_name", "user")
+
+    $template = Get-CertShieldDetail `
+        -Details $parsed `
+        -Names @("template", "certificate_template", "certificatetemplate")
+
+    $subject = Get-CertShieldDetail `
+        -Details $parsed `
+        -Names @("subject", "certificate_subject")
+
+    $objectLabel = ""
+
+    if ($requestId) {
+        $objectLabel = "Request ID $requestId"
     }
+
+    if ($subject) {
+        if ($objectLabel) {
+            $objectLabel = "$objectLabel · $subject"
+        }
+        else {
+            $objectLabel = $subject
+        }
+    }
+
+    $parsed["record_id"] = [int64]$Event.RecordId
+    $parsed["event_id"] = $eventId
+    $parsed["provider_name"] = [string]$Event.ProviderName
+    $parsed["log_name"] = [string]$Event.LogName
+    $parsed["machine_name"] = [string]$Event.MachineName
+    $parsed["level_display_name"] = [string]$Event.LevelDisplayName
+    $parsed["message"] = $message
+    $parsed["request_id"] = $requestId
+    $parsed["requester"] = $requester
+    $parsed["template"] = $template
+    $parsed["subject"] = $subject
+    $parsed["object"] = $objectLabel
 
     return [ordered]@{
         event_key   = "windows-security:{0}:{1}" -f (
@@ -816,27 +1488,18 @@ function New-CertShieldAuditEventItem {
         ), (
             $Event.RecordId
         )
-        category    = "adcs_audit"
-        event_type  = "windows_event_{0}" -f $Event.Id
+        category    = $category
+        event_type  = $eventType
         severity    = $severity
-        title       = "AD CS audit event {0}" -f $Event.Id
+        title       = $title
         summary     = $summary
-        actor       = ""
+        actor       = $requester
         source_ip   = ""
         occurred_at = ConvertTo-CertShieldUtcString `
             -Value $Event.TimeCreated
-        details     = [ordered]@{
-            record_id          = [int64]$Event.RecordId
-            event_id           = [int]$Event.Id
-            provider_name      = [string]$Event.ProviderName
-            log_name           = [string]$Event.LogName
-            machine_name       = [string]$Event.MachineName
-            level_display_name = [string]$Event.LevelDisplayName
-            message            = $message
-        }
+        details     = $parsed
     }
 }
-
 
 function Get-CertShieldAuditEvents {
     $runtimeState = Read-AgentRuntimeState
@@ -930,11 +1593,56 @@ function Send-Heartbeat {
     $caName = Get-ActiveCaName
     $state = Get-AgentState
 
+    try {
+        $rolesNow = @()
+
+        if (Get-Command Get-PkiPrivilegedRoles -ErrorAction SilentlyContinue) {
+            $rolesNow = @(Get-PkiPrivilegedRoles)
+        }
+
+        if ($state -is [System.Collections.IDictionary]) {
+            $state["pki_roles"] = @($rolesNow)
+        }
+        elseif ($state.PSObject.Properties.Name -contains "pki_roles") {
+            $state.pki_roles = @($rolesNow)
+        }
+        else {
+            $state |
+                Add-Member `
+                    -NotePropertyName pki_roles `
+                    -NotePropertyValue @($rolesNow) `
+                    -Force
+        }
+
+        $previewPath = Join-Path `
+            (Split-Path -Parent $ConfigPath) `
+            "heartbeat-preview.json"
+
+        $state |
+            ConvertTo-Json -Depth 30 |
+            Set-Content `
+                -LiteralPath $previewPath `
+                -Encoding UTF8
+    }
+    catch {
+        Add-Content `
+            -LiteralPath (
+                Join-Path `
+                    (Split-Path -Parent $ConfigPath) `
+                    "agent-error.log"
+            ) `
+            -Value (
+                "{0} PKI role heartbeat collection failed: {1}" -f `
+                (Get-Date).ToUniversalTime().ToString("o"),
+                $_.Exception.Message
+            )
+    }
+
     $payload = [ordered]@{
         agent_key        = [string]$script:Config.agent_key
         hostname         = $env:COMPUTERNAME
         ca_name          = $caName
-        agent_version    = "0.3.0"
+        agent_version    = "0.3.1"
         environment_name = [string]$script:Config.environment_name
         domain_name      = [string]$script:Config.domain_name
         forest_name      = [string]$script:Config.forest_name
@@ -942,7 +1650,10 @@ function Send-Heartbeat {
         state            = $state
     }
 
-    return Invoke-AgentApi -Method POST -Path "/api/v1/monitoring/agent/heartbeat" -Body $payload
+    return Invoke-AgentApi `
+        -Method POST `
+        -Path "/api/v1/monitoring/agent/heartbeat" `
+        -Body $payload
 }
 
 function Invoke-PendingCommand {
@@ -1037,3 +1748,13 @@ do {
     Start-Sleep -Seconds $interval
 }
 while ($true)
+
+
+
+
+
+
+
+
+
+
