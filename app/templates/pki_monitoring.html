@@ -39,22 +39,22 @@
       width: min(100%, 1760px);
       margin: 0 auto;
       display: grid;
-      gap: 10px;
+      gap: 8px;
     }
 
     .pki-topbar {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
-      gap: 12px;
-      align-items: start;
-      padding-bottom: 4px;
+      gap: 10px;
+      align-items: center;
+      padding-bottom: 0;
     }
 
     .pki-title {
-      margin: 0 0 8px;
+      margin: 0 0 3px;
       color: #f7fbff;
-      font-size: 20px;
-      line-height: 1.1;
+      font-size: 17px;
+      line-height: 1.05;
       font-weight: 950;
       letter-spacing: -.03em;
     }
@@ -92,7 +92,7 @@
 
     .pki-token,
     .pki-button {
-      min-height: 30px;
+      min-height: 26px;
       display: inline-flex;
       align-items: center;
       gap: 7px;
@@ -100,8 +100,8 @@
       background: rgba(224, 235, 247, .09);
       border-radius: 4px;
       color: #edf4fb;
-      padding: 6px 10px;
-      font-size: 12px;
+      padding: 5px 8px;
+      font-size: 11px;
       font-weight: 780;
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05);
     }
@@ -125,7 +125,7 @@
     .pki-tiles {
       display: grid;
       grid-template-columns: repeat(8, minmax(0, 1fr));
-      gap: 8px;
+      gap: 6px;
     }
 
     .pki-tile,
@@ -138,7 +138,7 @@
     .pki-tile {
       min-width: 0;
       border-radius: 5px;
-      padding: 9px 10px;
+      padding: 7px 8px;
       border-left: 3px solid var(--tone, var(--blue));
     }
 
@@ -156,9 +156,9 @@
 
     .pki-tile strong {
       display: block;
-      margin-top: 6px;
+      margin-top: 4px;
       color: #f7fbff;
-      font-size: 15px;
+      font-size: 13px;
       line-height: 1;
       font-weight: 950;
       overflow: hidden;
@@ -168,7 +168,7 @@
 
     .pki-tile small {
       display: block;
-      margin-top: 6px;
+      margin-top: 4px;
       color: var(--dim);
       font-size: 10px;
       font-weight: 750;
@@ -180,9 +180,9 @@
 
     .pki-main {
       display: grid;
-      grid-template-columns: minmax(260px, .76fr) minmax(520px, 1.55fr) minmax(300px, .88fr);
-      gap: 10px;
-      min-height: 548px;
+      grid-template-columns: minmax(250px, .72fr) minmax(500px, 1.62fr) minmax(280px, .82fr);
+      gap: 8px;
+      min-height: 0;
     }
 
     .pki-panel {
@@ -195,12 +195,12 @@
     }
 
     .pki-panel-head {
-      min-height: 39px;
+      min-height: 34px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 10px;
-      padding: 9px 11px;
+      padding: 7px 9px;
       background: rgba(231, 240, 249, .055);
       border-bottom: 1px solid var(--line-soft);
     }
@@ -208,7 +208,7 @@
     .pki-panel-title {
       margin-top: 3px;
       color: #f7fbff;
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 950;
       letter-spacing: -.01em;
     }
@@ -216,13 +216,13 @@
     .pki-panel-body {
       min-height: 0;
       overflow: auto;
-      padding: 10px;
+      padding: 8px;
     }
 
     .pki-filterbar {
       display: flex;
       gap: 6px;
-      padding: 8px 10px;
+      padding: 6px 8px;
       border-bottom: 1px solid var(--line-soft);
       overflow-x: auto;
       scrollbar-width: thin;
@@ -287,11 +287,18 @@
     }
 
     .pki-attention {
+      padding: 0;
+    }
+
+    .pki-attention summary {
       display: grid;
       grid-template-columns: 5px minmax(0, 1fr);
-      gap: 9px;
-      padding: 9px;
+      gap: 8px;
+      padding: 7px 8px;
+      list-style: none;
     }
+
+    .pki-attention[open] { background: rgba(231, 240, 249, .075); }
 
     .pki-severity-bar {
       width: 5px;
@@ -330,13 +337,13 @@
       z-index: 1;
       background: #213144;
       border-bottom: 1px solid var(--line);
-      padding: 8px 9px;
+      padding: 6px 8px;
       text-align: left;
       white-space: nowrap;
     }
 
     .pki-table td {
-      padding: 8px 9px;
+      padding: 6px 8px;
       border-bottom: 1px solid rgba(167, 186, 208, .14);
       color: #e5eef8;
       vertical-align: top;
@@ -379,15 +386,17 @@
 
     .pki-bottom {
       display: grid;
-      grid-template-columns: minmax(0, 1.45fr) minmax(280px, .7fr);
-      gap: 10px;
+      grid-template-columns: 1fr;
+      gap: 8px;
     }
 
     .pki-fresh-grid {
       display: grid;
       grid-template-columns: repeat(6, minmax(0, 1fr));
-      gap: 8px;
+      gap: 6px;
     }
+
+    .pki-fresh-strip .pki-panel-body { padding: 6px 8px; }
 
     .pki-fresh-item {
       padding: 8px;
@@ -447,11 +456,64 @@
       background: var(--tone, var(--blue));
     }
 
+    .pki-row-toggle,
+    .pki-attention summary {
+      cursor: pointer;
+    }
+
+    .pki-row-toggle:focus,
+    .pki-attention summary:focus {
+      outline: 2px solid rgba(124, 181, 230, .65);
+      outline-offset: -2px;
+    }
+
+    .pki-detail-row[hidden] { display: none; }
+
+    .pki-detail-cell {
+      padding: 0 !important;
+      background: #223449 !important;
+    }
+
+    .pki-detail-box {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      padding: 9px;
+      border-top: 1px solid var(--line-soft);
+      color: var(--muted);
+      white-space: normal;
+    }
+
+    .pki-detail-box pre {
+      grid-column: 1 / -1;
+      max-height: 130px;
+      overflow: auto;
+      margin: 0;
+      padding: 8px;
+      border: 1px solid var(--line-soft);
+      border-radius: 5px;
+      background: rgba(19, 33, 51, .72);
+      color: #dbe7f4;
+      font-size: 10px;
+      white-space: pre-wrap;
+    }
+
+    .pki-more summary {
+      cursor: pointer;
+      color: #d7e7f6;
+      font-size: 11px;
+      font-weight: 900;
+      padding: 7px 8px;
+      border: 1px solid var(--line-soft);
+      border-radius: 5px;
+      background: rgba(231, 240, 249, .055);
+    }
+
     .pki-empty {
       border: 1px dashed var(--line);
       background: rgba(231, 240, 249, .055);
       border-radius: 5px;
-      padding: 10px;
+      padding: 8px;
       color: var(--muted);
       font-size: 11px;
       font-weight: 800;
@@ -485,8 +547,8 @@
 
     @media (max-width: 1380px) {
       .pki-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-      .pki-main { grid-template-columns: minmax(260px, .8fr) minmax(0, 1.35fr); }
-      .pki-access-panel { grid-column: 1 / -1; }
+      .pki-main { grid-template-columns: minmax(250px, .75fr) minmax(0, 1.25fr); }
+      .pki-access-panel { grid-column: 1 / -1; max-height: 180px; }
       .pki-fresh-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     }
 
@@ -499,7 +561,10 @@
       .pki-fresh-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .pki-top-actions { justify-content: flex-start; }
       .pki-table th:nth-child(5),
-      .pki-table td:nth-child(5) { display: none; }
+      .pki-table td:nth-child(5),
+      .pki-table th:nth-child(7),
+      .pki-table td:nth-child(7) { display: none; }
+      .pki-detail-box { grid-template-columns: 1fr; }
     }
   </style>
 
@@ -524,6 +589,14 @@
 
     <section class="pki-filter-strip" id="pkiTopStrip"></section>
     <section class="pki-tiles" id="pkiTiles"></section>
+
+    <section class="pki-panel pki-fresh-strip">
+      <header class="pki-panel-head">
+        <div><div class="pki-kicker">Freshness</div><div class="pki-panel-title">Evidence Freshness</div></div>
+        <span class="pki-badge info" id="pkiModeBadge">monitoring</span>
+      </header>
+      <div class="pki-panel-body"><div class="pki-fresh-grid" id="pkiFreshness"></div></div>
+    </section>
 
     <section class="pki-main">
       <article class="pki-panel">
@@ -568,14 +641,6 @@
     </section>
 
     <section class="pki-bottom">
-      <article class="pki-panel">
-        <header class="pki-panel-head">
-          <div><div class="pki-kicker">Freshness</div><div class="pki-panel-title">Evidence Freshness</div></div>
-          <span class="pki-badge info" id="pkiModeBadge">monitoring</span>
-        </header>
-        <div class="pki-panel-body"><div class="pki-fresh-grid" id="pkiFreshness"></div></div>
-      </article>
-
       <article class="pki-panel">
         <header class="pki-panel-head">
           <div><div class="pki-kicker">Diagnostics</div><div class="pki-panel-title">Agent Diagnostics</div></div>
@@ -704,6 +769,7 @@
             object: event.object || event.template || event.request_id || event.event_id || "—",
             state,
             why: whyFor(category, state),
+            raw: event,
           };
         }),
         ...web.map((item) => {
@@ -716,6 +782,7 @@
             object: item.path || item.request_path || item.url || "CAWE endpoint",
             state,
             why: whyFor("CAWE", state),
+            raw: item,
           };
         }),
         ...sessions.map((session) => ({
@@ -726,6 +793,7 @@
           object: session.hostname || "CA host",
           state: session.state || "Active",
           why: whyFor("ADMIN", session.state),
+          raw: session,
         })),
         ...roles.filter((role) => role.active_now).map((role) => ({
           time: role.collected_at,
@@ -735,6 +803,7 @@
           object: role.group_name || role.role_type || "PKI role",
           state: "Active",
           why: whyFor("ROLE", "Active"),
+          raw: role,
         })),
         ...agents.map((agent) => ({
           time: agent.last_seen_at,
@@ -744,6 +813,7 @@
           object: agent.ca_name || "Agent channel",
           state: agent.connected ? "Online" : "Offline",
           why: whyFor("SERVICE", agent.connected ? "Online" : "Offline"),
+          raw: agent,
         })),
       ];
 
@@ -763,7 +833,7 @@
     }
 
     function attentionItem(title, detail, sev) {
-      return `<div class="pki-attention" style="--tone:${colorFor(sev)}"><i class="pki-severity-bar"></i><div><div class="pki-item-title">${esc(title)}</div><div class="pki-item-meta">${esc(detail)}</div></div></div>`;
+      return `<details class="pki-attention" style="--tone:${colorFor(sev)}"><summary><i class="pki-severity-bar"></i><div><div class="pki-item-title">${esc(title)}</div><div class="pki-item-meta">${esc(detail)}</div></div></summary><div class="pki-item-meta" style="grid-column:2;margin-top:0;"><strong>Why it matters:</strong> ${esc(detail)}<br><strong>Next check:</strong> Review the related CA, agent, audit, CAWE, or role evidence in the live activity stream.</div></details>`;
     }
 
     function feedItem(title, detail, stateText) {
@@ -836,7 +906,13 @@
       if (!adcsEvents.length) attention.push(["No ADCS audit events collected", "The live stream has no ADCS Security event evidence yet.", "Waiting"]);
       if (!revocationEvents.length) attention.push(["CRL / OCSP not monitored yet", "No live revocation availability evidence is present in this snapshot.", "Not monitored"]);
       setText("pkiAttentionCount", `${attention.length} items`);
-      $("pkiAttention").innerHTML = attention.length ? attention.map(([title, detail, sev]) => attentionItem(title, detail, sev)).join("") : `<div class="pki-empty">No immediate PKI attention items from current live evidence.</div>`;
+      if (attention.length) {
+        const topAttention = attention.slice(0, 5).map(([title, detail, sev]) => attentionItem(title, detail, sev)).join("");
+        const extraAttention = attention.slice(5).map(([title, detail, sev]) => attentionItem(title, detail, sev)).join("");
+        $("pkiAttention").innerHTML = topAttention + (extraAttention ? `<details class="pki-more"><summary>Show ${attention.length - 5} more attention item${attention.length - 5 === 1 ? "" : "s"}</summary><div class="pki-attention-list" style="margin-top:8px;">${extraAttention}</div></details>` : "");
+      } else {
+        $("pkiAttention").innerHTML = `<div class="pki-empty">No immediate PKI attention items from current live evidence.</div>`;
+      }
 
       const counts = categories.reduce((acc, category) => {
         acc[category] = category === "ALL" ? activity.length : activity.filter((row) => row.category === category).length;
@@ -847,8 +923,8 @@
 
       const visible = activeCategory === "ALL" ? activity : activity.filter((row) => row.category === activeCategory);
       setText("pkiActivityCount", `${visible.length} rows`);
-      $("pkiActivityRows").innerHTML = visible.length ? visible.map((row) => `
-        <tr>
+      $("pkiActivityRows").innerHTML = visible.length ? visible.map((row, index) => `
+        <tr class="pki-row-toggle" tabindex="0" data-detail="pki-detail-${index}" aria-expanded="false">
           <td>${esc(clock(row.time))}</td>
           <td>${badge(row.category)}</td>
           <td>${esc(row.actor)}</td>
@@ -856,7 +932,25 @@
           <td>${esc(row.object || "—")}</td>
           <td>${badge(row.state)}</td>
           <td><span class="pki-why">${esc(row.why)}</span></td>
-        </tr>`).join("") : `<tr><td colspan="7"><div class="pki-empty">Waiting for PKI live evidence in this category.</div></td></tr>`;
+        </tr>
+        <tr class="pki-detail-row" id="pki-detail-${index}" hidden><td class="pki-detail-cell" colspan="7"><div class="pki-detail-box"><div><strong>Time</strong><br>${esc(row.time || "Not recorded")}</div><div><strong>Category</strong><br>${esc(row.category)}</div><div><strong>Severity</strong><br>${esc(row.state)}</div><div><strong>Actor / Source</strong><br>${esc(row.actor)}</div><div><strong>Object</strong><br>${esc(row.object || "—")}</div><div><strong>Why it matters</strong><br>${esc(row.why)}</div><pre>${esc(JSON.stringify(row.raw || {}, null, 2))}</pre></div></td></tr>`).join("") : `<tr><td colspan="7"><div class="pki-empty">Waiting for PKI live evidence in this category.</div></td></tr>`;
+
+      $("pkiActivityRows").querySelectorAll(".pki-row-toggle").forEach((row) => {
+        const toggle = () => {
+          const detail = document.getElementById(row.dataset.detail || "");
+          if (!detail) return;
+          const isOpen = !detail.hidden;
+          detail.hidden = isOpen;
+          row.setAttribute("aria-expanded", String(!isOpen));
+        };
+        row.addEventListener("click", toggle);
+        row.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            toggle();
+          }
+        });
+      });
 
       const exposure = [];
       web.slice(0, 8).forEach((item) => exposure.push(feedItem(item.action || "CAWE activity", `${item.username || "user not recorded"} · ${item.source_ip || "source unknown"} · ${item.path || item.request_path || "path not recorded"}`, item.status ? `HTTP ${item.status}` : "CAWE")));
@@ -913,18 +1007,14 @@
     }
 
     async function refresh() {
-      const envId = snapshot?.environment?.id;
-      if (!envId) { render(snapshot); return; }
-      const urls = [`/api/v1/monitoring/live?environment_id=${encodeURIComponent(envId)}`, `/api/v1/pki-monitoring/live?environment_id=${encodeURIComponent(envId)}`];
-      for (const url of urls) {
-        try {
-          const response = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
-          if (!response.ok) continue;
+      try {
+        const response = await fetch("/api/v1/monitoring/summary", { headers: { Accept: "application/json" }, cache: "no-store" });
+        if (response.ok) {
           const json = await response.json();
           const next = json.snapshot || json.data || json;
           if (next && typeof next === "object" && next.counters) { snapshot = next; render(snapshot); return; }
-        } catch (error) {}
-      }
+        }
+      } catch (error) {}
       render(snapshot);
     }
 
