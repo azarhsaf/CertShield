@@ -856,6 +856,7 @@ def _monitoring_snapshot(
 
 
 ADCS_EVENT_LABELS = {
+    "4870": ("REVOCATION", "Certificate revoked", "warning"),
     "4880": ("SERVICE", "Certificate Services started", "success"),
     "4881": ("SERVICE", "Certificate Services stopped", "warning"),
     "4882": ("CONFIG", "CA security permissions changed", "warning"),
@@ -921,6 +922,8 @@ def _request_bucket(event: MonitoringEvent) -> str | None:
         ]
     ).lower()
 
+    if event_id == "4870" or event_type == "certificate_revoked" or "certificate revoked" in text:
+        return "revoked"
     if event_id == "4886" or "request received" in text:
         return "received"
     if event_id == "4887" or "issued" in text or "approved" in text:
@@ -970,11 +973,14 @@ def _request_activity_summary(
         "has_live_adcs_request_events": bool(request_events),
         "requests_15m": count_window(15),
         "requests_1h": count_window(60),
+        "requests_24h": count_window(1440),
+        "request_total_saved": len(request_events),
         "issued_1h": count_window(60, "issued"),
         "denied_1h": count_window(60, "denied"),
         "failed_1h": count_window(60, "failed"),
         "pending_1h": count_window(60, "pending"),
         "revoked_1h": count_window(60, "revoked"),
+        "revoked_24h": count_window(1440, "revoked"),
         "last_event_at": (
             last_event.occurred_at.isoformat()
             if last_event
@@ -1648,7 +1654,7 @@ def _monitoring_live_snapshot(
             MonitoringEvent.occurred_at.desc(),
             MonitoringEvent.id.desc(),
         )
-        .limit(150)
+        .limit(300)
         .all()
     )
     snapshot["events_source"] = "monitoring_events" if events else "collector_snapshot"
@@ -1790,7 +1796,7 @@ def _monitoring_live_snapshot(
 
         snapshot["events"] = [
             _display_monitoring_event(event)
-            for event in events[:60]
+            for event in events[:150]
         ]
 
         active_alert_events = [

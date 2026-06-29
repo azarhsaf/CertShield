@@ -1381,6 +1381,13 @@ function New-CertShieldAuditEventItem {
     $title = "AD CS audit event {0}" -f $eventId
 
     switch ($eventId) {
+        4870 {
+            $category = "certificate"
+            $eventType = "certificate_revoked"
+            $severity = "warning"
+            $title = "Certificate revoked"
+        }
+
         4886 {
             $category = "certificate"
             $eventType = "certificate_requested"
@@ -1513,6 +1520,7 @@ function Get-CertShieldAuditEvents {
     }
 
     $eventIds = @(
+        4870,
         4880, 4881, 4882, 4883, 4884,
         4885, 4886, 4887, 4888, 4889,
         4890, 4891, 4892, 4893, 4894,
@@ -1642,7 +1650,7 @@ function Send-Heartbeat {
         agent_key        = [string]$script:Config.agent_key
         hostname         = $env:COMPUTERNAME
         ca_name          = $caName
-        agent_version    = "0.3.1"
+        agent_version    = "0.3.2"
         environment_name = [string]$script:Config.environment_name
         domain_name      = [string]$script:Config.domain_name
         forest_name      = [string]$script:Config.forest_name
