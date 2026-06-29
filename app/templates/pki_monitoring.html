@@ -1,178 +1,163 @@
 {% extends 'base.html' %}
 {% block content %}
 
-<div class="monitoring-page pki-dash">
+<div class="monitoring-page pki-live">
   <script id="monitoringInitialData" type="application/json">{{ monitoring|tojson }}</script>
 
   <style>
-    .pki-dash {
-      --bg: #07111f;
-      --bg-2: #0b1829;
-      --panel: #101d2e;
-      --panel-2: #132338;
-      --panel-3: #0d1726;
-      --line: rgba(148, 163, 184, .18);
-      --line-strong: rgba(148, 163, 184, .28);
-      --text: #e6edf7;
-      --muted: #93a4ba;
-      --faint: #64748b;
-      --blue: #3b82f6;
-      --cyan: #22d3ee;
-      --green: #22c55e;
-      --amber: #f59e0b;
-      --red: #ef4444;
-      --purple: #a78bfa;
+    .pki-live {
+      --bg: #050d18;
+      --navy: #071426;
+      --panel: #0d1b2d;
+      --panel-2: #111f32;
+      --row: #0a1626;
+      --row-alt: #16212d;
+      --line: rgba(126, 151, 179, .24);
+      --line-soft: rgba(126, 151, 179, .14);
+      --text: #e8f0fb;
+      --muted: #9fb1c6;
+      --dim: #6f8197;
+      --blue: #2292ff;
+      --cyan: #1bd4f2;
+      --green: #45d64f;
+      --amber: #f5b83d;
+      --red: #ff453d;
       min-height: calc(100vh - 105px);
-      padding: 12px;
+      overflow-x: hidden;
+      padding: 14px 16px 18px;
       background:
-        radial-gradient(circle at 20% 0%, rgba(59, 130, 246, .20), transparent 26%),
-        radial-gradient(circle at 74% 4%, rgba(34, 211, 238, .12), transparent 28%),
-        linear-gradient(180deg, #081426 0%, #07111f 100%);
+        radial-gradient(circle at 20% 0%, rgba(34, 146, 255, .16), transparent 28%),
+        linear-gradient(180deg, #07111d 0%, #050d18 100%);
       color: var(--text);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      overflow-x: hidden;
     }
 
-    .pki-dash * { box-sizing: border-box; }
+    .pki-live * { box-sizing: border-box; }
 
-    .pki-shell {
-      width: min(100%, 1720px);
+    .pki-wrap {
+      width: min(100%, 1760px);
       margin: 0 auto;
       display: grid;
-      grid-template-rows: auto auto minmax(0, 1fr) auto;
       gap: 10px;
     }
 
-    .pki-header,
-    .pki-card,
-    .pki-panel {
-      border: 1px solid var(--line);
-      background: linear-gradient(180deg, rgba(19, 35, 56, .94), rgba(13, 23, 38, .96));
-      box-shadow: 0 18px 38px rgba(0, 0, 0, .22);
-      border-radius: 14px;
-    }
-
-    .pki-header {
+    .pki-topbar {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
       gap: 12px;
-      align-items: center;
-      padding: 10px 12px;
+      align-items: start;
+      padding-bottom: 4px;
     }
 
-    .pki-titleline {
-      display: flex;
-      gap: 8px;
-      align-items: baseline;
-      min-width: 0;
-    }
-
-    .pki-titleline h1 {
-      margin: 0;
-      font-size: 18px;
-      line-height: 1.05;
-      letter-spacing: -.03em;
-      font-weight: 900;
+    .pki-title {
+      margin: 0 0 8px;
       color: #fff;
-      white-space: nowrap;
+      font-size: 20px;
+      line-height: 1.1;
+      font-weight: 950;
+      letter-spacing: -.03em;
     }
 
-    .pki-env {
-      color: var(--cyan);
+    .pki-subtitle {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    .pki-filter-strip,
+    .pki-top-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .pki-filter-label {
+      display: grid;
+      gap: 4px;
+      min-width: 150px;
+    }
+
+    .pki-filter-label span,
+    .pki-kicker,
+    .pki-table th,
+    .pki-source {
+      color: #c9d7e8;
+      font-size: 10px;
+      line-height: 1;
+      font-weight: 900;
+      letter-spacing: .03em;
+    }
+
+    .pki-token,
+    .pki-button {
+      min-height: 30px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      border: 1px solid var(--line);
+      background: #1d2a3a;
+      border-radius: 4px;
+      color: #e8f0fb;
+      padding: 6px 10px;
       font-size: 12px;
-      font-weight: 800;
+      font-weight: 780;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03);
+    }
+
+    .pki-token strong { color: #fff; font-weight: 950; }
+    .pki-button { cursor: pointer; }
+    .pki-button:hover { border-color: rgba(34, 146, 255, .55); }
+
+    .pki-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--green);
+      box-shadow: 0 0 0 3px rgba(69, 214, 79, .12);
+    }
+
+    .pki-dot.warn { background: var(--amber); box-shadow: 0 0 0 3px rgba(245, 184, 61, .14); }
+    .pki-dot.bad { background: var(--red); box-shadow: 0 0 0 3px rgba(255, 69, 61, .14); }
+    .pki-dot.info { background: var(--blue); box-shadow: 0 0 0 3px rgba(34, 146, 255, .13); }
+
+    .pki-tiles {
+      display: grid;
+      grid-template-columns: repeat(8, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .pki-tile,
+    .pki-panel {
+      border: 1px solid var(--line-soft);
+      background: linear-gradient(180deg, rgba(17, 31, 50, .96), rgba(10, 22, 38, .98));
+      box-shadow: 0 12px 28px rgba(0, 0, 0, .22);
+    }
+
+    .pki-tile {
+      min-width: 0;
+      border-radius: 5px;
+      padding: 9px 10px;
+      border-left: 3px solid var(--tone, var(--blue));
+    }
+
+    .pki-tile label {
+      display: block;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: .05em;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
-    .pki-meta,
-    .pki-header-actions {
-      display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-      align-items: center;
-    }
-
-    .pki-meta { margin-top: 7px; }
-    .pki-header-actions { justify-content: flex-end; }
-
-    .pki-chip,
-    .pki-state,
-    .pki-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      border-radius: 999px;
-      border: 1px solid var(--line);
-      background: rgba(148, 163, 184, .09);
-      color: #cbd5e1;
-      line-height: 1;
-      white-space: nowrap;
-      line-height: 1;
-    }
-
-    .soc-chip {
-      padding: 5px 8px;
-      color: #c7d7ea;
-      background: rgba(255, 255, 255, .08);
-      border: 1px solid rgba(203, 213, 225, .16);
-      font-size: 10px;
-      font-weight: 850;
-    }
-
-    .pki-chip { padding: 5px 8px; font-size: 10px; font-weight: 800; }
-    .pki-chip strong { color: #fff; font-weight: 950; }
-
-    .pki-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--green);
-      box-shadow: 0 0 0 4px rgba(34, 197, 94, .12);
-    }
-
-    .pki-dot.waiting { background: var(--amber); box-shadow: 0 0 0 4px rgba(245, 158, 11, .12); }
-    .pki-dot.bad { background: var(--red); box-shadow: 0 0 0 4px rgba(239, 68, 68, .12); }
-
-    .pki-kpis {
-      display: grid;
-      grid-template-columns: repeat(7, minmax(0, 1fr));
-      gap: 8px;
-    }
-
-    .pki-card {
-      min-width: 0;
-      padding: 9px 10px;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .pki-card::after {
-      content: "";
-      position: absolute;
-      inset: auto 0 0 0;
-      height: 2px;
-      background: var(--tone, var(--blue));
-      opacity: .9;
-    }
-
-    .pki-card label,
-    .pki-kicker,
-    .pki-source {
+    .pki-tile strong {
       display: block;
-      color: var(--muted);
-      font-size: 9px;
-      text-transform: uppercase;
-      letter-spacing: .08em;
-      font-weight: 900;
-    }
-
-    .pki-card strong {
-      display: block;
-      margin-top: 5px;
+      margin-top: 6px;
       color: #fff;
-      font-size: 16px;
+      font-size: 15px;
       line-height: 1;
       font-weight: 950;
       overflow: hidden;
@@ -180,23 +165,23 @@
       white-space: nowrap;
     }
 
-    .pki-card small {
+    .pki-tile small {
       display: block;
       margin-top: 6px;
-      color: var(--faint);
+      color: var(--dim);
       font-size: 10px;
       font-weight: 750;
+      white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
 
-    .pki-grid {
+    .pki-main {
       display: grid;
-      grid-template-columns: minmax(0, 1.45fr) minmax(320px, .82fr) minmax(300px, .72fr);
-      grid-auto-rows: minmax(0, 1fr);
+      grid-template-columns: minmax(260px, .76fr) minmax(520px, 1.55fr) minmax(300px, .88fr);
       gap: 10px;
-      min-height: 525px;
+      min-height: 548px;
     }
 
     .pki-panel {
@@ -204,25 +189,26 @@
       min-height: 0;
       display: flex;
       flex-direction: column;
+      border-radius: 5px;
       overflow: hidden;
     }
 
     .pki-panel-head {
-      min-height: 42px;
-      padding: 9px 10px;
+      min-height: 39px;
       display: flex;
-      justify-content: space-between;
       align-items: center;
+      justify-content: space-between;
       gap: 10px;
-      border-bottom: 1px solid var(--line);
-      background: rgba(255, 255, 255, .025);
+      padding: 9px 11px;
+      background: rgba(255, 255, 255, .035);
+      border-bottom: 1px solid var(--line-soft);
     }
 
     .pki-panel-title {
+      margin-top: 3px;
       color: #fff;
-      font-size: 13px;
-      font-weight: 900;
-      margin-top: 2px;
+      font-size: 14px;
+      font-weight: 950;
       letter-spacing: -.01em;
     }
 
@@ -236,28 +222,99 @@
       display: flex;
       gap: 6px;
       padding: 8px 10px;
-      border-bottom: 1px solid var(--line);
+      border-bottom: 1px solid var(--line-soft);
       overflow-x: auto;
       scrollbar-width: thin;
     }
 
     .pki-filter {
       border: 1px solid var(--line);
-      background: rgba(148, 163, 184, .08);
-      color: #cbd5e1;
-      border-radius: 999px;
+      border-radius: 4px;
+      background: #121f30;
+      color: var(--muted);
       padding: 5px 8px;
       font-size: 10px;
-      font-weight: 850;
-      white-space: nowrap;
+      font-weight: 900;
       cursor: pointer;
+      white-space: nowrap;
     }
 
     .pki-filter.active {
-      background: rgba(34, 211, 238, .16);
-      border-color: rgba(34, 211, 238, .42);
-      color: #e0fbff;
+      color: #fff;
+      background: #1b344f;
+      border-color: rgba(34, 146, 255, .58);
     }
+
+    .pki-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 54px;
+      max-width: 116px;
+      border-radius: 3px;
+      border: 1px solid var(--line);
+      padding: 4px 7px;
+      font-size: 10px;
+      line-height: 1;
+      font-weight: 950;
+      text-transform: uppercase;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .pki-badge.good { color: #07130c; background: var(--green); border-color: var(--green); }
+    .pki-badge.warn { color: #1e1300; background: var(--amber); border-color: var(--amber); }
+    .pki-badge.bad { color: #fff; background: var(--red); border-color: var(--red); }
+    .pki-badge.info { color: #001321; background: #48a6ff; border-color: #48a6ff; }
+    .pki-badge.none { color: #d5deea; background: rgba(126, 151, 179, .16); }
+
+    .pki-attention-list,
+    .pki-feed,
+    .pki-fresh-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .pki-attention,
+    .pki-feed-card,
+    .pki-fresh-item {
+      border: 1px solid var(--line-soft);
+      background: rgba(255, 255, 255, .035);
+      border-radius: 5px;
+      min-width: 0;
+    }
+
+    .pki-attention {
+      display: grid;
+      grid-template-columns: 5px minmax(0, 1fr);
+      gap: 9px;
+      padding: 9px;
+    }
+
+    .pki-severity-bar {
+      width: 5px;
+      border-radius: 999px;
+      background: var(--tone, var(--blue));
+    }
+
+    .pki-item-title {
+      color: #fff;
+      font-size: 12px;
+      font-weight: 950;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .pki-item-meta {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 10.5px;
+      line-height: 1.35;
+    }
+
+    .pki-table-wrap { min-height: 0; overflow: auto; }
 
     .pki-table {
       width: 100%;
@@ -270,103 +327,115 @@
       position: sticky;
       top: 0;
       z-index: 1;
-      padding: 8px;
-      color: var(--muted);
-      background: #0d1726;
+      background: #000;
       border-bottom: 1px solid var(--line);
-      font-size: 9px;
-      font-weight: 900;
-      letter-spacing: .08em;
+      padding: 8px 9px;
       text-align: left;
-      text-transform: uppercase;
+      white-space: nowrap;
     }
 
     .pki-table td {
-      padding: 8px;
-      border-bottom: 1px solid rgba(148, 163, 184, .10);
-      color: #dbe7f5;
-      vertical-align: middle;
+      padding: 8px 9px;
+      border-bottom: 1px solid rgba(126, 151, 179, .10);
+      color: #dce8f7;
+      vertical-align: top;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
-    .pki-table tr:hover td { background: rgba(59, 130, 246, .055); }
-    .pki-event-title { color: #fff; font-weight: 850; }
-    .pki-muted { color: var(--muted); }
+    .pki-table tbody tr:nth-child(odd) td { background: var(--row-alt); }
+    .pki-table tbody tr:nth-child(even) td { background: var(--row); }
+    .pki-table tbody tr:hover td { background: #1a2b40; }
+    .pki-action { color: #00a9ff; font-weight: 850; }
+    .pki-why { color: var(--muted); font-size: 10px; }
 
-    .pki-state {
-      justify-content: center;
-      max-width: 116px;
-      padding: 4px 7px;
-      font-size: 9px;
-      font-weight: 950;
-      text-transform: uppercase;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .pki-state.good { color: #bbf7d0; background: rgba(34, 197, 94, .14); border-color: rgba(34, 197, 94, .34); }
-    .pki-state.warn { color: #fde68a; background: rgba(245, 158, 11, .14); border-color: rgba(245, 158, 11, .34); }
-    .pki-state.bad { color: #fecaca; background: rgba(239, 68, 68, .15); border-color: rgba(239, 68, 68, .36); }
-    .pki-state.info { color: #bfdbfe; background: rgba(59, 130, 246, .14); border-color: rgba(59, 130, 246, .34); }
-    .pki-state.none { color: #cbd5e1; background: rgba(148, 163, 184, .10); }
-
-    .pki-host-grid {
+    .pki-feed-card {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: minmax(0, 1fr) auto;
       gap: 8px;
-      margin-bottom: 10px;
-    }
-
-    .pki-mini {
-      border: 1px solid var(--line);
-      background: rgba(255, 255, 255, .035);
-      border-radius: 10px;
+      align-items: start;
       padding: 8px;
-      min-width: 0;
-      padding: 8px;
-      border: 1px solid #e1e8f1;
-      border-radius: 10px;
-      background: linear-gradient(180deg, #fbfdff, #f7faff);
     }
 
-    .pki-mini label {
-      display: block;
-      color: var(--faint);
-      font-size: 9px;
-      letter-spacing: .08em;
-      text-transform: uppercase;
-      font-weight: 900;
-    }
-
-    .pki-mini strong {
-      display: block;
-      margin-top: 5px;
+    .pki-feed-card strong {
       color: #fff;
       font-size: 12px;
-      font-weight: 850;
+      font-weight: 900;
+      display: block;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+
+    .pki-feed-card span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 10.5px;
+      line-height: 1.35;
+    }
+
+    .pki-bottom {
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(280px, .7fr);
+      gap: 10px;
+    }
+
+    .pki-fresh-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .pki-fresh-item {
+      padding: 8px;
+    }
+
+    .pki-fresh-item label {
+      display: block;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+
+    .pki-fresh-item strong {
+      display: block;
+      margin-top: 6px;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 900;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .pki-diagnostics summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 900;
+      list-style: none;
     }
 
     .pki-meter-row {
       display: grid;
-      grid-template-columns: 58px minmax(0, 1fr) 62px;
-      gap: 8px;
+      grid-template-columns: 54px minmax(0, 1fr) 58px;
+      gap: 7px;
       align-items: center;
-      margin-top: 9px;
-      color: #cbd5e1;
-      font-size: 10.5px;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 10px;
       font-weight: 800;
     }
 
     .pki-meter {
-      height: 7px;
+      height: 6px;
       overflow: hidden;
       border-radius: 999px;
-      background: rgba(148, 163, 184, .18);
+      background: rgba(126, 151, 179, .18);
     }
 
     .pki-meter i {
@@ -374,123 +443,32 @@
       width: var(--w, 0%);
       height: 100%;
       border-radius: inherit;
-      background: linear-gradient(90deg, var(--tone, var(--blue)), var(--cyan));
-    }
-
-    .pki-netbox {
-      margin-top: 10px;
-      border-top: 1px dashed var(--line-strong);
-      padding-top: 9px;
-      color: var(--muted);
-      font-size: 10.5px;
-      line-height: 1.45;
-    }
-
-    .pki-feed {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .pki-feed-card,
-    .pki-check {
-      border: 1px solid var(--line);
-      background: rgba(255, 255, 255, .035);
-      border-radius: 11px;
-      padding: 8px;
-      min-width: 0;
-    }
-
-    .pki-feed-card {
-      display: grid;
-      grid-template-columns: 4px minmax(0, 1fr) auto;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .pki-rail {
-      width: 4px;
-      align-self: stretch;
-      border-radius: 99px;
       background: var(--tone, var(--blue));
     }
 
-    .pki-feed-top {
-      display: flex;
-      gap: 6px;
-      align-items: center;
-      min-width: 0;
-    }
-
-    .pki-feed-title {
-      color: #fff;
-      margin-top: 3px;
-      font-size: 11.5px;
-      font-weight: 850;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .pki-feed-meta {
-      margin-top: 3px;
+    .pki-empty {
+      border: 1px dashed var(--line);
+      background: rgba(126, 151, 179, .07);
+      border-radius: 5px;
+      padding: 10px;
       color: var(--muted);
-      font-size: 10px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .pki-bottom {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 10px;
-    }
-
-    .pki-summary-list {
-      display: grid;
-      gap: 8px;
-    }
-
-    .pki-request-row,
-    .pki-check {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 8px;
-      align-items: center;
-      color: #dbe7f5;
       font-size: 11px;
       font-weight: 800;
     }
 
-    .pki-request-row .pki-meter { grid-column: 1 / -1; }
-
-    .pki-empty {
-      padding: 10px;
-      border: 1px dashed var(--line-strong);
-      border-radius: 10px;
-      color: var(--muted);
-      background: rgba(148, 163, 184, .06);
-      font-size: 11px;
-      font-weight: 750;
-    }
-
-    .pki-audit-form { margin-top: 7px; }
-
+    .pki-audit-form { margin-top: 8px; }
     .pki-audit-button {
       width: 100%;
-      border: 1px solid rgba(245, 158, 11, .40);
-      border-radius: 9px;
-      background: rgba(245, 158, 11, .12);
-      color: #fde68a;
+      border: 1px solid rgba(245, 184, 61, .45);
+      background: rgba(245, 184, 61, .12);
+      color: #ffe8a8;
+      border-radius: 4px;
       padding: 6px 8px;
       font-size: 10px;
       font-weight: 950;
       text-transform: uppercase;
       cursor: pointer;
     }
-
-    .pki-audit-button:hover { background: rgba(245, 158, 11, .20); }
 
     .pki-sr-only {
       position: absolute;
@@ -504,23 +482,23 @@
       border: 0;
     }
 
-    @media (max-width: 1300px) {
-      .pki-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-      .pki-grid { grid-template-columns: minmax(0, 1fr) minmax(300px, .8fr); }
-      .pki-watch { grid-column: 1 / -1; }
-      .pki-bottom { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    @media (max-width: 1380px) {
+      .pki-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .pki-main { grid-template-columns: minmax(260px, .8fr) minmax(0, 1.35fr); }
+      .pki-access-panel { grid-column: 1 / -1; }
+      .pki-fresh-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     }
 
-    @media (max-width: 860px) {
-      .pki-dash { padding: 8px; }
-      .pki-header { grid-template-columns: 1fr; }
-      .pki-header-actions { justify-content: flex-start; }
-      .pki-kpis,
-      .pki-grid,
+    @media (max-width: 900px) {
+      .pki-live { padding: 10px; }
+      .pki-topbar,
+      .pki-main,
       .pki-bottom { grid-template-columns: 1fr; }
-      .pki-grid { min-height: 0; }
-      .pki-host-grid { grid-template-columns: 1fr; }
-      .pki-titleline { flex-wrap: wrap; }
+      .pki-tiles,
+      .pki-fresh-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .pki-top-actions { justify-content: flex-start; }
+      .pki-table th:nth-child(5),
+      .pki-table td:nth-child(5) { display: none; }
     }
   </style>
 
@@ -530,86 +508,84 @@
   <span class="pki-sr-only">What needs attention now?</span>
   <span class="pki-sr-only">Activity timeline</span>
 
-  <section class="pki-shell">
-    <header class="pki-header">
+  <section class="pki-wrap">
+    <header class="pki-topbar">
       <div>
-        <div class="pki-titleline">
-          <h1>CertShield PKI Monitoring</h1>
-          <span class="pki-env" id="pkiEnvironment">Loading environment…</span>
-        </div>
-        <div class="pki-meta" id="pkiMeta"></div>
+        <h1 class="pki-title">CertShield PKI Monitoring</h1>
+        <div class="pki-subtitle">Live ADCS evidence and changes since the last collector scan.</div>
       </div>
-      <div class="pki-header-actions">
-        <span class="pki-chip"><i class="pki-dot" id="pkiLiveDot"></i><strong id="pkiAgentStatus">Waiting</strong></span>
-        <span class="pki-chip">Sample <strong id="pkiSampleAge">—</strong></span>
-        <span class="pki-chip">Refresh <strong>10s</strong></span>
+      <div class="pki-top-actions">
+        <span class="pki-token"><i class="pki-dot" id="pkiAgentDot"></i><strong id="pkiAgentState">Waiting</strong></span>
+        <span class="pki-token">Heartbeat <strong id="pkiHeartbeatAge">Not collected yet</strong></span>
+        <span class="pki-token">Refresh <strong>10s</strong></span>
       </div>
     </header>
 
-    <section class="pki-kpis" id="pkiKpis"></section>
+    <section class="pki-filter-strip" id="pkiTopStrip"></section>
+    <section class="pki-tiles" id="pkiTiles"></section>
 
-    <section class="pki-grid">
+    <section class="pki-main">
       <article class="pki-panel">
         <header class="pki-panel-head">
-          <div><span class="pki-kicker">Live Operations</span><div class="pki-panel-title">ADCS / CAWE Event Stream</div></div>
-          <span class="pki-state info" id="pkiEventCount">0 rows</span>
+          <div><div class="pki-kicker">Priority</div><div class="pki-panel-title">What needs attention now?</div></div>
+          <span class="pki-badge warn" id="pkiAttentionCount">0 items</span>
         </header>
-        <div class="pki-filterbar" id="pkiFilters"></div>
-        <div class="pki-panel-body" style="padding:0;">
+        <div class="pki-panel-body"><div class="pki-attention-list" id="pkiAttention"></div></div>
+      </article>
+
+      <article class="pki-panel">
+        <header class="pki-panel-head">
+          <div><div class="pki-kicker">Evidence Stream</div><div class="pki-panel-title">Live CA Activity</div></div>
+          <span class="pki-badge info" id="pkiActivityCount">0 rows</span>
+        </header>
+        <div class="pki-filterbar" id="pkiActivityFilters"></div>
+        <div class="pki-table-wrap">
           <table class="pki-table">
             <thead>
               <tr>
                 <th style="width:76px;">Time</th>
-                <th style="width:74px;">Source</th>
-                <th>Signal</th>
-                <th style="width:155px;">Actor / Endpoint</th>
-                <th style="width:92px;">State</th>
+                <th style="width:86px;">Category</th>
+                <th style="width:150px;">Actor / Source</th>
+                <th>Action</th>
+                <th style="width:130px;">Object</th>
+                <th style="width:88px;">Severity</th>
+                <th style="width:190px;">Why it matters</th>
               </tr>
             </thead>
-            <tbody id="pkiEventRows"></tbody>
+            <tbody id="pkiActivityRows"></tbody>
           </table>
         </div>
       </article>
 
-      <article class="pki-panel">
+      <article class="pki-panel pki-access-panel">
         <header class="pki-panel-head">
-          <div><span class="pki-kicker">Host / Sensor Pulse</span><div class="pki-panel-title">CA Runtime</div></div>
-          <span class="pki-state" id="pkiRuntimeState">—</span>
+          <div><div class="pki-kicker">Exposure</div><div class="pki-panel-title">PKI Access &amp; Exposure</div></div>
+          <span class="pki-badge info" id="pkiExposureCount">0 items</span>
         </header>
-        <div class="pki-panel-body">
-          <div class="pki-host-grid" id="pkiHostGrid"></div>
-          <div id="pkiMeters"></div>
-        </div>
-      </article>
-
-      <article class="pki-panel pki-watch">
-        <header class="pki-panel-head">
-          <div><span class="pki-kicker">PKI Watchlist</span><div class="pki-panel-title">Attention Queue</div></div>
-          <span class="pki-state info" id="pkiWatchCount">0 items</span>
-        </header>
-        <div class="pki-panel-body"><div class="pki-feed" id="pkiWatchFeed"></div></div>
+        <div class="pki-panel-body"><div class="pki-feed" id="pkiExposure"></div></div>
       </article>
     </section>
 
     <section class="pki-bottom">
       <article class="pki-panel">
-        <header class="pki-panel-head"><div><span class="pki-kicker">Requests</span><div class="pki-panel-title">Request Mix</div></div><span class="pki-state info" id="pkiRequestTotal">0 total</span></header>
-        <div class="pki-panel-body"><div class="pki-summary-list" id="pkiRequests"></div></div>
+        <header class="pki-panel-head">
+          <div><div class="pki-kicker">Freshness</div><div class="pki-panel-title">Evidence Freshness</div></div>
+          <span class="pki-badge info" id="pkiModeBadge">monitoring</span>
+        </header>
+        <div class="pki-panel-body"><div class="pki-fresh-grid" id="pkiFreshness"></div></div>
       </article>
 
       <article class="pki-panel">
-        <header class="pki-panel-head"><div><span class="pki-kicker">Access</span><div class="pki-panel-title">Admin + CAWE</div></div><span class="pki-state info" id="pkiAccessCount">0</span></header>
-        <div class="pki-panel-body"><div class="pki-feed" id="pkiAccessFeed"></div></div>
-      </article>
-
-      <article class="pki-panel">
-        <header class="pki-panel-head"><div><span class="pki-kicker">Agent Channel</span><div class="pki-panel-title">Heartbeat</div></div><span class="pki-state info" id="pkiAgentCount">0</span></header>
-        <div class="pki-panel-body"><div class="pki-feed" id="pkiAgentFeed"></div></div>
-      </article>
-
-      <article class="pki-panel">
-        <header class="pki-panel-head"><div><span class="pki-kicker">Readiness</span><div class="pki-panel-title">Audit / Services</div></div><span class="pki-state" id="pkiReadyState">—</span></header>
-        <div class="pki-panel-body"><div class="pki-summary-list" id="pkiReadiness"></div></div>
+        <header class="pki-panel-head">
+          <div><div class="pki-kicker">Diagnostics</div><div class="pki-panel-title">Agent Diagnostics</div></div>
+          <span class="pki-badge none">secondary</span>
+        </header>
+        <div class="pki-panel-body">
+          <details class="pki-diagnostics">
+            <summary>Show host resource diagnostics</summary>
+            <div id="pkiDiagnostics"></div>
+          </details>
+        </div>
       </article>
     </section>
   </section>
@@ -618,10 +594,11 @@
   (function () {
     const initialNode = document.getElementById("monitoringInitialData");
     const refreshSeconds = 10;
-    let data = {};
-    let activeFilter = "All";
+    const categories = ["ALL", "REQUEST", "ISSUE", "DENY", "FAIL", "REVOKE", "CONFIG", "SERVICE", "AUDIT", "CAWE", "ADMIN", "ROLE", "REVOCATION"];
+    let snapshot = {};
+    let activeCategory = "ALL";
 
-    try { data = JSON.parse(initialNode?.textContent || "{}"); } catch (error) { data = {}; }
+    try { snapshot = JSON.parse(initialNode?.textContent || "{}"); } catch (error) { snapshot = {}; }
 
     const $ = (id) => document.getElementById(id);
     const esc = (value) => String(value ?? "")
@@ -630,268 +607,311 @@
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#039;");
-    const setText = (id, value) => { const node = $(id); if (node) node.textContent = value ?? "—"; };
     const num = (value) => { const n = Number(value); return Number.isFinite(n) ? n : 0; };
-    const pct = (value) => { const n = Number(value); return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : null; };
-    const clean = (value) => value === undefined || value === null || value === "" ? "—" : value;
+    const pct = (value) => { const n = Number(value); return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : null; };
+    const setText = (id, value) => { const node = $(id); if (node) node.textContent = value ?? "—"; };
+
+    function parseDate(value) {
+      if (!value) return null;
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
 
     function age(value) {
-      if (!value) return "no sample";
-      const date = new Date(value);
-      if (Number.isNaN(date.getTime())) return String(value).slice(0, 19);
+      const date = parseDate(value);
+      if (!date) return "Not collected yet";
       const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
       if (seconds < 60) return `${seconds}s ago`;
       if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-      return `${Math.floor(seconds / 3600)}h ago`;
+      if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+      return `${Math.floor(seconds / 86400)}d ago`;
     }
 
-    function time(value) {
-      if (!value) return "live";
-      const date = new Date(value);
-      if (!Number.isNaN(date.getTime())) return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-      const text = String(value);
-      return text.includes(" ") ? text.split(" ").at(-1).slice(0, 8) : text.slice(0, 8);
+    function clock(value) {
+      const date = parseDate(value);
+      if (!date) return "live";
+      return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     }
 
     function severity(value) {
       const text = String(value || "").toLowerCase();
-      if (text.includes("offline") || text.includes("failed") || text.includes("stopped") || text.includes("denied") || text.includes("401") || text.includes("403") || text.includes("critical")) return "bad";
-      if (text.includes("warning") || text.includes("pending") || text.includes("check") || text.includes("unknown") || text.includes("active")) return "warn";
-      if (text.includes("running") || text.includes("ready") || text.includes("online") || text.includes("200") || text.includes("success") || text.includes("issued")) return "good";
+      if (text.includes("fail") || text.includes("deny") || text.includes("403") || text.includes("401") || text.includes("500") || text.includes("offline") || text.includes("stopped") || text.includes("revoked") || text.includes("unreadable")) return "bad";
+      if (text.includes("pending") || text.includes("unknown") || text.includes("check") || text.includes("waiting") || text.includes("active") || text.includes("not monitored")) return "warn";
+      if (text.includes("ready") || text.includes("running") || text.includes("online") || text.includes("issued") || text.includes("success") || text.includes("readable")) return "good";
       return "info";
     }
 
-    function color(value) {
-      const sev = severity(value);
-      if (sev === "good") return "#22c55e";
-      if (sev === "warn") return "#f59e0b";
-      if (sev === "bad") return "#ef4444";
-      return "#3b82f6";
+    function colorFor(sev) {
+      const value = severity(sev);
+      if (value === "good") return "#45d64f";
+      if (value === "warn") return "#f5b83d";
+      if (value === "bad") return "#ff453d";
+      return "#2292ff";
     }
 
-    function state(value) {
-      const text = clean(value);
-      return `<span class="pki-state ${severity(text)}">${esc(text)}</span>`;
+    function badge(value) {
+      const text = value || "Info";
+      return `<span class="pki-badge ${severity(text)}">${esc(text)}</span>`;
     }
 
-    function meter(label, value, unit, tone) {
-      const n = unit === "Kbps" ? Number(value) : pct(value);
-      const ok = Number.isFinite(n);
-      const width = ok ? (unit === "Kbps" ? Math.min(100, Math.max(0, n)) : n) : 0;
-      const display = ok ? (unit === "Kbps" ? `${n.toFixed(1)} Kbps` : `${Math.round(n)}%`) : "N/A";
-      return `
-        <div class="pki-meter-row">
-          <span>${esc(label)}</span>
-          <span class="pki-meter"><i style="--w:${width}%;--tone:${tone || "#3b82f6"}"></i></span>
-          <b>${esc(display)}</b>
-        </div>`;
+    function categoryFromEvent(event) {
+      const haystack = `${event.category || ""} ${event.kind || ""} ${event.title || ""} ${event.summary || ""} ${event.event_id || ""}`.toLowerCase();
+      if (haystack.includes("revok") || [628, 629, 630].includes(Number(event.event_id))) return "REVOCATION";
+      if (haystack.includes("denied") || haystack.includes("deny")) return "DENY";
+      if (haystack.includes("failed") || haystack.includes("fail")) return "FAIL";
+      if (haystack.includes("pending")) return "REQUEST";
+      if (haystack.includes("issued") || haystack.includes("issue")) return "ISSUE";
+      if (haystack.includes("request")) return "REQUEST";
+      if (haystack.includes("config") || haystack.includes("policy") || haystack.includes("module") || haystack.includes("template")) return "CONFIG";
+      if (haystack.includes("audit") || haystack.includes("security")) return "AUDIT";
+      if (haystack.includes("service") || haystack.includes("agent")) return "SERVICE";
+      return "AUDIT";
     }
 
-    function feed(item) {
-      const badge = item.badge || item.source || "info";
-      return `
-        <div class="pki-feed-card" style="--tone:${item.tone || color(badge)}">
-          <i class="pki-rail"></i>
-          <div style="min-width:0;">
-            <div class="pki-feed-top"><span class="pki-source">${esc(item.source || "Signal")}</span><span class="pki-muted" style="font-size:10px;">${esc(time(item.time))}</span></div>
-            <div class="pki-feed-title">${esc(item.title || "Telemetry")}</div>
-            <div class="pki-feed-meta">${esc(item.meta || "—")}</div>
-            ${item.actionHtml || ""}
-          </div>
-          ${state(badge)}
-        </div>`;
+    function whyFor(category, state) {
+      if (category === "REQUEST") return "Certificate demand entering the CA pipeline.";
+      if (category === "ISSUE") return "A certificate was issued by the CA.";
+      if (category === "DENY") return "A request was denied and may need review.";
+      if (category === "FAIL") return "A PKI operation failed or access was rejected.";
+      if (category === "REVOKE") return "Certificate trust status changed.";
+      if (category === "CONFIG") return "CA policy or publication settings changed.";
+      if (category === "SERVICE") return "CA service or agent availability changed.";
+      if (category === "AUDIT") return "ADCS audit evidence changed or was collected.";
+      if (category === "CAWE") return "Web enrollment exposure or usage observed.";
+      if (category === "ADMIN") return "Privileged session on PKI infrastructure.";
+      if (category === "ROLE") return "Privileged PKI role membership is active.";
+      if (category === "REVOCATION") return "CRL or revocation publication changed.";
+      return state || "PKI live evidence.";
     }
 
-    function check(label, value, badge) {
-      return `<div class="pki-check"><span>${esc(label)}</span>${state(value || badge)}</div>`;
-    }
+    function buildActivity(data) {
+      const events = Array.isArray(data.events) ? data.events : [];
+      const web = Array.isArray(data.web_enrollment_activity) ? data.web_enrollment_activity : [];
+      const sessions = Array.isArray(data.admin_sessions) ? data.admin_sessions : [];
+      const roles = Array.isArray(data.pki_roles) ? data.pki_roles : [];
+      const agents = Array.isArray(data.agents) ? data.agents : [];
 
-    function eventsFrom(snapshot) {
-      const web = Array.isArray(snapshot.web_enrollment_activity) ? snapshot.web_enrollment_activity : [];
-      const events = Array.isArray(snapshot.events) ? snapshot.events : [];
-      const sessions = Array.isArray(snapshot.admin_sessions) ? snapshot.admin_sessions : [];
-      const roles = Array.isArray(snapshot.pki_roles) ? snapshot.pki_roles : [];
-
-      return [
-        ...events.slice(0, 60).map((item) => ({
-          category: "ADCS",
-          time: item.time,
-          source: String(item.kind || "ADCS").toUpperCase(),
-          title: item.title || item.summary || "ADCS event",
-          actor: item.actor || item.object || (item.event_id ? `Event ${item.event_id}` : "actor not recorded"),
-          badge: item.tone || item.kind || item.event_id || "event",
+      const rows = [
+        ...events.map((event) => {
+          const category = categoryFromEvent(event);
+          const state = event.tone || event.kind || event.event_id || category;
+          return {
+            time: event.time,
+            category,
+            actor: event.actor || event.source || event.hostname || "ADCS Security Log",
+            action: event.title || event.summary || `ADCS event ${event.event_id || ""}`.trim(),
+            object: event.object || event.template || event.request_id || event.event_id || "—",
+            state,
+            why: whyFor(category, state),
+          };
+        }),
+        ...web.map((item) => {
+          const state = item.status ? `HTTP ${item.status}` : "CAWE";
+          return {
+            time: item.time,
+            category: "CAWE",
+            actor: item.username || item.source_ip || "unknown source",
+            action: item.action || "CA Web Enrollment activity",
+            object: item.path || item.request_path || item.url || "CAWE endpoint",
+            state,
+            why: whyFor("CAWE", state),
+          };
+        }),
+        ...sessions.map((session) => ({
+          time: session.logon,
+          category: "ADMIN",
+          actor: session.username || "admin session",
+          action: "Interactive admin session on CA host",
+          object: session.hostname || "CA host",
+          state: session.state || "Active",
+          why: whyFor("ADMIN", session.state),
         })),
-        ...web.slice(0, 60).map((item) => ({
-          category: "CAWE",
-          time: item.time,
-          source: "CAWE",
-          title: item.action || "CA Web Enrollment activity",
-          actor: item.username || item.source_ip || "user not recorded",
-          badge: item.status ? `HTTP ${item.status}` : "web",
-        })),
-        ...sessions.slice(0, 24).map((item) => ({
-          category: "Access",
-          time: item.logon,
-          source: "ACCESS",
-          title: item.username || "Admin session",
-          actor: `${item.hostname || "host"} · idle ${item.idle || "—"}`,
-          badge: item.state || "online",
-        })),
-        ...roles.filter((role) => role.active_now).slice(0, 24).map((role) => ({
-          category: "Roles",
+        ...roles.filter((role) => role.active_now).map((role) => ({
           time: role.collected_at,
-          source: "ROLE",
-          title: role.role_name || "PKI role active",
+          category: "ROLE",
           actor: role.member || role.group_name || "member not listed",
-          badge: "active",
+          action: role.role_name || "Privileged PKI role active",
+          object: role.group_name || role.role_type || "PKI role",
+          state: "Active",
+          why: whyFor("ROLE", "Active"),
         })),
-      ].sort((a, b) => {
-        const ad = new Date(a.time || 0).getTime();
-        const bd = new Date(b.time || 0).getTime();
-        return (Number.isFinite(bd) ? bd : 0) - (Number.isFinite(ad) ? ad : 0);
-      }).slice(0, 90);
-    }
-
-    function renderFilters(events) {
-      const filters = ["All", "ADCS", "CAWE", "Access", "Roles"];
-      $("pkiFilters").innerHTML = filters.map((filter) => {
-        const count = filter === "All" ? events.length : events.filter((item) => item.category === filter).length;
-        return `<button type="button" class="pki-filter ${activeFilter === filter ? "active" : ""}" data-filter="${esc(filter)}">${esc(filter)} ${count}</button>`;
-      }).join("");
-      $("pkiFilters").querySelectorAll("button").forEach((button) => {
-        button.addEventListener("click", () => { activeFilter = button.dataset.filter || "All"; render(data); });
-      });
-    }
-
-    function render(snapshot) {
-      const env = snapshot.environment || {};
-      const counters = snapshot.counters || {};
-      const outcomes = snapshot.outcomes || {};
-      const agents = Array.isArray(snapshot.agents) ? snapshot.agents : [];
-      const ca = agents.find((agent) => agent.is_ca) || agents[0] || {};
-      const web = Array.isArray(snapshot.web_enrollment_activity) ? snapshot.web_enrollment_activity : [];
-      const sessions = Array.isArray(snapshot.admin_sessions) ? snapshot.admin_sessions : [];
-      const roles = Array.isArray(snapshot.pki_roles) ? snapshot.pki_roles : [];
-      const activeRoles = Array.isArray(snapshot.active_pki_roles) ? snapshot.active_pki_roles : [];
-      const pulse = snapshot.resource_pulse || ca.resources || {};
-      const network = pulse.network || {};
-      const connected = num(counters.connected_agents) > 0 || Boolean(snapshot.has_connected_monitoring);
-      const lastSample = pulse.collected_at || ca.last_seen_at || snapshot.last_update;
-
-      setText("pkiEnvironment", env.name || "PKI environment");
-      setText("pkiAgentStatus", connected ? "Live agent" : "Waiting");
-      setText("pkiSampleAge", age(lastSample));
-      $("pkiLiveDot").className = `pki-dot ${connected ? "" : "waiting"}`;
-
-      $("pkiMeta").innerHTML = [
-        ["Domain", env.domain_name || env.forest_name || "unknown"],
-        ["Mode", snapshot.operating_mode || "monitoring"],
-        ["Collector", snapshot.has_collector_evidence ? "evidence" : "none"],
-        ["Architecture", snapshot.architecture_source || "live"],
-      ].map(([label, value]) => `<span class="pki-chip">${esc(label)} <strong>${esc(value)}</strong></span>`).join("");
-
-      const kpis = [
-        ["CA Link", `${num(counters.connected_cas || snapshot.connected_ca_agent_count)}/${num(counters.total_cas || counters.monitored_ca_agents || snapshot.ca_agent_count)}`, ca.hostname || pulse.hostname || "CA node", "#22c55e"],
-        ["CertSvc", ca.certsvc || "—", ca.ca_name || pulse.ca_name || "service", color(ca.certsvc)],
-        ["IIS/CAWE", ca.w3svc || "—", `${web.length} web hits`, color(ca.w3svc)],
-        ["Audit", ca.audit_ready ? "READY" : "CHECK", `Filter ${ca.audit_filter ?? 0}`, ca.audit_ready ? "#22c55e" : "#f59e0b"],
-        ["Events", eventsFrom(snapshot).length, "live rows", "#a78bfa"],
-        ["Access", sessions.length + web.length, "admin + web", "#22d3ee"],
-        ["Roles", `${activeRoles.length}/${roles.length}`, "active / known", activeRoles.length ? "#ef4444" : "#3b82f6"],
+        ...agents.map((agent) => ({
+          time: agent.last_seen_at,
+          category: "SERVICE",
+          actor: agent.hostname || "Monitoring agent",
+          action: agent.connected ? "Monitoring agent heartbeat received" : "Monitoring agent offline",
+          object: agent.ca_name || "Agent channel",
+          state: agent.connected ? "Online" : "Offline",
+          why: whyFor("SERVICE", agent.connected ? "Online" : "Offline"),
+        })),
       ];
-      $("pkiKpis").innerHTML = kpis.map(([label, value, hint, tone]) => `<article class="pki-card" style="--tone:${tone}"><label>${esc(label)}</label><strong>${esc(value)}</strong><small>${esc(hint)}</small></article>`).join("");
 
-      const liveEvents = eventsFrom(snapshot);
-      renderFilters(liveEvents);
-      const visible = activeFilter === "All" ? liveEvents : liveEvents.filter((event) => event.category === activeFilter);
-      setText("pkiEventCount", `${visible.length} rows`);
-      $("pkiEventRows").innerHTML = visible.length ? visible.map((event) => `
+      return rows.sort((a, b) => {
+        const ad = parseDate(a.time)?.getTime() || 0;
+        const bd = parseDate(b.time)?.getTime() || 0;
+        return bd - ad;
+      }).slice(0, 120);
+    }
+
+    function recentCount(rows, minutes, match) {
+      const cutoff = Date.now() - minutes * 60 * 1000;
+      return rows.filter((row) => {
+        const date = parseDate(row.time);
+        return date && date.getTime() >= cutoff && (!match || match(row));
+      }).length;
+    }
+
+    function attentionItem(title, detail, sev) {
+      return `<div class="pki-attention" style="--tone:${colorFor(sev)}"><i class="pki-severity-bar"></i><div><div class="pki-item-title">${esc(title)}</div><div class="pki-item-meta">${esc(detail)}</div></div></div>`;
+    }
+
+    function feedItem(title, detail, stateText) {
+      return `<div class="pki-feed-card"><div><strong>${esc(title)}</strong><span>${esc(detail)}</span></div>${badge(stateText)}</div>`;
+    }
+
+    function freshItem(label, value, stateText) {
+      return `<div class="pki-fresh-item"><label>${esc(label)}</label><strong>${esc(value)}</strong><div style="margin-top:7px;">${badge(stateText || value)}</div></div>`;
+    }
+
+    function render(data) {
+      const env = data.environment || {};
+      const counters = data.counters || {};
+      const outcomes = data.outcomes || {};
+      const agents = Array.isArray(data.agents) ? data.agents : [];
+      const ca = agents.find((agent) => agent.is_ca) || agents[0] || {};
+      const web = Array.isArray(data.web_enrollment_activity) ? data.web_enrollment_activity : [];
+      const sessions = Array.isArray(data.admin_sessions) ? data.admin_sessions : [];
+      const roles = Array.isArray(data.pki_roles) ? data.pki_roles : [];
+      const activeRoles = Array.isArray(data.active_pki_roles) ? data.active_pki_roles : [];
+      const pulse = data.resource_pulse || ca.resources || {};
+      const network = pulse.network || {};
+      const activity = buildActivity(data);
+      const connected = num(counters.connected_agents) > 0 || Boolean(data.has_connected_monitoring);
+      const heartbeat = ca.last_seen_at || pulse.collected_at || data.last_update;
+      const adcsEvents = activity.filter((row) => !["CAWE", "ADMIN", "ROLE", "SERVICE"].includes(row.category));
+      const caweEvents = activity.filter((row) => row.category === "CAWE");
+      const roleEvents = activity.filter((row) => row.category === "ROLE");
+      const deniedFailed = activity.filter((row) => ["DENY", "FAIL"].includes(row.category));
+      const requestEvents = activity.filter((row) => ["REQUEST", "ISSUE", "DENY", "FAIL", "REVOKE"].includes(row.category));
+      const revocationEvents = activity.filter((row) => ["REVOKE", "REVOCATION"].includes(row.category));
+
+      setText("pkiAgentState", connected ? "Agent online" : "No connected agent");
+      setText("pkiHeartbeatAge", age(heartbeat));
+      $("pkiAgentDot").className = `pki-dot ${connected ? "" : "bad"}`;
+      setText("pkiModeBadge", data.operating_mode || "monitoring");
+
+      $("pkiTopStrip").innerHTML = [
+        ["Environment", env.name || "Unknown"],
+        ["CA", ca.ca_name || pulse.ca_name || "Not identified"],
+        ["Domain", env.domain_name || env.forest_name || "Unknown"],
+        ["Mode", data.operating_mode || "monitoring"],
+        ["Agent", connected ? "Connected" : "Disconnected"],
+      ].map(([label, value]) => `<label class="pki-filter-label"><span>${esc(label)}</span><b class="pki-token">${esc(value)}</b></label>`).join("");
+
+      const req15 = recentCount(requestEvents, 15);
+      const req60 = recentCount(requestEvents, 60);
+      const tileData = [
+        ["CA Ready", connected && ca.audit_ready && String(ca.certsvc || "").toLowerCase().includes("running") ? "Ready" : "Check", ca.ca_name || pulse.ca_name || "CA identity", connected && ca.audit_ready ? "Ready" : "Check"],
+        ["CertSvc", ca.certsvc || "Unknown", ca.hostname || pulse.hostname || "CA host", ca.certsvc || "Unknown"],
+        ["Audit Coverage", ca.audit_ready ? "Ready" : "Not ready", ca.security_log_access ? "Security log readable" : "Security log unknown", ca.audit_ready ? "Ready" : "Check"],
+        ["Requests 15m / 1h", requestEvents.length ? `${req15} / ${req60}` : "Waiting", requestEvents.length ? "ADCS request evidence" : "Waiting for ADCS request events", requestEvents.length ? "Info" : "Waiting"],
+        ["Denied / Failed", deniedFailed.length, deniedFailed.length ? "Needs review" : "No denied/failed events", deniedFailed.length ? "Failed" : "Ready"],
+        ["CAWE Activity", caweEvents.length, caweEvents.length ? "Web enrollment observed" : "No CAWE events", caweEvents.length ? "Info" : "Unknown"],
+        ["Privileged Activity", activeRoles.length + sessions.length, activeRoles.length || sessions.length ? "Active privileged evidence" : "No active sessions", activeRoles.length || sessions.length ? "Active" : "Ready"],
+        ["CRL Status", revocationEvents.length ? `${revocationEvents.length} events` : "Not monitored", revocationEvents.length ? "Revocation evidence observed" : "No CRL/OCSP live data", revocationEvents.length ? "Info" : "Not monitored"],
+      ];
+      $("pkiTiles").innerHTML = tileData.map(([label, value, hint, sev]) => `<article class="pki-tile" style="--tone:${colorFor(sev)}"><label>${esc(label)}</label><strong>${esc(value)}</strong><small>${esc(hint)}</small></article>`).join("");
+
+      const attention = [];
+      if (!connected) attention.push(["No connected monitoring agent", "Live PKI evidence is not currently arriving from the CA host.", "Failed"]);
+      if (heartbeat && parseDate(heartbeat) && Date.now() - parseDate(heartbeat).getTime() > 5 * 60 * 1000) attention.push(["Agent evidence is stale", `Last heartbeat ${age(heartbeat)}.`, "Waiting"]);
+      if (String(ca.certsvc || "").toLowerCase().includes("stopped")) attention.push(["CertSvc stopped", "The Certification Authority service is not running.", "Failed"]);
+      if (!ca.audit_ready) attention.push(["ADCS audit coverage not ready", `Audit filter ${ca.audit_filter ?? 0}; enable auditing to capture CA changes.`, "Check"]);
+      if (!ca.security_log_access) attention.push(["Security log not confirmed readable", "ADCS audit events may be unavailable until Security log access is confirmed.", "Unknown"]);
+      if (caweEvents.length) attention.push(["CAWE activity detected", `${caweEvents.length} web enrollment events are present in the live feed.`, "Info"]);
+      if (deniedFailed.length) attention.push(["Denied or failed PKI requests", `${deniedFailed.length} denied/failed request signals need review.`, "Failed"]);
+      if (activeRoles.length) attention.push(["Privileged PKI role active", `${activeRoles.length} privileged role entries are active now.`, "Active"]);
+      if (sessions.length) attention.push(["Admin session active", `${sessions.length} interactive admin sessions are visible on monitored hosts.`, "Active"]);
+      if (!adcsEvents.length) attention.push(["No ADCS audit events collected", "The live stream has no ADCS Security event evidence yet.", "Waiting"]);
+      if (!revocationEvents.length) attention.push(["CRL / OCSP not monitored yet", "No live revocation availability evidence is present in this snapshot.", "Not monitored"]);
+      setText("pkiAttentionCount", `${attention.length} items`);
+      $("pkiAttention").innerHTML = attention.length ? attention.map(([title, detail, sev]) => attentionItem(title, detail, sev)).join("") : `<div class="pki-empty">No immediate PKI attention items from current live evidence.</div>`;
+
+      const counts = categories.reduce((acc, category) => {
+        acc[category] = category === "ALL" ? activity.length : activity.filter((row) => row.category === category).length;
+        return acc;
+      }, {});
+      $("pkiActivityFilters").innerHTML = categories.map((category) => `<button class="pki-filter ${activeCategory === category ? "active" : ""}" type="button" data-category="${esc(category)}">${esc(category)} ${counts[category] || 0}</button>`).join("");
+      $("pkiActivityFilters").querySelectorAll("button").forEach((button) => button.addEventListener("click", () => { activeCategory = button.dataset.category || "ALL"; render(snapshot); }));
+
+      const visible = activeCategory === "ALL" ? activity : activity.filter((row) => row.category === activeCategory);
+      setText("pkiActivityCount", `${visible.length} rows`);
+      $("pkiActivityRows").innerHTML = visible.length ? visible.map((row) => `
         <tr>
-          <td class="pki-muted">${esc(time(event.time))}</td>
-          <td><span class="pki-source">${esc(event.source)}</span></td>
-          <td><span class="pki-event-title">${esc(event.title)}</span></td>
-          <td class="pki-muted">${esc(event.actor)}</td>
-          <td>${state(event.badge)}</td>
-        </tr>`).join("") : `<tr><td colspan="5"><div class="pki-empty">Waiting for live samples.</div></td></tr>`;
+          <td>${esc(clock(row.time))}</td>
+          <td>${badge(row.category)}</td>
+          <td>${esc(row.actor)}</td>
+          <td><span class="pki-action">${esc(row.action)}</span></td>
+          <td>${esc(row.object || "—")}</td>
+          <td>${badge(row.state)}</td>
+          <td><span class="pki-why">${esc(row.why)}</span></td>
+        </tr>`).join("") : `<tr><td colspan="7"><div class="pki-empty">Waiting for PKI live evidence in this category.</div></td></tr>`;
 
-      const runtime = ca.connected ? "online" : "offline";
-      const runtimeNode = $("pkiRuntimeState");
-      runtimeNode.className = `pki-state ${severity(runtime)}`;
-      runtimeNode.textContent = runtime;
-      $("pkiHostGrid").innerHTML = [
-        ["CA", ca.ca_name || pulse.ca_name || env.name || "—"],
-        ["Host", ca.hostname || pulse.hostname || "—"],
-        ["CertSvc", ca.certsvc || "—"],
-        ["IIS", ca.w3svc || "—"],
-        ["Security", ca.security_log_access ? "Readable" : "Unknown"],
-        ["Sample", pulse.sample_type || "—"],
-      ].map(([label, value]) => `<div class="pki-mini"><label>${esc(label)}</label><strong>${esc(value)}</strong></div>`).join("");
+      const exposure = [];
+      web.slice(0, 8).forEach((item) => exposure.push(feedItem(item.action || "CAWE activity", `${item.username || "user not recorded"} · ${item.source_ip || "source unknown"} · ${item.path || item.request_path || "path not recorded"}`, item.status ? `HTTP ${item.status}` : "CAWE")));
+      sessions.slice(0, 6).forEach((session) => exposure.push(feedItem(session.username || "Admin session", `${session.hostname || "host"} · idle ${session.idle || "—"}`, session.state || "Active")));
+      roles.slice(0, 8).forEach((role) => exposure.push(feedItem(role.role_name || "PKI role", `${role.member || role.group_name || "member not listed"} · ${role.meaning || role.role_type || "privileged access"}`, role.active_now ? "Active" : "Known")));
+      deniedFailed.slice(0, 4).forEach((row) => exposure.push(feedItem(row.action, `${row.actor} · ${row.object}`, row.state)));
+      setText("pkiExposureCount", `${exposure.length} items`);
+      $("pkiExposure").innerHTML = exposure.length ? exposure.join("") : `<div class="pki-empty">No CAWE, admin session, failed access, or privileged role activity in the current snapshot.</div>`;
+
+      const latestAdcs = adcsEvents[0]?.time;
+      const latestCawe = caweEvents[0]?.time;
+      const latestRole = roleEvents[0]?.time || pulse.collected_at;
+      const auditEvidence = ca.audit_ready || ca.security_log_access ? heartbeat : latestAdcs;
+      $("pkiFreshness").innerHTML = [
+        freshItem("Heartbeat", age(heartbeat), connected ? "Online" : "Offline"),
+        freshItem("ADCS audit events", age(latestAdcs), latestAdcs ? "Collected" : "Not collected yet"),
+        freshItem("CAWE logs", age(latestCawe), latestCawe ? "Collected" : "Not collected yet"),
+        freshItem("Role evidence", age(latestRole), roles.length ? "Collected" : "Not collected yet"),
+        freshItem("Audit evidence", age(auditEvidence), ca.audit_ready ? "Ready" : "Check"),
+        freshItem("Source mode", data.architecture_source || data.operating_mode || "monitoring", data.has_collector_evidence ? "Collector + agent" : "Agent"),
+      ].join("");
 
       const diskFree = pct(pulse.disk_free_percent);
       const diskUsed = pct(pulse.disk_used_percent ?? (diskFree === null ? null : 100 - diskFree));
       const net = Number(network.total_kbps);
-      const send = Number(network.send_kbps);
-      const recv = Number(network.receive_kbps);
-      $("pkiMeters").innerHTML = [
-        meter("CPU", pulse.cpu_percent, "%", "#3b82f6"),
-        meter("Memory", pulse.memory_percent, "%", "#a78bfa"),
-        meter("Disk", diskUsed, "%", "#f59e0b"),
-        meter("Network", Number.isFinite(net) ? net : null, "Kbps", "#22d3ee"),
-        `<div class="pki-netbox"><strong>${esc(network.interface_name || "NIC")}</strong>${network.ipv4_address ? ` · ${esc(network.ipv4_address)}` : ""}<br>${network.link_speed ? `${esc(network.link_speed)} · ` : ""}${Number.isFinite(send) && Number.isFinite(recv) ? `S ${send.toFixed(1)} / R ${recv.toFixed(1)} Kbps` : "Waiting for network delta"}</div>`,
+      const meter = (label, value, unit, tone) => {
+        const n = unit === "Kbps" ? Number(value) : pct(value);
+        const ok = Number.isFinite(n);
+        const width = ok ? (unit === "Kbps" ? Math.min(100, Math.max(0, n)) : n) : 0;
+        const shown = ok ? (unit === "Kbps" ? `${n.toFixed(1)} Kbps` : `${Math.round(n)}%`) : "N/A";
+        return `<div class="pki-meter-row"><span>${esc(label)}</span><span class="pki-meter"><i style="--w:${width}%;--tone:${tone}"></i></span><b>${esc(shown)}</b></div>`;
+      };
+      $("pkiDiagnostics").innerHTML = [
+        meter("CPU", cpu, "%", "#2292ff"),
+        meter("Memory", mem, "%", "#1bd4f2"),
+        meter("Disk", diskUsed, "%", "#f5b83d"),
+        meter("Network", Number.isFinite(net) ? net : null, "Kbps", "#45d64f"),
+        `<div class="pki-item-meta" style="margin-top:9px;">${esc(network.interface_name || "NIC not recorded")}${network.ipv4_address ? ` · ${esc(network.ipv4_address)}` : ""}</div>`,
       ].join("");
 
-      const watchItems = [];
-      if (!connected) watchItems.push({ source: "Sensor", title: "No connected monitoring agent", meta: "Waiting for heartbeat", badge: "waiting", tone: "#f59e0b" });
-      if (ca.is_ca !== false && !ca.audit_ready) watchItems.push({ source: "Audit", title: "ADCS auditing needs attention", meta: `Filter ${ca.audit_filter ?? 0}`, badge: "check", tone: "#f59e0b" });
-      activeRoles.slice(0, 5).forEach((role) => watchItems.push({ source: "Role", title: role.role_name || "Privileged role active", meta: role.member || role.group_name || "member not listed", badge: "active", tone: "#ef4444" }));
-      sessions.slice(0, 4).forEach((session) => watchItems.push({ source: "Admin", title: session.username || "Admin session", meta: `${session.hostname || "host"} · idle ${session.idle || "—"}`, badge: session.state || "online", tone: "#22d3ee" }));
-      web.slice(0, 4).forEach((item) => watchItems.push({ source: "CAWE", time: item.time, title: item.action || "CAWE hit", meta: `${item.username || "user not recorded"} · ${item.source_ip || "source unknown"}`, badge: item.status ? `HTTP ${item.status}` : "web", tone: color(item.status ? `HTTP ${item.status}` : "web") }));
-      setText("pkiWatchCount", `${watchItems.length} items`);
-      $("pkiWatchFeed").innerHTML = watchItems.length ? watchItems.map(feed).join("") : `<div class="pki-empty">No watchlist items. Waiting for notable live activity.</div>`;
-
-      const issued = num(counters.issued || outcomes.issued);
-      const denied = num(counters.denied || outcomes.denied);
-      const pending = num(counters.pending || outcomes.pending);
-      const revoked = num(counters.revoked || outcomes.revoked);
-      const total = issued + denied + pending + revoked;
-      const max = Math.max(issued, denied, pending, revoked, 1);
-      setText("pkiRequestTotal", `${total} total`);
-      $("pkiRequests").innerHTML = [["Issued", issued, "#22c55e"], ["Denied", denied, "#ef4444"], ["Pending", pending, "#f59e0b"], ["Revoked", revoked, "#64748b"]].map(([label, value, tone]) => `
-        <div class="pki-request-row"><span>${esc(label)}</span><b>${value}</b><span class="pki-meter"><i style="--w:${(value / max) * 100}%;--tone:${tone}"></i></span></div>`).join("");
-
-      const access = [
-        ...sessions.slice(0, 3).map((session) => ({ source: "Admin", time: session.logon, title: session.username || "Admin session", meta: `${session.hostname || "host"} · idle ${session.idle || "—"}`, badge: session.state || "online", tone: "#22d3ee" })),
-        ...web.slice(0, 3).map((item) => ({ source: "CAWE", time: item.time, title: item.action || "CAWE hit", meta: `${item.username || "user not recorded"} · ${item.source_ip || "source unknown"}`, badge: item.status ? `HTTP ${item.status}` : "web" })),
-      ];
-      setText("pkiAccessCount", `${access.length}`);
-      $("pkiAccessFeed").innerHTML = access.length ? access.map(feed).join("") : `<div class="pki-empty">No admin or CAWE activity.</div>`;
-
-      const csrfToken = $("pkiCsrfToken")?.value || "";
-      setText("pkiAgentCount", `${agents.length}`);
-      $("pkiAgentFeed").innerHTML = agents.length ? agents.map((agent) => {
-        const actionHtml = agent.is_ca && agent.audit_applicable !== false && !agent.audit_ready ? `
-          <form class="pki-audit-form" method="post" action="/pki-monitoring/agents/${encodeURIComponent(agent.id)}/enable-auditing?environment_id=${encodeURIComponent(env.id || "")}">
-            <input type="hidden" name="csrf_token" value="${esc(csrfToken)}">
-            <button class="pki-audit-button" type="submit">Enable PKI auditing</button>
-          </form>` : "";
-        return feed({ source: agent.is_ca ? "CA" : "Agent", time: agent.last_seen_at, title: agent.hostname || "Monitoring agent", meta: `${agent.ca_name || "No CA"} · ${age(agent.last_seen_at)}`, badge: agent.connected ? "online" : "offline", tone: agent.connected ? "#22c55e" : "#ef4444", actionHtml });
-      }).join("") : `<div class="pki-empty">No monitoring agents registered.</div>`;
-
-      const ready = ca.audit_ready && String(ca.certsvc || "").toLowerCase().includes("running") ? "ready" : "check";
-      const readyNode = $("pkiReadyState");
-      readyNode.className = `pki-state ${severity(ready)}`;
-      readyNode.textContent = ready;
-      $("pkiReadiness").innerHTML = [
-        check("CertSvc", ca.certsvc || "Unknown"),
-        check("IIS / CAWE", ca.w3svc || "Unknown"),
-        check("Security log", ca.security_log_access ? "Readable" : "Unknown"),
-        check("ADCS audit", ca.audit_ready ? "Ready" : "Check"),
-      ].join("");
+      const csrf = $("pkiCsrfToken")?.value || "";
+      if (agents.length) {
+        const auditForms = agents.filter((agent) => agent.is_ca && agent.audit_applicable !== false && !agent.audit_ready);
+        if (auditForms.length) {
+          $("pkiExposure").insertAdjacentHTML("beforeend", auditForms.map((agent) => `
+            <form class="pki-audit-form" method="post" action="/pki-monitoring/agents/${encodeURIComponent(agent.id)}/enable-auditing?environment_id=${encodeURIComponent(env.id || "")}">
+              <input type="hidden" name="csrf_token" value="${esc(csrf)}">
+              <button class="pki-audit-button" type="submit">Enable PKI auditing</button>
+            </form>`).join(""));
+        }
+      }
     }
 
     async function refresh() {
-      const envId = data?.environment?.id;
-      if (!envId) { render(data); return; }
+      const envId = snapshot?.environment?.id;
+      if (!envId) { render(snapshot); return; }
       const urls = [`/api/v1/monitoring/live?environment_id=${encodeURIComponent(envId)}`, `/api/v1/pki-monitoring/live?environment_id=${encodeURIComponent(envId)}`];
       for (const url of urls) {
         try {
@@ -899,13 +919,13 @@
           if (!response.ok) continue;
           const json = await response.json();
           const next = json.snapshot || json.data || json;
-          if (next && typeof next === "object" && next.counters) { data = next; render(data); return; }
+          if (next && typeof next === "object" && next.counters) { snapshot = next; render(snapshot); return; }
         } catch (error) {}
       }
-      render(data);
+      render(snapshot);
     }
 
-    render(data);
+    render(snapshot);
     refresh();
     setInterval(refresh, refreshSeconds * 1000);
   })();
