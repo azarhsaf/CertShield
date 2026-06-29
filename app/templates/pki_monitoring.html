@@ -719,10 +719,22 @@
       const text = value || "Info";
       return `<span class="pki-badge ${severity(text)}">${esc(text)}</span>`;
     }
+  </style>
 
     function categoryFromEvent(event) {
+      const explicit = String(event.kind || event.category || "").toUpperCase();
+      if (["REQUEST", "ISSUE", "DENY", "FAIL", "REVOKE", "CONFIG", "SERVICE", "AUDIT", "CAWE", "ADMIN", "ROLE", "REVOCATION"].includes(explicit)) {
+        return explicit === "REVOKE" ? "REVOCATION" : explicit;
+      }
+      const eventId = Number(event.event_id);
       const haystack = `${event.category || ""} ${event.kind || ""} ${event.title || ""} ${event.summary || ""} ${event.event_id || ""}`.toLowerCase();
-      if (haystack.includes("revok") || [628, 629, 630].includes(Number(event.event_id))) return "REVOCATION";
+      if ([4886].includes(eventId)) return "REQUEST";
+      if ([4887].includes(eventId)) return "ISSUE";
+      if ([4888].includes(eventId)) return "DENY";
+      if ([4889].includes(eventId)) return "REQUEST";
+      if ([4882, 4885, 4890, 4896, 4897].includes(eventId)) return "CONFIG";
+      if ([4880, 4881].includes(eventId)) return "SERVICE";
+      if (haystack.includes("revok") || [628, 629, 630].includes(eventId)) return "REVOCATION";
       if (haystack.includes("denied") || haystack.includes("deny")) return "DENY";
       if (haystack.includes("failed") || haystack.includes("fail")) return "FAIL";
       if (haystack.includes("pending")) return "REQUEST";
@@ -732,6 +744,15 @@
       if (haystack.includes("audit") || haystack.includes("security")) return "AUDIT";
       if (haystack.includes("service") || haystack.includes("agent")) return "SERVICE";
       return "AUDIT";
+    }
+
+    function sourceAwareEvents(data) {
+      const source = data.events_source || "";
+      const events = Array.isArray(data.events) ? data.events : [];
+      if (source === "collector_snapshot" || (!data.request_activity?.has_live_adcs_request_events && events.some((event) => String(event.id || "").startsWith("certificate-")))) {
+        return events.filter((event) => !String(event.id || "").startsWith("certificate-"));
+      }
+      return events;
     }
 
     function whyFor(category, state) {
@@ -751,7 +772,7 @@
     }
 
     function buildActivity(data) {
-      const events = Array.isArray(data.events) ? data.events : [];
+      const events = sourceAwareEvents(data);
       const web = Array.isArray(data.web_enrollment_activity) ? data.web_enrollment_activity : [];
       const sessions = Array.isArray(data.admin_sessions) ? data.admin_sessions : [];
       const roles = Array.isArray(data.pki_roles) ? data.pki_roles : [];
@@ -844,6 +865,19 @@
       return `<div class="pki-fresh-item"><label>${esc(label)}</label><strong>${esc(value)}</strong><div style="margin-top:7px;">${badge(stateText || value)}</div></div>`;
     }
 
+    function freshnessAge(item) {
+      if (item.age) return item.age;
+      if (item.timestamp) return age(item.timestamp);
+      if (Number.isFinite(Number(item.age_seconds))) {
+        const seconds = Number(item.age_seconds);
+        if (seconds < 60) return `${seconds}s ago`;
+        if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+        if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+        return `${Math.floor(seconds / 86400)}d ago`;
+      }
+      return "No evidence yet";
+    }
+
     function render(data) {
       const env = data.environment || {};
       const counters = data.counters || {};
@@ -856,6 +890,13 @@
       const activeRoles = Array.isArray(data.active_pki_roles) ? data.active_pki_roles : [];
       const pulse = data.resource_pulse || ca.resources || {};
       const network = pulse.network || {};
+      const readiness = data.pki_readiness || {};
+      const requests = data.request_activity || {};
+      const revocation = data.revocation_status || {};
+      const audit = data.audit_coverage || {};
+      const cawe = data.cawe_status || {};
+      const access = data.privileged_access || {};
+      const freshness = Array.isArray(data.evidence_freshness) ? data.evidence_freshness : [];
       const activity = buildActivity(data);
       const connected = num(counters.connected_agents) > 0 || Boolean(data.has_connected_monitoring);
       const heartbeat = ca.last_seen_at || pulse.collected_at || data.last_update;
@@ -864,7 +905,6 @@
       const roleEvents = activity.filter((row) => row.category === "ROLE");
       const deniedFailed = activity.filter((row) => ["DENY", "FAIL"].includes(row.category));
       const requestEvents = activity.filter((row) => ["REQUEST", "ISSUE", "DENY", "FAIL", "REVOKE"].includes(row.category));
-      const revocationEvents = activity.filter((row) => ["REVOKE", "REVOCATION"].includes(row.category));
 
       setText("pkiAgentState", connected ? "Agent online" : "No connected agent");
       setText("pkiHeartbeatAge", age(heartbeat));
@@ -879,17 +919,20 @@
         ["Agent", connected ? "Connected" : "Disconnected"],
       ].map(([label, value]) => `<label class="pki-filter-label"><span>${esc(label)}</span><b class="pki-token">${esc(value)}</b></label>`).join("");
 
-      const req15 = recentCount(requestEvents, 15);
-      const req60 = recentCount(requestEvents, 60);
+      const req15 = num(requests.requests_15m);
+      const req60 = num(requests.requests_1h);
+      const hasLiveRequests = Boolean(requests.has_live_adcs_request_events);
+      const deniedFailedCount = num(requests.denied_1h) + num(requests.failed_1h);
+      const privilegedCount = num(access.active_admin_sessions) + num(access.active_role_members);
       const tileData = [
-        ["CA Ready", connected && ca.audit_ready && String(ca.certsvc || "").toLowerCase().includes("running") ? "Ready" : "Check", ca.ca_name || pulse.ca_name || "CA identity", connected && ca.audit_ready ? "Ready" : "Check"],
+        ["CA Ready", readiness.state || "Unknown", readiness.summary || ca.ca_name || pulse.ca_name || "CA identity", readiness.tone || readiness.state || "Unknown"],
         ["CertSvc", ca.certsvc || "Unknown", ca.hostname || pulse.hostname || "CA host", ca.certsvc || "Unknown"],
-        ["Audit Coverage", ca.audit_ready ? "Ready" : "Not ready", ca.security_log_access ? "Security log readable" : "Security log unknown", ca.audit_ready ? "Ready" : "Check"],
-        ["Requests 15m / 1h", requestEvents.length ? `${req15} / ${req60}` : "Waiting", requestEvents.length ? "ADCS request evidence" : "Waiting for ADCS request events", requestEvents.length ? "Info" : "Waiting"],
-        ["Denied / Failed", deniedFailed.length, deniedFailed.length ? "Needs review" : "No denied/failed events", deniedFailed.length ? "Failed" : "Ready"],
-        ["CAWE Activity", caweEvents.length, caweEvents.length ? "Web enrollment observed" : "No CAWE events", caweEvents.length ? "Info" : "Unknown"],
-        ["Privileged Activity", activeRoles.length + sessions.length, activeRoles.length || sessions.length ? "Active privileged evidence" : "No active sessions", activeRoles.length || sessions.length ? "Active" : "Ready"],
-        ["CRL Status", revocationEvents.length ? `${revocationEvents.length} events` : "Not monitored", revocationEvents.length ? "Revocation evidence observed" : "No CRL/OCSP live data", revocationEvents.length ? "Info" : "Not monitored"],
+        ["Audit Coverage", audit.status || "Waiting", audit.security_log_readable ? "Security log readable" : "Security log evidence pending", audit.tone || audit.status || "Waiting"],
+        ["Requests 15m / 1h", hasLiveRequests ? `${req15} / ${req60}` : "Waiting", requests.status || "Waiting for ADCS request events", hasLiveRequests ? "Info" : "Waiting"],
+        ["Denied / Failed", hasLiveRequests ? deniedFailedCount : "Waiting", hasLiveRequests ? "Live ADCS audit window" : "No live ADCS request evidence yet", deniedFailedCount ? "Failed" : (hasLiveRequests ? "Ready" : "Waiting")],
+        ["CAWE Activity", Number.isFinite(num(cawe.recent_15m)) ? num(cawe.recent_15m) : "Waiting", cawe.status || "Waiting for CAWE log evidence", cawe.tone || cawe.status || "Waiting"],
+        ["Privileged Activity", privilegedCount || "None", access.status || "No active privileged session detected", privilegedCount ? "Active" : "Ready"],
+        ["CRL Status", revocation.status || "Waiting", revocation.summary || "Collector revocation evidence pending", revocation.tone || revocation.status || "Waiting"],
       ];
       $("pkiTiles").innerHTML = tileData.map(([label, value, hint, sev]) => `<article class="pki-tile" style="--tone:${colorFor(sev)}"><label>${esc(label)}</label><strong>${esc(value)}</strong><small>${esc(hint)}</small></article>`).join("");
 
@@ -897,14 +940,14 @@
       if (!connected) attention.push(["No connected monitoring agent", "Live PKI evidence is not currently arriving from the CA host.", "Failed"]);
       if (heartbeat && parseDate(heartbeat) && Date.now() - parseDate(heartbeat).getTime() > 5 * 60 * 1000) attention.push(["Agent evidence is stale", `Last heartbeat ${age(heartbeat)}.`, "Waiting"]);
       if (String(ca.certsvc || "").toLowerCase().includes("stopped")) attention.push(["CertSvc stopped", "The Certification Authority service is not running.", "Failed"]);
-      if (!ca.audit_ready) attention.push(["ADCS audit coverage not ready", `Audit filter ${ca.audit_filter ?? 0}; enable auditing to capture CA changes.`, "Check"]);
-      if (!ca.security_log_access) attention.push(["Security log not confirmed readable", "ADCS audit events may be unavailable until Security log access is confirmed.", "Unknown"]);
+      if (audit.tone === "warning" || audit.tone === "critical") attention.push(["ADCS audit coverage needs review", `${audit.status || "Audit evidence pending"} · filter ${audit.audit_filter ?? "unknown"}.`, audit.tone]);
+      if (audit.security_log_readable === false) attention.push(["Security log not readable", "ADCS audit events may be unavailable until Security log access is restored.", "Failed"]);
       if (caweEvents.length) attention.push(["CAWE activity detected", `${caweEvents.length} web enrollment events are present in the live feed.`, "Info"]);
-      if (deniedFailed.length) attention.push(["Denied or failed PKI requests", `${deniedFailed.length} denied/failed request signals need review.`, "Failed"]);
+      if (deniedFailedCount) attention.push(["Denied or failed PKI requests", `${deniedFailedCount} denied/failed live request signals in the last hour.`, "Failed"]);
       if (activeRoles.length) attention.push(["Privileged PKI role active", `${activeRoles.length} privileged role entries are active now.`, "Active"]);
       if (sessions.length) attention.push(["Admin session active", `${sessions.length} interactive admin sessions are visible on monitored hosts.`, "Active"]);
-      if (!adcsEvents.length) attention.push(["No ADCS audit events collected", "The live stream has no ADCS Security event evidence yet.", "Waiting"]);
-      if (!revocationEvents.length) attention.push(["CRL / OCSP not monitored yet", "No live revocation availability evidence is present in this snapshot.", "Not monitored"]);
+      if (!adcsEvents.length) attention.push(["Waiting for Windows Security audit events", "The live stream has no ADCS Security event evidence yet.", "Waiting"]);
+      if (["warning", "critical", "unknown"].includes(String(revocation.tone || "").toLowerCase())) attention.push(["Revocation evidence requires review", `${revocation.status || "Collector revocation evidence not available yet"} · ${revocation.source || "source unknown"}.`, revocation.tone || "Waiting"]);
       setText("pkiAttentionCount", `${attention.length} items`);
       if (attention.length) {
         const topAttention = attention.slice(0, 5).map(([title, detail, sev]) => attentionItem(title, detail, sev)).join("");
@@ -960,16 +1003,12 @@
       setText("pkiExposureCount", `${exposure.length} items`);
       $("pkiExposure").innerHTML = exposure.length ? exposure.join("") : `<div class="pki-empty">No CAWE, admin session, failed access, or privileged role activity in the current snapshot.</div>`;
 
-      const latestAdcs = adcsEvents[0]?.time;
-      const latestCawe = caweEvents[0]?.time;
-      const latestRole = roleEvents[0]?.time || pulse.collected_at;
-      const auditEvidence = ca.audit_ready || ca.security_log_access ? heartbeat : latestAdcs;
-      $("pkiFreshness").innerHTML = [
+      $("pkiFreshness").innerHTML = freshness.length ? freshness.map((item) => freshItem(item.label || item.source || "Evidence", freshnessAge(item), `${item.status || "Unknown"} · ${item.source || "source unknown"}`)).join("") : [
         freshItem("Heartbeat", age(heartbeat), connected ? "Online" : "Offline"),
-        freshItem("ADCS audit events", age(latestAdcs), latestAdcs ? "Collected" : "Not collected yet"),
-        freshItem("CAWE logs", age(latestCawe), latestCawe ? "Collected" : "Not collected yet"),
-        freshItem("Role evidence", age(latestRole), roles.length ? "Collected" : "Not collected yet"),
-        freshItem("Audit evidence", age(auditEvidence), ca.audit_ready ? "Ready" : "Check"),
+        freshItem("ADCS audit events", "No evidence yet", "Not collected yet"),
+        freshItem("CAWE logs", "No evidence yet", "Not collected yet"),
+        freshItem("Role evidence", roles.length ? age(roleEvents[0]?.time || pulse.collected_at) : "No evidence yet", roles.length ? "Collected" : "Not collected yet"),
+        freshItem("Audit evidence", audit.status || "Waiting", audit.tone || "Check"),
         freshItem("Source mode", data.architecture_source || data.operating_mode || "monitoring", data.has_collector_evidence ? "Collector + agent" : "Agent"),
       ].join("");
 
