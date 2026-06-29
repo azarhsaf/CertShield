@@ -855,6 +855,290 @@ def _monitoring_snapshot(
     return result
 
 
+ADCS_EVENT_LABELS = {
+    "4880": ("SERVICE", "Certificate Services started", "success"),
+    "4881": ("SERVICE", "Certificate Services stopped", "warning"),
+    "4882": ("CONFIG", "CA security permissions changed", "warning"),
+    "4885": ("AUDIT", "CA audit filter changed", "warning"),
+    "4886": ("REQUEST", "Certificate request received", "info"),
+    "4887": ("ISSUE", "Certificate issued", "success"),
+    "4888": ("DENY", "Certificate request denied", "warning"),
+    "4889": ("REQUEST", "Certificate request set pending", "warning"),
+    "4890": ("CONFIG", "Certificate manager settings changed", "warning"),
+    "4896": ("CONFIG", "Rows deleted from CA database", "warning"),
+    "4897": ("CONFIG", "Role separation changed", "warning"),
+}
+
+
+def _parse_monitoring_datetime(value: object) -> datetime | None:
+    if not value:
+        return None
+
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+
+    return parsed
+
+
+def _list_from_any(*values: object) -> list:
+    items = []
+
+    for value in values:
+        if not value:
+            continue
+
+        if isinstance(value, list):
+            items.extend(value)
+        else:
+            items.append(value)
+
+    return [item for item in items if item not in (None, "")]
+
+
+def _adcs_event_id(event_type: str) -> str:
+    return str(event_type or "").replace("windows_event_", "").strip()
+
+
+def _request_bucket(event: MonitoringEvent) -> str | None:
+    details = event.details_json if isinstance(event.details_json, dict) else {}
+    event_type = str(event.event_type or "")
+    event_id = _adcs_event_id(event_type)
+    text = " ".join(
+        [
+            str(event.category or ""),
+            event_type,
+            str(event.title or ""),
+            str(event.summary or ""),
+            str(details.get("event_id") or ""),
+        ]
+    ).lower()
+
+    if event_id == "4886" or "request received" in text:
+        return "received"
+    if event_id == "4887" or "issued" in text or "approved" in text:
+        return "issued"
+    if event_id == "4888" or "denied" in text:
+        return "denied"
+    if event_id == "4889" or "pending" in text:
+        return "pending"
+    if "revoked" in text or "revocation" in text:
+        return "revoked"
+    if "failed" in text or "failure" in text:
+        return "failed"
+
+    return None
+
+
+def _request_activity_summary(
+    events: list[MonitoringEvent],
+    now: datetime,
+) -> dict:
+    request_events = [
+        event
+        for event in events
+        if _request_bucket(event) is not None
+    ]
+
+    def in_window(event: MonitoringEvent, minutes: int) -> bool:
+        occurred_at = event.occurred_at
+
+        if occurred_at.tzinfo is None:
+            occurred_at = occurred_at.replace(tzinfo=timezone.utc)
+
+        return occurred_at >= now - timedelta(minutes=minutes)
+
+    def count_window(minutes: int, bucket: str | None = None) -> int:
+        return sum(
+            1
+            for event in request_events
+            if in_window(event, minutes)
+            and (bucket is None or _request_bucket(event) == bucket)
+        )
+
+    last_event = request_events[0] if request_events else None
+
+    return {
+        "source": "monitoring_events",
+        "has_live_adcs_request_events": bool(request_events),
+        "requests_15m": count_window(15),
+        "requests_1h": count_window(60),
+        "issued_1h": count_window(60, "issued"),
+        "denied_1h": count_window(60, "denied"),
+        "failed_1h": count_window(60, "failed"),
+        "pending_1h": count_window(60, "pending"),
+        "revoked_1h": count_window(60, "revoked"),
+        "last_event_at": (
+            last_event.occurred_at.isoformat()
+            if last_event
+            else None
+        ),
+        "status": (
+            "Live ADCS request events available"
+            if request_events
+            else "Waiting for ADCS audit events"
+        ),
+        "note": (
+            "Counts are calculated only from recent live MonitoringEvent records."
+        ),
+    }
+
+
+def _revocation_status_from_scan(scan: Scan | None, cas: list[CertificateAuthority]) -> dict:
+    if not scan:
+        return {
+            "status": "Waiting for collector CRL evidence",
+            "tone": "unknown",
+            "source": "collector_scan",
+            "summary": "No collector scan is linked to this monitoring view yet.",
+            "base_crl": {"status": "No evidence yet"},
+            "delta_crl": {"status": "No evidence yet"},
+            "ocsp": {"status": "No evidence yet"},
+            "evidence_available": False,
+        }
+
+    if not cas:
+        return {
+            "status": "Waiting for collector CRL evidence",
+            "tone": "unknown",
+            "source": "collector_scan",
+            "summary": "Collector scan exists, but no CA CRL/CDP evidence is available.",
+            "base_crl": {"status": "No evidence yet"},
+            "delta_crl": {"status": "No evidence yet"},
+            "ocsp": {"status": "No evidence yet"},
+            "evidence_available": False,
+        }
+
+    now = datetime.now(timezone.utc)
+    ca_results = []
+    worst_rank = -1
+    status = "Healthy"
+    tone = "healthy"
+
+    for ca in cas:
+        config = ca.config_json if isinstance(ca.config_json, dict) else {}
+        crl = config.get("crl") if isinstance(config.get("crl"), dict) else {}
+        urls = _list_from_any(
+            crl.get("urls"),
+            crl.get("http_urls"),
+            crl.get("ldap_urls"),
+            crl.get("url"),
+            config.get("crl_urls"),
+            config.get("cdp_urls"),
+        )
+        assessed = crl.get("assessed") if "assessed" in crl else config.get("crl_assessed")
+        configured = crl.get("configured") if "configured" in crl else config.get("crl_configured")
+        reachable = crl.get("reachable") if "reachable" in crl else config.get("crl_reachable")
+        next_update = crl.get("next_update") or crl.get("expires_at") or config.get("crl_next_update")
+        parsed_next = _parse_monitoring_datetime(next_update)
+        days_remaining = (
+            (parsed_next - now).days
+            if parsed_next
+            else None
+        )
+
+        if assessed is not True and urls:
+            ca_status = "CDP discovered, live CRL fetch not enabled"
+            ca_tone = "warning"
+            rank = 1
+        elif not urls:
+            ca_status = "Waiting for collector CRL evidence"
+            ca_tone = "unknown"
+            rank = 0
+        elif configured is False:
+            ca_status = "CDP discovered, CRL not configured"
+            ca_tone = "warning"
+            rank = 2
+        elif reachable is False:
+            ca_status = "CRL unreachable"
+            ca_tone = "critical"
+            rank = 4
+        elif days_remaining is not None and days_remaining < 0:
+            ca_status = "CRL expired"
+            ca_tone = "critical"
+            rank = 5
+        elif days_remaining is not None and days_remaining <= 3:
+            ca_status = "CRL expiring soon"
+            ca_tone = "warning"
+            rank = 3
+        elif days_remaining is not None:
+            ca_status = "CRL healthy"
+            ca_tone = "healthy"
+            rank = 0
+        elif reachable is True:
+            ca_status = "CRL reachable, nextUpdate not collected"
+            ca_tone = "warning"
+            rank = 1
+        else:
+            ca_status = "CDP discovered, live CRL fetch not enabled"
+            ca_tone = "warning"
+            rank = 1
+
+        if rank > worst_rank:
+            worst_rank = rank
+            status = ca_status
+            tone = ca_tone
+
+        ca_results.append(
+            {
+                "ca_name": ca.name,
+                "status": ca_status,
+                "tone": ca_tone,
+                "urls": urls,
+                "reachable": reachable,
+                "this_update": crl.get("this_update"),
+                "next_update": next_update,
+                "days_remaining": days_remaining,
+                "source": crl.get("source") or "collector_scan",
+            }
+        )
+
+    evidence_available = any(item["urls"] for item in ca_results)
+
+    return {
+        "status": status if evidence_available else "Waiting for collector CRL evidence",
+        "tone": tone if evidence_available else "unknown",
+        "source": "collector_scan",
+        "summary": (
+            "Collector CRL/CDP evidence is present."
+            if evidence_available
+            else "Collector CRL/CDP evidence is not available yet."
+        ),
+        "base_crl": ca_results[0] if ca_results else {"status": "No evidence yet"},
+        "delta_crl": {
+            "status": (
+                "Collected"
+                if any(
+                    (ca.config_json or {}).get("crl", {}).get("delta_crl")
+                    for ca in cas
+                    if isinstance(ca.config_json, dict)
+                )
+                else "No delta CRL evidence collected"
+            )
+        },
+        "ocsp": {
+            "status": (
+                "Configured"
+                if any(
+                    (ca.config_json or {}).get("ocsp", {}).get("configured")
+                    for ca in cas
+                    if isinstance(ca.config_json, dict)
+                )
+                else "Not collected / not configured"
+            )
+        },
+        "ca_results": ca_results,
+        "evidence_available": evidence_available,
+    }
+
+
 def _require_monitoring_agent_token(
     authorization: str | None,
 ) -> None:
@@ -924,6 +1208,14 @@ def _monitoring_live_snapshot(
 
     now = datetime.now(timezone.utc)
     connected_after = now - timedelta(seconds=45)
+    collector_cas = (
+        db.query(CertificateAuthority)
+        .filter_by(scan_id=scan.id)
+        .order_by(CertificateAuthority.name.asc())
+        .all()
+        if scan
+        else []
+    )
 
     agents = (
         db.query(MonitoringAgent)
@@ -1359,6 +1651,7 @@ def _monitoring_live_snapshot(
         .limit(150)
         .all()
     )
+    snapshot["events_source"] = "monitoring_events" if events else "collector_snapshot"
 
     if events:
         outcome_types = {
@@ -1458,22 +1751,14 @@ def _monitoring_live_snapshot(
 
                 adcs_event_id = event_type.replace("windows_event_", "").strip()
 
-                adcs_titles = {
-                    "4880": "Certificate Services started",
-                    "4881": "Certificate Services stopped",
-                    "4886": "Certificate Services received a certificate request",
-                    "4887": "Certificate Services approved and issued a certificate",
-                    "4888": "Certificate Services denied a certificate request",
-                    "4889": "Certificate Services set a request to pending",
-                    "4890": "Certificate Services certificate manager settings changed",
-                    "4896": "One or more rows were deleted from the certificate database",
-                    "4897": "Certificate Services role separation setting changed",
-                }
+                adcs_mapping = ADCS_EVENT_LABELS.get(adcs_event_id)
 
-                title = adcs_titles.get(
-                    adcs_event_id,
-                    f"AD CS audit event {adcs_event_id or event.id}",
-                )
+                if adcs_mapping:
+                    kind = adcs_mapping[0].lower()
+                    title = adcs_mapping[1]
+                    tone = adcs_mapping[2]
+                else:
+                    title = f"AD CS audit event {adcs_event_id or event.id}"
 
                 if adcs_event_id in {"4881", "4888", "4896", "4897"}:
                     tone = "warning"
@@ -1498,6 +1783,9 @@ def _monitoring_live_snapshot(
                 "source_ip": event.source_ip,
                 "time": event.occurred_at.isoformat(),
                 "object": details.get("object", ""),
+                "event_id": details.get("event_id") or _adcs_event_id(event_type),
+                "event_type": event_type,
+                "details": details,
             }
 
         snapshot["events"] = [
@@ -1540,6 +1828,242 @@ def _monitoring_live_snapshot(
             }
             for event in active_alert_events[:5]
         ]
+
+    snapshot["request_activity"] = _request_activity_summary(events, now)
+    snapshot["revocation_status"] = _revocation_status_from_scan(
+        scan,
+        collector_cas,
+    )
+
+    primary_ca_agent = next(
+        (agent for agent in agent_rows if agent.get("is_ca")),
+        None,
+    )
+    primary_connected = bool(primary_ca_agent and primary_ca_agent.get("connected"))
+    primary_last_seen = (
+        _parse_monitoring_datetime(primary_ca_agent.get("last_seen_at"))
+        if primary_ca_agent
+        else None
+    )
+    heartbeat_age_seconds = (
+        int((now - primary_last_seen).total_seconds())
+        if primary_last_seen
+        else None
+    )
+    certsvc_state = str(
+        primary_ca_agent.get("certsvc")
+        if primary_ca_agent
+        else ""
+    )
+    certsvc_running = certsvc_state.strip().lower() == "running"
+
+    if primary_ca_agent and primary_connected and certsvc_running:
+        readiness_state = "Ready"
+        readiness_reason = "Monitoring agent is connected and CertSvc is running."
+    elif primary_ca_agent and heartbeat_age_seconds is not None and heartbeat_age_seconds > 300:
+        readiness_state = "Agent stale"
+        readiness_reason = "Latest CA heartbeat is older than the five-minute freshness threshold."
+    elif primary_ca_agent and not primary_connected:
+        readiness_state = "Agent registered but offline"
+        readiness_reason = "A monitoring agent exists for the CA, but it is not connected."
+    elif primary_ca_agent and not certsvc_running:
+        readiness_state = "CertSvc stopped"
+        readiness_reason = f"Latest agent service sample reported CertSvc={certsvc_state or 'Unknown'}."
+    elif scan:
+        readiness_state = "Collector only"
+        readiness_reason = "Collector evidence exists, but no live CA monitoring agent is connected."
+    else:
+        readiness_state = "No monitoring agent"
+        readiness_reason = "No collector or monitoring-agent CA evidence is available."
+
+    latest_adcs_event = next(
+        (
+            event
+            for event in events
+            if event.category == "adcs_audit"
+        ),
+        None,
+    )
+    latest_cawe_time = max(
+        (
+            _parse_monitoring_datetime(item.get("time"))
+            for item in live_web_activity
+            if item.get("time")
+        ),
+        default=None,
+    )
+    latest_role_sample = (
+        _parse_monitoring_datetime(resource_values.get("collected_at"))
+        or primary_last_seen
+    )
+
+    snapshot["pki_readiness"] = {
+        "state": readiness_state,
+        "reason": readiness_reason,
+        "source": (
+            "monitoring_agent"
+            if primary_ca_agent
+            else ("collector_scan" if scan else "none")
+        ),
+        "ca_name": (
+            primary_ca_agent.get("ca_name")
+            if primary_ca_agent
+            else ""
+        ),
+        "hostname": (
+            primary_ca_agent.get("hostname")
+            if primary_ca_agent
+            else ""
+        ),
+        "heartbeat_age_seconds": heartbeat_age_seconds,
+        "stale_threshold_seconds": 300,
+    }
+
+    if primary_ca_agent:
+        audit_success = primary_ca_agent.get("audit_success_enabled")
+        audit_failure = primary_ca_agent.get("audit_failure_enabled")
+        audit_filter = primary_ca_agent.get("audit_filter")
+        security_log_access = bool(primary_ca_agent.get("security_log_access"))
+        audit_ready_state = (
+            "ADCS auditing enabled"
+            if primary_ca_agent.get("audit_ready")
+            else (
+                "Waiting for audit evidence"
+                if audit_filter is None and not security_log_access
+                else "ADCS auditing not fully enabled"
+            )
+        )
+    else:
+        audit_success = None
+        audit_failure = None
+        audit_filter = None
+        security_log_access = False
+        audit_ready_state = "Waiting for audit evidence"
+
+    snapshot["audit_coverage"] = {
+        "status": audit_ready_state,
+        "success_enabled": audit_success,
+        "failure_enabled": audit_failure,
+        "audit_filter": audit_filter,
+        "security_log_readable": security_log_access,
+        "last_adcs_event_at": (
+            latest_adcs_event.occurred_at.isoformat()
+            if latest_adcs_event
+            else None
+        ),
+        "source": "monitoring_agent" if primary_ca_agent else "none",
+    }
+
+    w3svc_state = str(
+        primary_ca_agent.get("w3svc")
+        if primary_ca_agent
+        else ""
+    )
+    cawe_recent = [
+        item
+        for item in live_web_activity
+        if _parse_monitoring_datetime(item.get("time"))
+        and _parse_monitoring_datetime(item.get("time")) >= now - timedelta(minutes=15)
+    ]
+    if w3svc_state.strip().lower() in {"notinstalled", "not installed", "none"}:
+        cawe_status = "CAWE not installed/detected"
+    elif live_web_activity:
+        cawe_status = "CAWE activity collected"
+    elif w3svc_state.strip().lower() == "running":
+        cawe_status = "No CAWE activity in current sample"
+    else:
+        cawe_status = "CAWE evidence not collected yet"
+
+    snapshot["cawe_status"] = {
+        "status": cawe_status,
+        "w3svc": w3svc_state or "Unknown",
+        "recent_15m": len(cawe_recent),
+        "last_event_at": (
+            latest_cawe_time.isoformat()
+            if latest_cawe_time
+            else None
+        ),
+        "source": "monitoring_agent" if primary_ca_agent else "none",
+    }
+
+    snapshot["privileged_access"] = {
+        "status": (
+            "Active privileged PKI access observed"
+            if live_admin_sessions or snapshot["active_pki_roles"]
+            else (
+                "Privileged role membership observed"
+                if live_pki_roles
+                else "No active admin session detected"
+            )
+        ),
+        "active_admin_sessions": len(live_admin_sessions),
+        "active_role_members": len(snapshot["active_pki_roles"]),
+        "observed_role_members": len(live_pki_roles),
+        "last_sample_at": (
+            latest_role_sample.isoformat()
+            if latest_role_sample
+            else None
+        ),
+        "source": "monitoring_agent" if primary_ca_agent else "none",
+    }
+
+    def freshness_item(
+        label: str,
+        timestamp: datetime | None,
+        source: str,
+        stale_after_seconds: int,
+    ) -> dict:
+        if not timestamp:
+            return {
+                "label": label,
+                "status": "No evidence yet",
+                "age_seconds": None,
+                "source": source,
+                "stale_after_seconds": stale_after_seconds,
+            }
+
+        age_seconds = int((now - timestamp).total_seconds())
+
+        if age_seconds <= stale_after_seconds:
+            status = "Fresh"
+        elif age_seconds <= stale_after_seconds * 3:
+            status = "Aging"
+        else:
+            status = "Stale"
+
+        return {
+            "label": label,
+            "status": status,
+            "age_seconds": max(0, age_seconds),
+            "timestamp": timestamp.isoformat(),
+            "source": source,
+            "stale_after_seconds": stale_after_seconds,
+        }
+
+    collector_completed = (
+        scan.completed_at.replace(tzinfo=timezone.utc)
+        if scan and scan.completed_at and scan.completed_at.tzinfo is None
+        else (scan.completed_at if scan else None)
+    )
+    service_sample = _parse_monitoring_datetime(resource_values.get("collected_at"))
+
+    snapshot["evidence_freshness"] = [
+        freshness_item("Heartbeat", primary_last_seen, "monitoring_agent", 300),
+        freshness_item(
+            "ADCS audit event",
+            (
+                latest_adcs_event.occurred_at.replace(tzinfo=timezone.utc)
+                if latest_adcs_event and latest_adcs_event.occurred_at.tzinfo is None
+                else (latest_adcs_event.occurred_at if latest_adcs_event else None)
+            ),
+            "monitoring_events",
+            900,
+        ),
+        freshness_item("CAWE log", latest_cawe_time, "monitoring_agent_iis_logs", 900),
+        freshness_item("Privileged/session sample", latest_role_sample, "monitoring_agent", 900),
+        freshness_item("Service sample", service_sample or primary_last_seen, "monitoring_agent", 300),
+        freshness_item("Collector scan", collector_completed, "collector_scan", 86400),
+    ]
 
     latest_metric = (
         db.query(MonitoringMetric)
