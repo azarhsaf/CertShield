@@ -47,6 +47,63 @@ def _is_demo_payload(payload: CollectorPayload) -> bool:
     return any(marker in markers for marker in ("demo", "sample", "fixture")) or payload.domain_name.lower() in {"corp.local", "corp"}
 
 
+def _norm_dedupe(value: object) -> str:
+    return str(value or "").strip().casefold()
+
+
+def _dedupe_items(items, key_fn):
+    unique = []
+    seen = set()
+
+    for item in items:
+        key = key_fn(item)
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        unique.append(item)
+
+    return unique
+
+
+def _ca_dedupe_key(ca) -> tuple[str, str, str]:
+    config = ca.config if isinstance(ca.config, dict) else {}
+    cert = config.get("ca_certificate") if isinstance(config.get("ca_certificate"), dict) else {}
+
+    thumbprint = _norm_dedupe(cert.get("thumbprint"))
+    serial = _norm_dedupe(cert.get("serial_number"))
+    config_string = _norm_dedupe(config.get("config_string"))
+
+    if thumbprint:
+        return ("thumbprint", thumbprint, "")
+
+    if serial:
+        return ("serial", serial, "")
+
+    if config_string:
+        return ("config", config_string, "")
+
+    return (
+        "name-dns",
+        _norm_dedupe(ca.name),
+        _norm_dedupe(ca.dns_name),
+    )
+
+
+def _template_dedupe_key(template) -> str:
+    return _norm_dedupe(template.name or template.display_name)
+
+
+def _issued_certificate_dedupe_key(cert) -> tuple[str, str, str, str]:
+    return (
+        _norm_dedupe(cert.request_id),
+        _norm_dedupe(cert.serial_number if hasattr(cert, "serial_number") else ""),
+        _norm_dedupe(cert.certificate_hash if hasattr(cert, "certificate_hash") else ""),
+        _norm_dedupe(cert.subject),
+    )
+
+
 def _resolve_environment(db: Session, payload: CollectorPayload) -> PkiEnvironment:
     key = _environment_key(payload)
     now = datetime.utcnow()
@@ -159,8 +216,15 @@ class IngestService:
         db.add(scan)
         db.flush()
 
+        payload_cas = _dedupe_items(payload.cas, _ca_dedupe_key)
+        payload_templates = _dedupe_items(payload.templates, _template_dedupe_key)
+        payload_certificates = _dedupe_items(
+            payload.issued_certificates,
+            _issued_certificate_dedupe_key,
+        )
+
         cas = []
-        for ca in payload.cas:
+        for ca in payload_cas:
             row = CertificateAuthority(
                 scan_id=scan.id,
                 name=ca.name,
@@ -172,7 +236,7 @@ class IngestService:
             cas.append(row)
 
         templates = []
-        for template in payload.templates:
+        for template in payload_templates:
             tpl = CertificateTemplate(
                 scan_id=scan.id,
                 name=template.name,
@@ -200,7 +264,7 @@ class IngestService:
             templates.append(tpl)
 
         certificates = []
-        for cert in payload.issued_certificates:
+        for cert in payload_certificates:
             cert_row = IssuedCertificate(
                 scan_id=scan.id,
                 request_id=cert.request_id,
@@ -253,9 +317,9 @@ class IngestService:
         environment.updated_at = scan.completed_at
         scan.coverage_json = coverage
         base_summary = {
-            "cas": len(payload.cas),
-            "templates": len(payload.templates),
-            "certificates": len(payload.issued_certificates),
+            "cas": len(payload_cas),
+            "templates": len(payload_templates),
+            "certificates": len(payload_certificates),
             "findings": len(findings),
             "severity": dict(severity_counter),
             "by_category": dict(esc_counter),
