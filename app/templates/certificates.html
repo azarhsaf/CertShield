@@ -7,6 +7,7 @@
   <section class="cert-search-hero">
     <div class="eyebrow">Certificate Lifecycle</div>
     <h1>Certificate Search</h1>
+    <h2 class="cert-search-subtitle">ADCS Issued Certificates / Requests</h2>
     <p>
       Search and review CA-issued certificate records collected from ADCS.
       Request ID is retained as secondary evidence, while the main view focuses on subject, template, requester and validity.
@@ -36,7 +37,7 @@
     <div class="cert-kpi">
       <span>Network TLS scan</span>
       <div>{{ status_badge('Not Configured') }}</div>
-      <small>ADCS issued database only</small>
+      <small>Network TLS endpoint scanning is not configured in this phase. ADCS issued database only.</small>
     </div>
   </section>
 
@@ -140,7 +141,10 @@
           {% else %}
           <tr>
             <td colspan="8">
-              <div class="cert-empty">No issued certificate records found for latest scan.</div>
+              <div class="cert-empty">
+                Issued certificate data was not collected in the latest scan.
+                No issued certificate records found for latest scan.
+              </div>
             </td>
           </tr>
           {% endfor %}

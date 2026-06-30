@@ -444,7 +444,7 @@
         </a>
 
         <a href="/findings" class="dashboard-driver-card dashboard-driver-approved">
-          <span>Approved exceptions</span>
+          <span>Accepted Risks</span>
           <strong>{{ accepted_total }}</strong>
           <small>Accepted by policy</small>
         </a>
@@ -1502,6 +1502,161 @@ button {
   Important: keep certificate list exactly as its own inline style.
   Do not override .certdash-v5 here.
 */
+
+/* Lavender repair pass: constrain dashboard-only charts and normalize panels. */
+.visual-dashboard {
+  --dash-brand: #3b2e78;
+  --dash-brand-2: #51419a;
+  --dash-soft: #f7f6ff;
+  --dash-border: #d8d2f0;
+  --dash-text: #172033;
+  --dash-muted: #657083;
+}
+
+.visual-dashboard-hero.dashboard-hero-refined {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 1rem !important;
+  min-height: auto !important;
+  padding: 1.05rem 1.2rem !important;
+  background:
+    linear-gradient(90deg, #ffffff 0%, #ffffff 68%, #f7f6ff 100%) !important;
+  border: 1px solid var(--dash-border) !important;
+  border-left: 5px solid var(--dash-brand) !important;
+  color: var(--dash-text) !important;
+}
+
+.dashboard-hero-actions {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  flex-wrap: wrap !important;
+}
+
+.dashboard-scanline {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: .45rem !important;
+  margin-top: .45rem !important;
+  padding: .38rem .5rem !important;
+  background: var(--dash-soft) !important;
+  border: 1px solid var(--dash-border) !important;
+  border-radius: 999px !important;
+}
+
+.visual-score-gauge {
+  width: 72px !important;
+  height: 72px !important;
+  flex: 0 0 72px !important;
+  background:
+    radial-gradient(circle at center, #ffffff 57%, transparent 58%),
+    conic-gradient(var(--dash-brand) calc(var(--score) * 1%), #ebe7fb 0) !important;
+}
+
+.visual-score-health,
+.visual-score-controls,
+.visual-score-coverage {
+  background:
+    radial-gradient(circle at center, #ffffff 57%, transparent 58%),
+    conic-gradient(var(--dash-brand-2) calc(var(--score) * 1%), #ebe7fb 0) !important;
+}
+
+.visual-chart-card,
+.visual-panel:not(.certdash-v5),
+.dashboard-driver-card,
+.dashboard-reason-panel,
+.visual-template-issue-chart {
+  border-color: var(--dash-border) !important;
+}
+
+.visual-donut,
+.template-issue-donut {
+  display: block !important;
+  width: 100% !important;
+  max-width: 132px !important;
+  height: auto !important;
+  max-height: 132px !important;
+  flex: 0 0 auto !important;
+}
+
+.visual-donut-wrap,
+.template-issue-layout {
+  align-items: center !important;
+  min-width: 0 !important;
+}
+
+.visual-template-issue-chart {
+  padding: .78rem !important;
+  overflow: hidden !important;
+}
+
+.template-issue-layout {
+  display: grid !important;
+  grid-template-columns: minmax(96px, 132px) minmax(0, 1fr) !important;
+  gap: .75rem !important;
+}
+
+.template-issue-legend {
+  min-width: 0 !important;
+  max-height: 150px !important;
+  overflow: auto !important;
+}
+
+.dashboard-action-card {
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: .85rem !important;
+  background: var(--dash-soft) !important;
+  border: 1px solid var(--dash-border) !important;
+  border-left: 4px solid var(--dash-brand) !important;
+  color: var(--dash-text) !important;
+  box-shadow: none !important;
+}
+
+.dashboard-action-icon {
+  width: 34px !important;
+  height: 34px !important;
+  background: var(--dash-brand) !important;
+  color: #fff !important;
+}
+
+.dashboard-action-copy span {
+  color: var(--dash-brand) !important;
+}
+
+.dashboard-action-copy strong {
+  color: var(--dash-text) !important;
+}
+
+.dashboard-action-copy small {
+  color: var(--dash-muted) !important;
+}
+
+.dashboard-action-cta {
+  background: var(--dash-brand) !important;
+  border-color: var(--dash-brand) !important;
+  color: #fff !important;
+  white-space: nowrap !important;
+}
+
+@media (max-width: 780px) {
+  .visual-dashboard-hero.dashboard-hero-refined,
+  .dashboard-action-card {
+    grid-template-columns: 1fr !important;
+    display: grid !important;
+  }
+
+  .dashboard-hero-actions,
+  .dashboard-action-cta {
+    justify-self: start !important;
+  }
+
+  .template-issue-layout {
+    grid-template-columns: 1fr !important;
+  }
+}
 </style>
 
 {% endblock %}

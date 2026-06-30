@@ -520,3 +520,135 @@ body.enterprise-body:not(.cs-monitoring-page) table.dashboard-cert-table-final {
   body.enterprise-body:not(.cs-monitoring-page) .cert-kpi-grid,
   body.enterprise-body:not(.cs-monitoring-page) .cert-search-toolbar { grid-template-columns: 1fr !important; }
 }
+
+/* Repair pass: shell and page polish without touching monitoring content. */
+html,
+body.enterprise-body {
+  overflow-x: hidden !important;
+}
+
+body.enterprise-body .app-shell {
+  grid-template-columns: 244px minmax(0, 1fr) !important;
+}
+
+body.enterprise-body .app-workspace,
+body.enterprise-body .app-main {
+  min-width: 0 !important;
+}
+
+body.enterprise-body .sidebar-footer strong {
+  color: var(--cs-text) !important;
+  font-weight: 700 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .app-footer {
+  color: var(--cs-muted) !important;
+  background: #fff !important;
+  border-top: 1px solid var(--cs-border) !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .hero-panel,
+body.enterprise-body:not(.cs-monitoring-page) .page-title {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 1rem !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .section-title {
+  color: var(--cs-text) !important;
+  font-size: 1rem !important;
+  font-weight: 700 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .cert-table-wrap {
+  max-height: calc(100vh - 340px) !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .cert-table {
+  min-width: 1180px !important;
+  border-collapse: collapse !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .cert-main-subject strong,
+body.enterprise-body:not(.cs-monitoring-page) .cert-subject-cell,
+body.enterprise-body:not(.cs-monitoring-page) .cert-ellipsis,
+body.enterprise-body:not(.cs-monitoring-page) .cert-san-cell,
+body.enterprise-body:not(.cs-monitoring-page) .cert-requester-cell {
+  max-width: 360px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .cert-main-subject small {
+  display: block !important;
+  margin-top: .12rem !important;
+  font-family: Consolas, "Courier New", monospace !important;
+  font-size: .68rem !important;
+  font-weight: 500 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .cert-template-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  max-width: 280px !important;
+  padding: .16rem .45rem !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .architecture-shell,
+body.enterprise-body:not(.cs-monitoring-page) .hierarchy-chain,
+body.enterprise-body:not(.cs-monitoring-page) .hierarchy-summary-card,
+body.enterprise-body:not(.cs-monitoring-page) .hierarchy-node-card {
+  border-color: var(--cs-border) !important;
+  box-shadow: var(--cs-shadow-sm) !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .architecture-viewport {
+  max-height: 560px !important;
+  min-height: 320px !important;
+  background: #fff !important;
+  border-color: var(--cs-border) !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .hierarchy-canvas,
+body.enterprise-body:not(.cs-monitoring-page) .architecture-canvas {
+  min-width: 0 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .hierarchy-chain {
+  background: var(--cs-brand-soft-2) !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .hierarchy-chain-header strong,
+body.enterprise-body:not(.cs-monitoring-page) .posture-action-link,
+body.enterprise-body:not(.cs-monitoring-page) .ca-details summary {
+  color: var(--cs-brand) !important;
+}
+
+@media (max-width: 980px) {
+  body.enterprise-body .app-shell {
+    grid-template-columns: 1fr !important;
+  }
+
+  body.enterprise-body .app-sidebar {
+    position: relative !important;
+    height: auto !important;
+  }
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .cert-search-subtitle {
+  margin: 0 0 .24rem !important;
+  color: var(--cs-brand) !important;
+  font-size: .9rem !important;
+  font-weight: 650 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .cert-empty {
+  padding: 1rem !important;
+  color: var(--cs-muted) !important;
+  text-align: center !important;
+}
