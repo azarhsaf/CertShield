@@ -30,13 +30,13 @@ param(
   [string]$ExtraCaCertPath,
   [string]$ExtraCaCertFolder,
   [string]$OfflineCaMetadataPath,
-  [int]$MaxIssuedCertificates = 200,
+  [int]$MaxIssuedCertificates = 0,
   [switch]$IncludeRevoked,
   [switch]$SkipTemplateAcl
 )
 
 $ErrorActionPreference = 'Stop'
-$CollectorVersion = 'collector-ps51-1.8.5-esc5-esc7-tier0'
+$CollectorVersion = 'collector-ps51-1.8.7-issued-full-sync'
 
 function Write-Step { param([string]$Message) Write-Host "[CertShield] $Message" }
 function Empty-List { return @() }
@@ -1679,63 +1679,306 @@ function Add-TemplateFallbackFromPublishedTemplates {
   return @($records)
 }
 
-function Parse-CertValue { param([string]$Line) $parts = $Line -split ':',2; if ($parts.Count -lt 2) { return '' }; return $parts[1].Trim() }
+function Parse-CertValue {
+  param([string]$Line)
+
+  if (-not $Line) {
+    return ''
+  }
+
+  $parts = $Line -split ':', 2
+
+  if ($parts.Count -lt 2) {
+    return ''
+  }
+
+  return $parts[1].Trim()
+}
+
+function Test-CertShieldUsableCaConfigString {
+  param([string]$ConfigString)
+
+  if ([string]::IsNullOrWhiteSpace($ConfigString)) {
+    return $false
+  }
+
+  $clean = $ConfigString.Trim()
+
+  if ($clean -match '\.\.\.') {
+    return $false
+  }
+
+  if ($clean -notmatch '\\') {
+    return $false
+  }
+
+  if ($clean.EndsWith('\')) {
+    return $false
+  }
+
+  return $true
+}
+
+function Resolve-CertShieldCaConfigStrings {
+  param([object[]]$Cas)
+
+  $configs = @()
+
+  foreach ($manual in @($ManualCaConfig)) {
+    if (Test-CertShieldUsableCaConfigString -ConfigString $manual) {
+      $configs += [string]$manual
+    }
+  }
+
+  foreach ($ca in @($Cas)) {
+    try {
+      $cfg = [string]$ca.config.config_string
+
+      if (Test-CertShieldUsableCaConfigString -ConfigString $cfg) {
+        $configs += $cfg
+      }
+    } catch { }
+  }
+
+  # Local CA fallback. Works when collector runs directly on the CA host.
+  try {
+    $certSvcRoot = 'HKLM:\SYSTEM\CurrentControlSet\Services\CertSvc\Configuration'
+
+    if (Test-Path $certSvcRoot) {
+      $hostShort = $env:COMPUTERNAME
+      $hostFqdn = $hostShort
+
+      if ($env:USERDNSDOMAIN) {
+        $hostFqdn = "$hostShort.$($env:USERDNSDOMAIN)"
+      }
+
+      foreach ($key in Get-ChildItem -Path $certSvcRoot -ErrorAction SilentlyContinue) {
+        $caName = Split-Path $key.PSPath -Leaf
+
+        if ([string]::IsNullOrWhiteSpace($caName)) {
+          continue
+        }
+
+        $configs += "$hostFqdn\$caName"
+        $configs += "$hostShort\$caName"
+      }
+    }
+  } catch { }
+
+  $unique = @()
+
+  foreach ($config in @($configs)) {
+    $clean = ([string]$config).Trim()
+
+    if (
+      (Test-CertShieldUsableCaConfigString -ConfigString $clean) -and
+      ($unique -notcontains $clean)
+    ) {
+      $unique += $clean
+    }
+  }
+
+  return @($unique)
+}
+
+function New-IssuedCertificateRecord {
+  param([hashtable]$Current)
+
+  if (-not $Current.ContainsKey('request_id')) {
+    return $null
+  }
+
+  $requestId = ([string]$Current['request_id']).Trim()
+
+  if (-not $requestId) {
+    return $null
+  }
+
+  $status = 'issued'
+
+  if (
+    (([string]$Current['disposition']) -match '21') -or
+    (([string]$Current['disposition_message']) -match 'revoked')
+  ) {
+    $status = 'revoked'
+  }
+
+  $requestAttributes = [string]$Current['request_attributes']
+  $san = ''
+
+  if ($requestAttributes -match '(?i)(san|subject alternative name)\s*[:=]\s*([^,;]+)') {
+    $san = $matches[2].Trim()
+  }
+
+  return [pscustomobject]@{
+    request_id          = $requestId
+    requester           = [string]$Current['requester']
+    template_name       = [string]$Current['template_name']
+    subject             = [string]$Current['subject']
+    san                 = $san
+    issued_at           = [string]$Current['issued_at']
+    expires_at          = [string]$Current['expires_at']
+    status              = $status
+    serial_number       = [string]$Current['serial_number']
+    certificate_hash    = [string]$Current['certificate_hash']
+    request_attributes  = $requestAttributes
+    disposition         = [string]$Current['disposition']
+    disposition_message = [string]$Current['disposition_message']
+    ca_config           = [string]$Current['ca_config']
+  }
+}
 
 function Get-IssuedCertificates {
   param([hashtable]$HealthCoverage, [object[]]$Cas)
+
   $out = @()
   $queried = @()
+  $errors = @()
+  $seen = @{}
+
   if ($SkipIssued) {
     $HealthCoverage['issued_certificates_collected'] = $false
     $HealthCoverage['issued_certificates_reason'] = 'collector ran with SkipIssued'
     $HealthCoverage['issued_certificates_count'] = 0
     return @($out)
   }
-  try {
-    foreach ($ca in $Cas) {
-      $configString = $null
-      try { $configString = [string]$ca.config.config_string } catch { }
-      if (-not $configString) { continue }
-      $queried += $configString
-      $restrict = "Disposition=20"
-      if ($IncludeRevoked) { $restrict = "Disposition>=20" }
-      $lines = certutil -config $configString -view -restrict $restrict -out "RequestID,RequesterName,CertificateTemplate,CommonName,NotBefore,NotAfter,SerialNumber,CertificateHash,RequestAttributes,Disposition,DispositionMessage" 2>$null
-      $cur = @{}
-      foreach ($line in $lines) {
-        if ($line -match '^\s*Request\s*ID:\s*(.+)$') {
-          if ($cur.ContainsKey('request_id')) { $out += [pscustomobject]$cur; $cur = @{} }
-          $cur = @{ request_id=$matches[1].Trim(); requester=''; template_name=''; subject=''; san=''; issued_at=''; expires_at=''; status='issued'; serial_number=''; certificate_hash=''; request_attributes=''; disposition=''; disposition_message='' }
-        } elseif ($line -match '^\s*Requester\s*Name:') { $cur['requester'] = Parse-CertValue -Line $line }
-        elseif ($line -match '^\s*Certificate\s*Template:') { $cur['template_name'] = Parse-CertValue -Line $line }
-        elseif ($line -match '^\s*(Issued\s*)?Common\s*Name:') { $cur['subject'] = Parse-CertValue -Line $line }
-        elseif ($line -match '^\s*(Certificate\s*)?(Effective\s*Date|NotBefore):') { $cur['issued_at'] = Parse-CertValue -Line $line }
-        elseif ($line -match '^\s*(Certificate\s*)?(Expiration\s*Date|NotAfter):') { $cur['expires_at'] = Parse-CertValue -Line $line }
-        elseif ($line -match '^\s*Serial\s*Number:') { $cur['serial_number'] = Parse-CertValue -Line $line }
-        elseif ($line -match '^\s*Certificate\s*Hash:') { $cur['certificate_hash'] = Parse-CertValue -Line $line }
-        elseif ($line -match '^\s*Request\s*Attributes:') { $cur['request_attributes'] = Parse-CertValue -Line $line }
-        elseif ($line -match '^\s*Disposition:') { $cur['disposition'] = Parse-CertValue -Line $line }
-        elseif ($line -match '^\s*Disposition\s*Message:') { $cur['disposition_message'] = Parse-CertValue -Line $line }
-      }
-      if ($cur.ContainsKey('request_id')) { $out += [pscustomobject]$cur }
-    }
-    if ($queried.Count -eq 0) { throw 'No CA config strings were available for certutil -view.' }
-    $HealthCoverage['issued_certificates_collected'] = $true
-    $HealthCoverage['issued_certificates_count'] = $out.Count
-    $HealthCoverage['issued_certificates_queried_cas'] = @($queried)
-    $HealthCoverage['issued_certificates_query'] = 'certutil -config <CAHost\CAName> -view -restrict Disposition=20 (or Disposition>=20 with IncludeRevoked)'
-    if ($out.Count -eq 0) { $HealthCoverage['issued_certificates_reason'] = 'certutil queried CA database successfully but returned zero issued certificate rows' }
-    else { $HealthCoverage['issued_certificates_reason'] = 'certutil issued certificate rows parsed successfully' }
-  } catch {
+
+  $configs = @(Resolve-CertShieldCaConfigStrings -Cas $Cas)
+
+  if ($configs.Count -eq 0) {
     $HealthCoverage['issued_certificates_collected'] = $false
     $HealthCoverage['issued_certificates_count'] = 0
-    $HealthCoverage['issued_certificates_error'] = "certutil issued certificate query failed: $_"
-    $HealthCoverage['issued_certificates_reason'] = "certutil issued certificate query failed. Run from a host/account that can read the CA database. Error: $_"
-    $HealthCoverage['issued_certificates_queried_cas'] = @($queried)
-    Write-Warning "Issued certificate query failed: $_"
+    $HealthCoverage['issued_certificates_error'] = 'No CA config strings were available for certutil -view.'
+    $HealthCoverage['issued_certificates_reason'] = 'No CA config strings were available. Pass -ManualCaConfig "CAHOST\CAName" or run the collector on the CA host.'
+    $HealthCoverage['issued_certificates_queried_cas'] = @()
+    Write-Warning "Issued certificate query failed: No CA config strings were available for certutil -view."
+    return @($out)
   }
-  if ($MaxIssuedCertificates -gt 0 -and $out.Count -gt $MaxIssuedCertificates) { $out = $out | Select-Object -First $MaxIssuedCertificates }
+
+  foreach ($configString in $configs) {
+    $restrict = 'Disposition=20'
+
+    if ($IncludeRevoked) {
+      $restrict = 'Disposition>=20'
+    }
+
+    $queried += $configString
+
+    try {
+      Write-Step "Querying issued certificates from $configString"
+
+      $columns = 'RequestID,RequesterName,CertificateTemplate,CommonName,NotBefore,NotAfter,SerialNumber,CertificateHash,RequestAttributes,Disposition,DispositionMessage'
+
+      $lines = @(
+        & certutil.exe `
+          -config $configString `
+          -view `
+          -restrict $restrict `
+          -out $columns 2>&1
+      )
+
+      $cur = @{}
+
+      foreach ($line in $lines) {
+        $lineText = [string]$line
+
+        if ($lineText -match '^\s*Request\s*ID:\s*(.+)$') {
+          $record = New-IssuedCertificateRecord -Current $cur
+
+          if ($record) {
+            $key = "$($record.ca_config)|$($record.request_id)"
+
+            if (-not $seen.ContainsKey($key)) {
+              $seen[$key] = $true
+              $out += $record
+            }
+          }
+
+          $cur = @{
+            request_id = $matches[1].Trim()
+            requester = ''
+            template_name = ''
+            subject = ''
+            san = ''
+            issued_at = ''
+            expires_at = ''
+            status = 'issued'
+            serial_number = ''
+            certificate_hash = ''
+            request_attributes = ''
+            disposition = ''
+            disposition_message = ''
+            ca_config = $configString
+          }
+
+          continue
+        }
+
+        if (-not $cur.ContainsKey('request_id')) {
+          continue
+        }
+
+        if ($lineText -match '^\s*Requester\s*Name:') {
+          $cur['requester'] = Parse-CertValue -Line $lineText
+        } elseif ($lineText -match '^\s*Certificate\s*Template(?:\s*Name)?:') {
+          $cur['template_name'] = Parse-CertValue -Line $lineText
+        } elseif ($lineText -match '^\s*(Issued\s*)?Common\s*Name:') {
+          $cur['subject'] = Parse-CertValue -Line $lineText
+        } elseif ($lineText -match '^\s*(Certificate\s*)?(Effective\s*Date|NotBefore):') {
+          $cur['issued_at'] = Parse-CertValue -Line $lineText
+        } elseif ($lineText -match '^\s*(Certificate\s*)?(Expiration\s*Date|NotAfter):') {
+          $cur['expires_at'] = Parse-CertValue -Line $lineText
+        } elseif ($lineText -match '^\s*Serial\s*Number:') {
+          $cur['serial_number'] = Parse-CertValue -Line $lineText
+        } elseif ($lineText -match '^\s*Certificate\s*Hash:') {
+          $cur['certificate_hash'] = Parse-CertValue -Line $lineText
+        } elseif ($lineText -match '^\s*Request\s*Attributes:') {
+          $cur['request_attributes'] = Parse-CertValue -Line $lineText
+        } elseif ($lineText -match '^\s*Disposition:') {
+          $cur['disposition'] = Parse-CertValue -Line $lineText
+        } elseif ($lineText -match '^\s*Disposition\s*Message:') {
+          $cur['disposition_message'] = Parse-CertValue -Line $lineText
+        }
+      }
+
+      $record = New-IssuedCertificateRecord -Current $cur
+
+      if ($record) {
+        $key = "$($record.ca_config)|$($record.request_id)"
+
+        if (-not $seen.ContainsKey($key)) {
+          $seen[$key] = $true
+          $out += $record
+        }
+      }
+    } catch {
+      $errors += "$configString : $($_.Exception.Message)"
+    }
+  }
+
+  if ($MaxIssuedCertificates -gt 0 -and $out.Count -gt $MaxIssuedCertificates) {
+    $out = @($out | Select-Object -First $MaxIssuedCertificates)
+  }
+
+  $HealthCoverage['issued_certificates_collected'] = ($queried.Count -gt 0)
+  $HealthCoverage['issued_certificates_count'] = @($out).Count
+  $HealthCoverage['issued_certificates_queried_cas'] = @($queried)
+  $HealthCoverage['issued_certificates_query'] = 'certutil -config <CAHost\CAName> -view -restrict Disposition=20 -out RequestID,RequesterName,CertificateTemplate,CommonName,NotBefore,NotAfter,SerialNumber,CertificateHash,RequestAttributes,Disposition,DispositionMessage'
+  $HealthCoverage['issued_certificates_limit'] = $MaxIssuedCertificates
+
+  if ($errors.Count -gt 0) {
+    $HealthCoverage['issued_certificates_error'] = ($errors -join '; ')
+    $HealthCoverage['issued_certificates_reason'] = "Issued certificate query completed with errors. Rows parsed: $(@($out).Count). Errors: $($errors -join '; ')"
+    Write-Warning $HealthCoverage['issued_certificates_reason']
+  } elseif (@($out).Count -eq 0) {
+    $HealthCoverage['issued_certificates_reason'] = 'certutil queried CA database successfully but returned zero issued certificate rows'
+  } else {
+    $HealthCoverage['issued_certificates_reason'] = "certutil issued certificate rows parsed successfully. Rows: $(@($out).Count)"
+  }
+
   return @($out)
 }
+
 
 if (-not $DomainName) { $DomainName = 'unknown.local' }
 if (-not $EnvironmentName) { $EnvironmentName = $DomainName }

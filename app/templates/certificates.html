@@ -1,22 +1,1103 @@
 {% extends 'base.html' %}
 {% from 'macros/evidence.html' import status_badge, evidence_table %}
 {% block content %}
-<div class="page-title"><div><div class="eyebrow">Certificate Lifecycle</div><h1>ADCS Issued Certificates / Requests</h1><p>This page shows CA-issued certificate/request metadata collected from ADCS. Network TLS endpoint scanning is not configured in this phase / release.</p></div></div>
-{% set health = scan.summary_json.health if scan and scan.summary_json.health else {} %}
-{% set issuance = none %}{% if health and health['items'] %}{% for item in health['items'] %}{% if item.category == 'Certificate Issuance Health' %}{% set issuance = item %}{% endif %}{% endfor %}{% endif %}
-<div class="metric-grid mb-3">
-  <div class="metric-card"><div class="metric-title">Issued Cert Collection</div><div>{{status_badge('Collected' if certificates else 'Not Assessed')}}</div></div>
-  <div class="metric-card"><div class="metric-title">Records Collected</div><div class="metric-value">{{certificates|length}}</div></div>
-  <div class="metric-card"><div class="metric-title">Last Collection Time</div><div class="small">{{scan.completed_at if scan else 'No scan received'}}</div></div>
-  <div class="metric-card"><div class="metric-title">Network TLS Scan</div><div>{{status_badge('Not Configured')}}</div></div>
+
+<style id="certsearch-page-polish">
+.cert-search-page {
+  display: grid !important;
+  gap: .85rem !important;
+  color: #0a1f35 !important;
+}
+
+/* Page banner */
+.cert-search-hero {
+  padding: .95rem 1rem !important;
+  background: #ffffff !important;
+  border: 1px solid #d6e2ee !important;
+  border-left: 6px solid #082947 !important;
+  border-radius: 16px !important;
+  box-shadow: 0 10px 24px rgba(8,41,71,.055) !important;
+}
+
+.cert-search-hero .eyebrow {
+  color: #155c9d !important;
+  font-size: .66rem !important;
+  font-weight: 850 !important;
+  letter-spacing: .09em !important;
+  text-transform: uppercase !important;
+}
+
+.cert-search-hero h1 {
+  margin: .14rem 0 .2rem !important;
+  color: #0a1f35 !important;
+  font-size: 1.35rem !important;
+  font-weight: 760 !important;
+  letter-spacing: -.025em !important;
+}
+
+.cert-search-hero p {
+  margin: 0 !important;
+  color: #536b84 !important;
+  font-size: .8rem !important;
+  line-height: 1.45 !important;
+}
+
+/* KPI cards */
+.cert-kpi-grid {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(170px, 1fr)) !important;
+  gap: .72rem !important;
+}
+
+.cert-kpi {
+  min-height: 74px !important;
+  padding: .68rem .75rem !important;
+  background: #ffffff !important;
+  border: 1px solid #d6e2ee !important;
+  border-top: 3px solid #155c9d !important;
+  border-radius: 14px !important;
+  box-shadow: 0 8px 20px rgba(8,41,71,.045) !important;
+}
+
+.cert-kpi span {
+  display: block !important;
+  color: #607589 !important;
+  font-size: .65rem !important;
+  font-weight: 850 !important;
+  letter-spacing: .075em !important;
+  text-transform: uppercase !important;
+}
+
+.cert-kpi strong {
+  display: block !important;
+  margin-top: .12rem !important;
+  color: #0a1f35 !important;
+  font-size: 1.45rem !important;
+  font-weight: 780 !important;
+  line-height: 1.08 !important;
+}
+
+.cert-kpi small {
+  display: block !important;
+  margin-top: .16rem !important;
+  color: #607589 !important;
+  font-size: .72rem !important;
+  font-weight: 500 !important;
+}
+
+.cert-kpi .badge {
+  min-width: 100% !important;
+  justify-content: center !important;
+  font-size: .66rem !important;
+  font-weight: 750 !important;
+}
+
+/* Search card */
+.cert-search-card {
+  background: #ffffff !important;
+  border: 1px solid #d6e2ee !important;
+  border-radius: 16px !important;
+  box-shadow: 0 10px 24px rgba(8,41,71,.055) !important;
+  overflow: hidden !important;
+}
+
+.cert-search-title {
+  padding: .75rem .85rem !important;
+  background: linear-gradient(180deg, #ffffff, #f7fbff) !important;
+  border-bottom: 1px solid #dbe7f2 !important;
+}
+
+.cert-search-title span {
+  color: #155c9d !important;
+  font-size: .66rem !important;
+  font-weight: 850 !important;
+  letter-spacing: .09em !important;
+  text-transform: uppercase !important;
+}
+
+.cert-search-title h2 {
+  margin: .12rem 0 0 !important;
+  color: #0a1f35 !important;
+  font-size: 1rem !important;
+  font-weight: 740 !important;
+}
+
+/* Toolbar */
+.cert-search-toolbar {
+  display: grid !important;
+  grid-template-columns: minmax(300px, 1fr) 170px 190px auto auto auto !important;
+  gap: .55rem !important;
+  align-items: end !important;
+  padding: .75rem .85rem !important;
+  background: #f8fbfe !important;
+  border-bottom: 1px solid #dbe7f2 !important;
+}
+
+.cert-field label {
+  display: block !important;
+  margin-bottom: .22rem !important;
+  color: #607589 !important;
+  font-size: .64rem !important;
+  font-weight: 850 !important;
+  letter-spacing: .075em !important;
+  text-transform: uppercase !important;
+}
+
+.cert-field input,
+.cert-field select {
+  width: 100% !important;
+  height: 32px !important;
+  padding: .25rem .5rem !important;
+  color: #0a1f35 !important;
+  background: #ffffff !important;
+  border: 1px solid #b8ccdf !important;
+  border-radius: 9px !important;
+  font-size: .77rem !important;
+  font-weight: 550 !important;
+  box-shadow: none !important;
+}
+
+.cert-field input:focus,
+.cert-field select:focus {
+  border-color: #155c9d !important;
+  box-shadow: 0 0 0 .16rem rgba(21,92,157,.12) !important;
+  outline: 0 !important;
+}
+
+.cert-checks {
+  display: flex !important;
+  align-items: center !important;
+  min-height: 32px !important;
+  color: #334960 !important;
+  font-size: .75rem !important;
+  font-weight: 600 !important;
+  white-space: nowrap !important;
+}
+
+.cert-search-btn,
+.cert-reset-btn,
+.cert-export-btn {
+  height: 32px !important;
+  border-radius: 9px !important;
+  padding: 0 .78rem !important;
+  font-size: .74rem !important;
+  font-weight: 750 !important;
+}
+
+.cert-search-btn {
+  color: #ffffff !important;
+  background: #155c9d !important;
+  border: 1px solid #155c9d !important;
+}
+
+.cert-reset-btn,
+.cert-export-btn {
+  color: #0a1f35 !important;
+  background: #ffffff !important;
+  border: 1px solid #b8ccdf !important;
+}
+
+/* Table meta */
+.cert-table-meta {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: .75rem !important;
+  padding: .55rem .85rem !important;
+  color: #607589 !important;
+  background: #ffffff !important;
+  border-bottom: 1px solid #dbe7f2 !important;
+  font-size: .75rem !important;
+}
+
+.cert-table-meta strong {
+  color: #0a1f35 !important;
+  font-weight: 760 !important;
+}
+
+/* Table */
+.cert-table-wrap {
+  overflow: auto !important;
+  max-height: calc(100vh - 340px) !important;
+  background: #ffffff !important;
+}
+
+.cert-table {
+  width: 100% !important;
+  min-width: 1260px !important;
+  margin: 0 !important;
+  border-collapse: collapse !important;
+  border-spacing: 0 !important;
+  color: #0a1f35 !important;
+  font-size: .76rem !important;
+}
+
+.cert-table thead th {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 3 !important;
+  padding: .5rem .6rem !important;
+  color: #0b355c !important;
+  background: #e8f2fb !important;
+  border-bottom: 1px solid #c9dbea !important;
+  font-size: .64rem !important;
+  font-weight: 850 !important;
+  letter-spacing: .065em !important;
+  text-transform: uppercase !important;
+  white-space: nowrap !important;
+}
+
+.cert-table tbody td {
+  padding: .5rem .6rem !important;
+  color: #17324f !important;
+  border-bottom: 1px solid #e2edf6 !important;
+  vertical-align: middle !important;
+  font-size: .76rem !important;
+  font-weight: 500 !important;
+}
+
+.cert-table tbody tr:hover {
+  background: #f7fbff !important;
+}
+
+.cert-main-subject strong,
+.cert-subject-cell {
+  display: block !important;
+  color: #0a1f35 !important;
+  font-size: .8rem !important;
+  font-weight: 520 !important;
+  max-width: 380px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.cert-main-subject small {
+  display: block !important;
+  margin-top: .12rem !important;
+  color: #607589 !important;
+  font-family: Consolas, "Courier New", monospace !important;
+  font-size: .66rem !important;
+  font-weight: 500 !important;
+}
+
+.cert-template-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  max-width: 280px !important;
+  padding: .15rem .42rem !important;
+  color: #0b355c !important;
+  background: #eaf4fc !important;
+  border: 1px solid #cfe1f1 !important;
+  border-radius: 999px !important;
+  font-size: .71rem !important;
+  font-weight: 650 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.cert-template-unresolved {
+  color: #7c4a03 !important;
+  background: #fff7df !important;
+  border-color: #f2d084 !important;
+}
+
+.cert-ellipsis,
+.cert-san-cell,
+.cert-requester-cell {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.cert-status-cell .badge,
+.cert-table .badge {
+  font-size: .65rem !important;
+  font-weight: 700 !important;
+  padding: .16rem .46rem !important;
+  border-radius: 999px !important;
+}
+
+@media (max-width: 1200px) {
+  .cert-kpi-grid {
+    grid-template-columns: repeat(2, minmax(160px, 1fr)) !important;
+  }
+
+  .cert-search-toolbar {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+
+@media (max-width: 700px) {
+  .cert-kpi-grid,
+  .cert-search-toolbar {
+    grid-template-columns: 1fr !important;
+  }
+
+  .cert-table-wrap {
+    max-height: none !important;
+  }
+}
+
+.cert-main-subject strong,
+.cert-subject-cell {
+  font-weight: 520 !important;
+}
+
+</style>
+
+
+<style>
+.cert-search-page {
+  display: grid;
+  gap: .85rem;
+}
+
+.cert-search-hero {
+  background: #fff;
+  border: 1px solid #d6e2ee;
+  border-left: 6px solid #082947;
+  border-radius: 14px;
+  padding: .9rem 1rem;
+  box-shadow: 0 8px 20px rgba(8,41,71,.055);
+}
+
+.cert-search-hero .eyebrow {
+  color: #155c9d;
+  font-size: .66rem;
+  font-weight: 900;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.cert-search-hero h1 {
+  margin: .15rem 0 .25rem;
+  color: #0a1f35;
+  font-size: 1.45rem;
+  font-weight: 850;
+  letter-spacing: -.04em;
+}
+
+.cert-search-hero p {
+  margin: 0;
+  color: #536b84;
+  font-size: .84rem;
+}
+
+.cert-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(170px, 1fr));
+  gap: .7rem;
+}
+
+.cert-kpi {
+  background: #fff;
+  border: 1px solid #d6e2ee;
+  border-top: 3px solid #155c9d;
+  border-radius: 12px;
+  padding: .65rem .75rem;
+  box-shadow: 0 7px 18px rgba(8,41,71,.045);
+}
+
+.cert-kpi span {
+  display: block;
+  color: #607589;
+  font-size: .66rem;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.cert-kpi strong {
+  display: block;
+  margin-top: .18rem;
+  color: #0a1f35;
+  font-size: 1.45rem;
+  font-weight: 850;
+  line-height: 1.1;
+}
+
+.cert-kpi small {
+  display: block;
+  color: #607589;
+  font-size: .72rem;
+}
+
+.cert-search-card {
+  background: #fff;
+  border: 1px solid #d6e2ee;
+  border-radius: 14px;
+  box-shadow: 0 8px 20px rgba(8,41,71,.055);
+  overflow: hidden;
+}
+
+.cert-search-title {
+  padding: .72rem .85rem;
+  border-bottom: 1px solid #dbe7f2;
+  background: linear-gradient(180deg, #ffffff, #f7fbff);
+}
+
+.cert-search-title span {
+  color: #155c9d;
+  font-size: .66rem;
+  font-weight: 900;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.cert-search-title h2 {
+  margin: .1rem 0 0;
+  color: #0a1f35;
+  font-size: 1.08rem;
+  font-weight: 850;
+}
+
+.cert-search-toolbar {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) 170px 190px auto auto auto;
+  gap: .55rem;
+  align-items: end;
+  padding: .72rem .85rem;
+  border-bottom: 1px solid #dbe7f2;
+  background: #f8fbfe;
+}
+
+.cert-field label {
+  display: block;
+  margin-bottom: .22rem;
+  color: #607589;
+  font-size: .64rem;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.cert-field input,
+.cert-field select {
+  width: 100%;
+  height: 32px;
+  border: 1px solid #b8ccdf;
+  border-radius: 8px;
+  padding: .25rem .45rem;
+  color: #0a1f35;
+  background: #fff;
+  font-size: .78rem;
+  font-weight: 650;
+}
+
+.cert-checks {
+  display: flex;
+  gap: .6rem;
+  align-items: center;
+  min-height: 32px;
+  color: #334960;
+  font-size: .76rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.cert-search-btn {
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 .85rem;
+  color: #fff;
+  background: #155c9d;
+  font-size: .76rem;
+  font-weight: 900;
+}
+
+.cert-reset-btn,
+.cert-export-btn {
+  height: 32px;
+  border: 1px solid #b8ccdf;
+  border-radius: 8px;
+  padding: 0 .75rem;
+  color: #0a1f35;
+  background: #fff;
+  font-size: .76rem;
+  font-weight: 850;
+}
+
+.cert-table-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  padding: .5rem .85rem;
+  color: #607589;
+  border-bottom: 1px solid #dbe7f2;
+  font-size: .76rem;
+}
+
+.cert-table-meta strong {
+  color: #0a1f35;
+}
+
+.cert-table-wrap {
+  overflow: auto;
+  max-height: calc(100vh - 340px);
+}
+
+.cert-table {
+  width: 100%;
+  min-width: 1260px;
+  margin: 0;
+  border-collapse: separate;
+  border-spacing: 0;
+  color: #0a1f35;
+  font-size: .76rem;
+}
+
+.cert-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: .48rem .55rem;
+  color: #0b355c;
+  background: #e8f2fb;
+  border-bottom: 1px solid #c9dbea;
+  font-size: .64rem;
+  font-weight: 900;
+  letter-spacing: .075em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.cert-table tbody td {
+  padding: .45rem .55rem;
+  border-bottom: 1px solid #e2edf6;
+  vertical-align: middle;
+}
+
+.cert-table tbody tr:hover {
+  background: #f6fbff;
+}
+
+.cert-main-subject {
+  max-width: 380px;
+}
+
+.cert-main-subject strong {
+  display: block;
+  color: #0a1f35;
+  font-size: .8rem;
+  font-weight: 850;
+}
+
+.cert-main-subject small {
+  display: block;
+  margin-top: .12rem;
+  color: #607589;
+  font-size: .68rem;
+  font-weight: 700;
+}
+
+.cert-request-id-muted {
+  color: #607589;
+  font-family: Consolas, "Courier New", monospace;
+}
+
+.cert-muted {
+  color: #607589;
+  font-size: .72rem;
+}
+
+.cert-template-pill {
+  display: inline-flex;
+  align-items: center;
+  max-width: 280px;
+  padding: .16rem .45rem;
+  color: #0b355c;
+  background: #e8f2fb;
+  border: 1px solid #cfe1f1;
+  border-radius: 999px;
+  font-size: .72rem;
+  font-weight: 850;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cert-template-unresolved {
+  color: #7c4a03;
+  background: #fff7df;
+  border-color: #f2d084;
+}
+
+.cert-status-issued {
+  background: #155c9d !important;
+  color: #fff !important;
+}
+
+.cert-empty {
+  padding: 1.4rem;
+  color: #607589;
+  text-align: center;
+}
+
+.cert-ellipsis {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1200px) {
+  .cert-kpi-grid {
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
+  }
+
+  .cert-search-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .cert-kpi-grid,
+  .cert-search-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .cert-table-wrap {
+    max-height: none;
+  }
+}
+</style>
+
+<div class="cert-search-page">
+
+  <section class="cert-search-hero">
+    <div class="eyebrow">Certificate Lifecycle</div>
+    <h1>Certificate Search</h1>
+    <p>
+      Search and review CA-issued certificate records collected from ADCS.
+      Request ID is retained as secondary evidence, while the main view focuses on subject, template, requester and validity.
+    </p>
+  </section>
+
+  {% set health = scan.summary_json.health if scan and scan.summary_json.health else {} %}
+
+  <section class="cert-kpi-grid">
+    <div class="cert-kpi">
+      <span>Issued cert collection</span>
+      <div>{{ status_badge('Collected' if certificates else 'Not Assessed') }}</div>
+      <small>Collector database query status</small>
+    </div>
+
+    <div class="cert-kpi">
+      <span>Records collected</span>
+      <strong>{{ certificates|length }}</strong>
+      <small>Rows in the selected scan</small>
+    </div>
+
+    <div class="cert-kpi">
+      <span>Last collection time</span>
+      <small>{{ scan.completed_at if scan else 'No scan received' }}</small>
+    </div>
+
+    <div class="cert-kpi">
+      <span>Network TLS scan</span>
+      <div>{{ status_badge('Not Configured') }}</div>
+      <small>ADCS issued database only</small>
+    </div>
+  </section>
+
+  <section class="cert-search-card">
+    <div class="cert-search-title">
+      <span>Certificate search</span>
+      <h2>Issued certificates</h2>
+    </div>
+
+    <div class="cert-search-toolbar">
+      <div class="cert-field">
+        <label for="certSearchInput">Search</label>
+        <input id="certSearchInput" type="search" placeholder="Search subject, requester, template, SAN, request ID">
+      </div>
+
+      <div class="cert-field">
+        <label for="certFieldSelect">Search field</label>
+        <select id="certFieldSelect">
+          <option value="all">All fields</option>
+          <option value="subject">Subject</option>
+          <option value="template">Template</option>
+          <option value="requester">Requester</option>
+          <option value="san">SAN</option>
+          <option value="request">Request ID</option>
+          <option value="status">Status</option>
+        </select>
+      </div>
+
+      <div class="cert-field">
+        <label for="certTemplateSelect">Template</label>
+        <select id="certTemplateSelect">
+          <option value="">All templates</option>
+        </select>
+      </div>
+
+      <div class="cert-checks">
+        <label><input id="certIncludeExpired" type="checkbox" checked> Include expired</label>
+      </div>
+
+      <button id="certSearchButton" class="cert-search-btn" type="button">Search</button>
+      <button id="certResetButton" class="cert-reset-btn" type="button">Reset</button>
+    </div>
+
+    <div class="cert-table-meta">
+      <div>
+        Showing <strong id="certVisibleCount">0</strong> of
+        <strong id="certTotalCount">{{ certificates|length }}</strong> certificates
+      </div>
+      <button id="certExportButton" class="cert-export-btn" type="button">Export CSV</button>
+    </div>
+
+    <div class="cert-table-wrap">
+      <table id="certSearchTable" class="cert-table">
+        <thead>
+          <tr>
+            <th style="width:34px;"><input id="certSelectAll" type="checkbox"></th>
+            <th>Certificate / Subject</th>
+            <th>Template</th>
+            <th>Requester</th>
+            <th>Effective</th>
+            <th>Expiration</th>
+            <th>SAN</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {% for c in certificates %}
+          <tr
+            data-request="{{ c.request_id or '' }}"
+            data-requester="{{ c.display_requester or c.requester or '' }}"
+            data-template="{{ c.display_template or c.template_name or '' }}"
+            data-subject="{{ c.display_subject or c.subject or '' }}"
+            data-san="{{ c.san or '' }}"
+            data-status="{{ c.status or '' }}"
+            data-issued="{{ c.issued_at or '' }}"
+            data-expires="{{ c.expires_at or '' }}"
+          >
+            <td><input class="cert-row-check" type="checkbox"></td>
+
+            <td class="cert-main-subject">
+              <strong class="cert-subject-cell">{{ c.display_subject or c.subject or '-' }}</strong>
+              <small>
+                Request
+                <span class="cert-request-cell">{{ c.request_id or '-' }}</span>
+              </small>
+            </td>
+
+            <td>
+              <span class="cert-template-pill cert-template-cell">
+                {{ c.display_template or c.template_name or '-' }}
+              </span>
+            </td>
+
+            <td class="cert-ellipsis cert-requester-cell">{{ c.display_requester or c.requester or '-' }}</td>
+            <td class="cert-issued-cell">{{ c.issued_at or '-' }}</td>
+            <td class="cert-expires-cell">{{ c.expires_at or '-' }}</td>
+            <td class="cert-ellipsis cert-san-cell">{{ c.san or '-' }}</td>
+            <td class="cert-status-cell">{{ status_badge(c.status|title) }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="8">
+              <div class="cert-empty">No issued certificate records found for latest scan.</div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
 </div>
-{% if not certificates %}
-<div class="alert alert-warning compact-alert"><strong>Issued certificate data was not collected in the latest scan. Issued certificate records were not collected in this scan.</strong> Review the collection status below. Common causes are <code>-SkipIssued</code>, insufficient CA read permission, zero rows returned by the CA database, or <code>certutil -view</code> failure on the collector host.</div>
-{% if health and health['items'] %}{% for item in health['items'] %}{% if item.category == 'Certificate Issuance Health' %}<div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">Collection Status From Latest Scan</h2>{{ evidence_table(item.evidence) }}</div></div>{% endif %}{% endfor %}{% endif %}
-<div class="card card-panel mb-3"><div class="card-body compact-card"><h2 class="section-title">How to collect issued certificates</h2><ul class="compact-list"><li>Run the collector without <code>-SkipIssued</code>.</li><li>Run from a CA management host or CA server.</li><li>Use an account with CA read permission.</li><li>Confirm <code>certutil -config &lt;CAHost\CAName&gt; -view -restrict "Disposition=20"</code> works on the collector host.</li></ul></div></div>
-{% endif %}
-<div class="card card-panel"><div class="card-body compact-card"><h2 class="section-title">Issued Certificates</h2><div class="table-responsive">
-<table class="table modern-table table-sm align-middle"><thead><tr><th>Request ID</th><th>Requester</th><th>Template</th><th>Subject</th><th>SAN</th><th>Status</th><th>Issued</th><th>Expires</th></tr></thead><tbody>
-{% for c in certificates %}<tr><td>{{c.request_id}}</td><td class="text-wrap-sm">{{c.requester or '-'}}</td><td>{{c.template_name or '-'}}</td><td class="text-wrap-sm">{{c.subject or '-'}}</td><td class="text-wrap-sm">{{c.san or '-'}}</td><td>{{status_badge(c.status|title)}}</td><td>{{c.issued_at or '-'}}</td><td>{{c.expires_at or '-'}}</td></tr>{% else %}<tr><td colspan="8" class="text-secondary">No issued certificate records found for latest scan.</td></tr>{% endfor %}
-</tbody></table></div></div></div>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const table = document.getElementById("certSearchTable");
+  if (!table) return;
+
+  const rows = Array.from(table.querySelectorAll("tbody tr[data-request]"));
+  const searchInput = document.getElementById("certSearchInput");
+  const fieldSelect = document.getElementById("certFieldSelect");
+  const templateSelect = document.getElementById("certTemplateSelect");
+  const includeExpired = document.getElementById("certIncludeExpired");
+  const visibleCount = document.getElementById("certVisibleCount");
+  const totalCount = document.getElementById("certTotalCount");
+
+  function cleanValue(value) {
+    let v = String(value || "").trim();
+
+    if (!v || v.toUpperCase() === "EMPTY") {
+      return "-";
+    }
+
+    v = v.replace(/^"+|"+$/g, "").trim();
+    return v || "-";
+  }
+
+  function cleanRequestId(value) {
+    let v = cleanValue(value);
+    if (v === "-") return v;
+    if (!v.startsWith("#")) return "#" + v;
+    return v;
+  }
+
+  function cleanTemplate(value) {
+    let v = String(value || "").trim();
+
+    if (!v || v === "-") {
+      return "Template not recorded";
+    }
+
+    v = v.replace(/\\"/g, '"').trim();
+
+    let oidFriendly = v.match(/^"?[0-9.]+["]?\s+(.+)$/);
+    if (oidFriendly && oidFriendly[1]) {
+      v = oidFriendly[1].trim();
+    }
+
+    let quotedOnly = v.match(/^"([^"]+)"$/);
+    if (quotedOnly && quotedOnly[1]) {
+      v = quotedOnly[1].trim();
+    }
+
+    v = cleanValue(v);
+
+    if (v === "-" || /^\d+\s+days?$/i.test(v)) {
+      return "Template not resolved";
+    }
+
+    return v;
+  }
+
+  function normalize(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replaceAll('"', "")
+      .trim();
+  }
+
+  function parseDate(value) {
+    const clean = cleanValue(value);
+    if (clean === "-") return null;
+
+    const parsed = new Date(clean);
+    if (Number.isNaN(parsed.getTime())) return null;
+
+    return parsed;
+  }
+
+  const templateNames = new Set();
+
+  rows.forEach((row) => {
+    const request = cleanRequestId(row.dataset.request);
+    const requester = cleanValue(row.dataset.requester);
+    const template = cleanTemplate(row.dataset.template);
+    const subject = cleanValue(row.dataset.subject);
+    const san = cleanValue(row.dataset.san);
+    const issued = cleanValue(row.dataset.issued);
+    const expires = cleanValue(row.dataset.expires);
+    const status = cleanValue(row.dataset.status || "Issued");
+
+    row.dataset.cleanRequest = request;
+    row.dataset.cleanRequester = requester;
+    row.dataset.cleanTemplate = template;
+    row.dataset.cleanSubject = subject;
+    row.dataset.cleanSan = san;
+    row.dataset.cleanIssued = issued;
+    row.dataset.cleanExpires = expires;
+    row.dataset.cleanStatus = status;
+
+    row.querySelector(".cert-request-cell").textContent = request;
+    row.querySelector(".cert-requester-cell").textContent = requester;
+    row.querySelector(".cert-template-cell").textContent = template;
+    row.querySelector(".cert-template-cell").title = template;
+    row.querySelector(".cert-subject-cell").textContent = subject;
+    row.querySelector(".cert-san-cell").textContent = san;
+    row.querySelector(".cert-issued-cell").textContent = issued;
+    row.querySelector(".cert-expires-cell").textContent = expires;
+
+    if (template === "Template not resolved" || template === "Template not recorded") {
+      row.querySelector(".cert-template-cell").classList.add("cert-template-unresolved");
+    }
+
+    if (template !== "Template not recorded") {
+      templateNames.add(template);
+    }
+  });
+
+  Array.from(templateNames)
+    .sort((a, b) => a.localeCompare(b))
+    .forEach((name) => {
+      const option = document.createElement("option");
+      option.value = name;
+      option.textContent = name;
+      templateSelect.appendChild(option);
+    });
+
+  function rowText(row, field) {
+    const values = {
+      request: row.dataset.cleanRequest,
+      requester: row.dataset.cleanRequester,
+      template: row.dataset.cleanTemplate,
+      subject: row.dataset.cleanSubject,
+      san: row.dataset.cleanSan,
+      status: row.dataset.cleanStatus,
+      issued: row.dataset.cleanIssued,
+      expires: row.dataset.cleanExpires,
+    };
+
+    if (field === "all") {
+      return Object.values(values).join(" ");
+    }
+
+    return values[field] || "";
+  }
+
+  function applyFilters() {
+    const query = normalize(searchInput.value);
+    const field = fieldSelect.value || "all";
+    const selectedTemplate = templateSelect.value;
+    const showExpired = includeExpired.checked;
+    const now = new Date();
+    let visible = 0;
+
+    rows.forEach((row) => {
+      let show = true;
+
+      if (query) {
+        show = normalize(rowText(row, field)).includes(query);
+      }
+
+      if (show && selectedTemplate) {
+        show = row.dataset.cleanTemplate === selectedTemplate;
+      }
+
+      if (show && !showExpired) {
+        const expiry = parseDate(row.dataset.cleanExpires);
+        if (expiry && expiry < now) {
+          show = false;
+        }
+      }
+
+      row.style.display = show ? "" : "none";
+      if (show) visible++;
+    });
+
+    visibleCount.textContent = visible;
+    totalCount.textContent = rows.length;
+  }
+
+  document.getElementById("certSearchButton").addEventListener("click", applyFilters);
+  searchInput.addEventListener("input", applyFilters);
+  fieldSelect.addEventListener("change", applyFilters);
+  templateSelect.addEventListener("change", applyFilters);
+  includeExpired.addEventListener("change", applyFilters);
+
+  document.getElementById("certResetButton").addEventListener("click", () => {
+    searchInput.value = "";
+    fieldSelect.value = "all";
+    templateSelect.value = "";
+    includeExpired.checked = true;
+    applyFilters();
+  });
+
+  document.getElementById("certSelectAll").addEventListener("change", (event) => {
+    rows.forEach((row) => {
+      if (row.style.display !== "none") {
+        const box = row.querySelector(".cert-row-check");
+        if (box) box.checked = event.target.checked;
+      }
+    });
+  });
+
+  document.getElementById("certExportButton").addEventListener("click", () => {
+    const headers = [
+      "Certificate / Subject",
+      "Request ID",
+      "Template",
+      "Requester",
+      "Effective",
+      "Expiration",
+      "SAN",
+      "Status",
+    ];
+
+    const lines = [headers.join(",")];
+
+    rows
+      .filter((row) => row.style.display !== "none")
+      .forEach((row) => {
+        const values = [
+          row.dataset.cleanSubject,
+          row.dataset.cleanRequest,
+          row.dataset.cleanTemplate,
+          row.dataset.cleanRequester,
+          row.dataset.cleanIssued,
+          row.dataset.cleanExpires,
+          row.dataset.cleanSan,
+          row.dataset.cleanStatus,
+        ].map((value) => '"' + String(value || "").replaceAll('"', '""') + '"');
+
+        lines.push(values.join(","));
+      });
+
+    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "certshield-issued-certificates.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  });
+
+  applyFilters();
+});
+</script>
+
+
+<script id="certsearch-template-cleanup">
+document.addEventListener("DOMContentLoaded", () => {
+  function cleanText(value) {
+    let v = String(value || "").trim();
+    if (!v || v.toUpperCase() === "EMPTY") return "-";
+    return v.replace(/^"+|"+$/g, "").trim() || "-";
+  }
+
+  function cleanTemplate(value) {
+    let v = cleanText(value);
+
+    if (v === "-") return "Template not recorded";
+
+    const oidFriendly = v.match(/^"?[0-9.]+["]?\s+(.+)$/);
+    if (oidFriendly && oidFriendly[1]) {
+      v = cleanText(oidFriendly[1]);
+    }
+
+    if (/^(\d+\s*)?days?$/i.test(v)) {
+      return "Template not resolved";
+    }
+
+    return v;
+  }
+
+  document.querySelectorAll(".cert-template-cell").forEach((cell) => {
+    const cleaned = cleanTemplate(cell.textContent);
+    cell.textContent = cleaned;
+    cell.title = cleaned;
+
+    if (
+      cleaned === "Template not resolved" ||
+      cleaned === "Template not recorded"
+    ) {
+      cell.classList.add("cert-template-unresolved");
+    }
+  });
+});
+</script>
+
 {% endblock %}

@@ -6137,3 +6137,558 @@ summary:focus-visible {
 }
 
 /* monitoring-agent-inventory:end */
+
+/* CS_PREMIUM_ENTERPRISE_THEME_START */
+/*
+  CertShield Premium Enterprise Theme v3
+  Scope: all pages except PKI Monitoring.
+  No application logic changed.
+*/
+
+body.cs-premium-page {
+  --cs-bg: #eef4fa;
+  --cs-surface: #ffffff;
+  --cs-surface-2: #f7fafd;
+  --cs-line: #d7e4f0;
+  --cs-line-2: #b9cce0;
+  --cs-text: #0b1f36;
+  --cs-text-2: #334960;
+  --cs-muted: #687d91;
+  --cs-navy: #071d34;
+  --cs-navy-2: #0b2b4b;
+  --cs-navy-3: #123f68;
+  --cs-blue: #1d6fc8;
+  --cs-blue-2: #2d8ee8;
+  --cs-cyan: #60c9f7;
+  --cs-green: #12805c;
+  --cs-amber: #b66f00;
+  --cs-orange: #d95f22;
+  --cs-red: #b92838;
+  --cs-shadow: 0 10px 26px rgba(7, 29, 52, .08);
+  --cs-shadow-soft: 0 5px 16px rgba(7, 29, 52, .055);
+
+  color: var(--cs-text) !important;
+  background:
+    radial-gradient(circle at top right, rgba(45,142,232,.16), transparent 420px),
+    linear-gradient(180deg, #f5f9fd 0%, #eef4fa 100%) !important;
+  font-family: "Segoe UI Variable", "Segoe UI", Inter, Roboto, Arial, sans-serif !important;
+  font-size: 13px !important;
+  line-height: 1.38 !important;
+  letter-spacing: 0 !important;
+}
+
+/* keep PKI monitoring safe */
+body.cs-monitoring-page {
+  font-family: inherit;
+}
+
+/* layout */
+body.cs-premium-page .app-shell {
+  background: transparent !important;
+}
+
+body.cs-premium-page .app-sidebar {
+  background:
+    linear-gradient(180deg, #06172a 0%, #08223d 48%, #071b31 100%) !important;
+  border-right: 1px solid rgba(96, 201, 247, .15) !important;
+  box-shadow: 12px 0 36px rgba(7, 29, 52, .16) !important;
+}
+
+body.cs-premium-page .sidebar-brand {
+  text-decoration: none !important;
+  border-bottom: 1px solid rgba(255,255,255,.10) !important;
+  padding-bottom: .9rem !important;
+}
+
+body.cs-premium-page .brand-mark {
+  background: linear-gradient(135deg, #3bb7ef, #1d6fc8) !important;
+  color: #fff !important;
+  box-shadow: 0 8px 20px rgba(45,142,232,.22) !important;
+}
+
+body.cs-premium-page .brand-copy strong {
+  color: #ffffff !important;
+  font-size: .96rem !important;
+  font-weight: 800 !important;
+  letter-spacing: -.03em !important;
+}
+
+body.cs-premium-page .brand-copy small {
+  color: #a9d6ee !important;
+  font-size: .69rem !important;
+  font-weight: 700 !important;
+}
+
+body.cs-premium-page .sidebar-section-label {
+  color: #73c9ee !important;
+  font-size: .66rem !important;
+  font-weight: 800 !important;
+  letter-spacing: .12em !important;
+  margin-top: 1rem !important;
+}
+
+body.cs-premium-page .sidebar-link {
+  color: #d5e7f4 !important;
+  font-size: .82rem !important;
+  font-weight: 650 !important;
+  border-radius: 10px !important;
+  padding: .52rem .62rem !important;
+  border: 1px solid transparent !important;
+}
+
+body.cs-premium-page .sidebar-link:hover {
+  color: #fff !important;
+  background: rgba(96,201,247,.10) !important;
+  border-color: rgba(96,201,247,.18) !important;
+}
+
+body.cs-premium-page .sidebar-icon {
+  color: #7ed2f5 !important;
+}
+
+body.cs-premium-page .sidebar-footer {
+  color: #c6d9e8 !important;
+  background: rgba(255,255,255,.055) !important;
+  border: 1px solid rgba(255,255,255,.10) !important;
+  border-radius: 12px !important;
+}
+
+/* topbar: compact premium */
+body.cs-premium-page .topbar {
+  margin: .55rem .7rem .72rem !important;
+  padding: .62rem .8rem !important;
+  min-height: 56px !important;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.98), rgba(244,249,253,.96)) !important;
+  border: 1px solid #c7daec !important;
+  border-radius: 16px !important;
+  box-shadow: var(--cs-shadow-soft) !important;
+}
+
+body.cs-premium-page .topbar-kicker {
+  color: #1f6aa8 !important;
+  font-size: .64rem !important;
+  font-weight: 800 !important;
+  letter-spacing: .11em !important;
+}
+
+body.cs-premium-page .topbar-title {
+  color: var(--cs-text) !important;
+  font-size: 1rem !important;
+  font-weight: 800 !important;
+  letter-spacing: -.02em !important;
+}
+
+body.cs-premium-page .topbar-meta {
+  color: var(--cs-muted) !important;
+  font-size: .75rem !important;
+}
+
+body.cs-premium-page .environment-selector {
+  background: #f8fbfe !important;
+  border: 1px solid #d5e3ef !important;
+  border-radius: 999px !important;
+  padding: .22rem .35rem .22rem .55rem !important;
+}
+
+body.cs-premium-page .environment-label {
+  color: var(--cs-muted) !important;
+  font-size: .67rem !important;
+  font-weight: 800 !important;
+  letter-spacing: .08em !important;
+}
+
+body.cs-premium-page .environment-selector .form-select {
+  height: 29px !important;
+  min-height: 29px !important;
+  border-radius: 999px !important;
+  border: 1px solid #c0d4e8 !important;
+  font-size: .76rem !important;
+  font-weight: 750 !important;
+  color: var(--cs-text) !important;
+}
+
+body.cs-premium-page .user-area {
+  color: var(--cs-text-2) !important;
+  background: #ffffff !important;
+  border: 1px solid #d5e3ef !important;
+  border-radius: 999px !important;
+  padding: .22rem .35rem .22rem .62rem !important;
+  font-size: .75rem !important;
+}
+
+/* main spacing */
+body.cs-premium-page .app-main {
+  padding: 0 .7rem 1rem !important;
+}
+
+/* MAIN HERO / DASHBOARD BANNER - premium dark, not bright blue */
+body.cs-premium-page .hero-panel,
+body.cs-premium-page .page-title {
+  position: relative !important;
+  overflow: hidden !important;
+  margin-bottom: .72rem !important;
+  padding: .92rem 1.05rem !important;
+  min-height: 92px !important;
+  color: #ffffff !important;
+  background:
+    radial-gradient(circle at 94% 18%, rgba(96,201,247,.20), transparent 280px),
+    linear-gradient(135deg, #071d34 0%, #0b2b4b 52%, #124c7b 100%) !important;
+  border: 1px solid rgba(114, 190, 232, .22) !important;
+  border-radius: 17px !important;
+  box-shadow: 0 12px 30px rgba(7, 29, 52, .16) !important;
+}
+
+body.cs-premium-page .hero-panel::before,
+body.cs-premium-page .page-title::before {
+  content: "" !important;
+  position: absolute !important;
+  inset: 0 !important;
+  background:
+    linear-gradient(90deg, rgba(255,255,255,.055), transparent 42%),
+    repeating-linear-gradient(135deg, rgba(255,255,255,.035) 0 1px, transparent 1px 16px) !important;
+  pointer-events: none !important;
+}
+
+body.cs-premium-page .hero-panel::after,
+body.cs-premium-page .page-title::after {
+  content: "" !important;
+  position: absolute !important;
+  width: 220px !important;
+  height: 220px !important;
+  right: -80px !important;
+  top: -100px !important;
+  border-radius: 50% !important;
+  background: rgba(96,201,247,.16) !important;
+  pointer-events: none !important;
+}
+
+body.cs-premium-page .hero-panel > *,
+body.cs-premium-page .page-title > * {
+  position: relative !important;
+  z-index: 1 !important;
+}
+
+body.cs-premium-page .eyebrow {
+  color: #7ed2f5 !important;
+  font-size: .66rem !important;
+  font-weight: 850 !important;
+  letter-spacing: .13em !important;
+}
+
+body.cs-premium-page .hero-panel h1,
+body.cs-premium-page .page-title h1 {
+  color: #ffffff !important;
+  font-size: 1.28rem !important;
+  font-weight: 820 !important;
+  letter-spacing: -.035em !important;
+  margin: .12rem 0 .25rem !important;
+}
+
+body.cs-premium-page .hero-panel p,
+body.cs-premium-page .page-title p {
+  color: #d7edf9 !important;
+  font-size: .82rem !important;
+  margin: 0 !important;
+}
+
+/* cards */
+body.cs-premium-page .card-panel,
+body.cs-premium-page .metric-card,
+body.cs-premium-page .login-card,
+body.cs-premium-page .empty-state,
+body.cs-premium-page .score-card,
+body.cs-premium-page .posture-summary-card,
+body.cs-premium-page .health-metric,
+body.cs-premium-page .governance-stat,
+body.cs-premium-page .coverage-item,
+body.cs-premium-page .evidence-box,
+body.cs-premium-page .accept-risk-form,
+body.cs-premium-page .governance-form,
+body.cs-premium-page .posture-primary-score {
+  background: #ffffff !important;
+  border: 1px solid var(--cs-line) !important;
+  border-radius: 14px !important;
+  box-shadow: var(--cs-shadow-soft) !important;
+}
+
+body.cs-premium-page .metric-card,
+body.cs-premium-page .health-metric,
+body.cs-premium-page .posture-summary-card {
+  min-height: 76px !important;
+  padding: .7rem .78rem !important;
+}
+
+body.cs-premium-page .metric-card {
+  border-top: 3px solid #2d8ee8 !important;
+}
+
+body.cs-premium-page .metric-title,
+body.cs-premium-page .posture-summary-card span,
+body.cs-premium-page .health-metric span,
+body.cs-premium-page .mini-heading {
+  color: #60778f !important;
+  font-size: .66rem !important;
+  font-weight: 800 !important;
+  letter-spacing: .08em !important;
+  text-transform: uppercase !important;
+}
+
+body.cs-premium-page .metric-value,
+body.cs-premium-page .posture-summary-card strong,
+body.cs-premium-page .health-metric strong,
+body.cs-premium-page .posture-primary-score strong {
+  color: #0b1f36 !important;
+  font-weight: 820 !important;
+  letter-spacing: -.035em !important;
+}
+
+body.cs-premium-page .metric-value {
+  font-size: 1.46rem !important;
+}
+
+body.cs-premium-page .section-title,
+body.cs-premium-page h1,
+body.cs-premium-page h2,
+body.cs-premium-page h3,
+body.cs-premium-page h4,
+body.cs-premium-page h5,
+body.cs-premium-page h6 {
+  color: #0b1f36 !important;
+  font-weight: 780 !important;
+  letter-spacing: -.025em !important;
+}
+
+/* charts / graph containers */
+body.cs-premium-page canvas,
+body.cs-premium-page svg {
+  max-width: 100% !important;
+}
+
+body.cs-premium-page [class*="chart"],
+body.cs-premium-page [class*="diagram"],
+body.cs-premium-page .hierarchy-tree {
+  color: #0b1f36 !important;
+}
+
+/* tables */
+body.cs-premium-page table,
+body.cs-premium-page .table,
+body.cs-premium-page .modern-table {
+  color: #0b1f36 !important;
+  font-size: .77rem !important;
+  background: #fff !important;
+}
+
+body.cs-premium-page .modern-table th,
+body.cs-premium-page .table th {
+  color: #173c62 !important;
+  background: #eaf3fb !important;
+  border-color: #d8e6f3 !important;
+  font-size: .66rem !important;
+  font-weight: 850 !important;
+  letter-spacing: .075em !important;
+  text-transform: uppercase !important;
+  padding: .42rem .48rem !important;
+}
+
+body.cs-premium-page .modern-table td,
+body.cs-premium-page .table td {
+  color: #17324f !important;
+  border-color: #e2edf6 !important;
+  font-size: .77rem !important;
+  padding: .46rem .5rem !important;
+  line-height: 1.26 !important;
+}
+
+body.cs-premium-page .modern-table tbody tr:hover,
+body.cs-premium-page .table tbody tr:hover {
+  background: #f6fbff !important;
+}
+
+/* template inventory should not look like Excel dump */
+body.cs-premium-page .table-responsive {
+  background: #fff !important;
+  border: 1px solid #d8e6f3 !important;
+  border-radius: 14px !important;
+  box-shadow: var(--cs-shadow-soft) !important;
+  overflow: hidden !important;
+}
+
+body.cs-premium-page .text-wrap-sm {
+  max-width: 380px !important;
+}
+
+body.cs-premium-page .modern-table td a,
+body.cs-premium-page .table td a {
+  color: #135fac !important;
+  font-weight: 700 !important;
+}
+
+/* badges */
+body.cs-premium-page .badge {
+  border-radius: 999px !important;
+  padding: .22rem .42rem !important;
+  font-size: .65rem !important;
+  font-weight: 780 !important;
+  line-height: 1.05 !important;
+}
+
+/* evidence boxes */
+body.cs-premium-page .evidence-box,
+body.cs-premium-page .coverage-item,
+body.cs-premium-page .governance-evidence-summary {
+  background: #f7fbff !important;
+}
+
+body.cs-premium-page .evidence-label,
+body.cs-premium-page .evidence-key,
+body.cs-premium-page .kv span,
+body.cs-premium-page .posture-summary-card small,
+body.cs-premium-page .health-check-main span,
+body.cs-premium-page .health-check-reason,
+body.cs-premium-page .governance-control-summary div > span,
+body.cs-premium-page .governance-exception-row div > span {
+  color: #687d91 !important;
+}
+
+/* hierarchy */
+body.cs-premium-page .ca-node-main {
+  background: #fff !important;
+  border: 1px solid #d8e6f3 !important;
+  border-radius: 14px !important;
+  box-shadow: var(--cs-shadow-soft) !important;
+}
+
+body.cs-premium-page .ca-node {
+  border-left-color: #bdd3e8 !important;
+}
+
+body.cs-premium-page .ca-details summary {
+  color: #135fac !important;
+}
+
+/* buttons */
+body.cs-premium-page a {
+  color: #135fac !important;
+}
+
+body.cs-premium-page a:hover {
+  color: #082f58 !important;
+}
+
+body.cs-premium-page .btn {
+  border-radius: 999px !important;
+  font-size: .76rem !important;
+  font-weight: 800 !important;
+}
+
+body.cs-premium-page .btn-primary,
+body.cs-premium-page .btn-info {
+  background: linear-gradient(135deg, #165c9d, #2d8ee8) !important;
+  border-color: transparent !important;
+  color: #fff !important;
+}
+
+body.cs-premium-page .btn-outline-primary,
+body.cs-premium-page .btn-outline-light {
+  color: #135fac !important;
+  background: #fff !important;
+  border-color: #b9cce0 !important;
+}
+
+body.cs-premium-page .btn-outline-primary:hover,
+body.cs-premium-page .btn-outline-light:hover {
+  background: #135fac !important;
+  color: #fff !important;
+}
+
+/* status colors */
+body.cs-premium-page .status-pass,
+body.cs-premium-page .status-healthy,
+body.cs-premium-page .status-collected,
+body.cs-premium-page .status-online,
+body.cs-premium-page .status-strong,
+body.cs-premium-page .status-excellent,
+body.cs-premium-page .status-good,
+body.cs-premium-page .status-safe,
+body.cs-premium-page .status-hsm-protected {
+  background: #12805c !important;
+  color: #fff !important;
+}
+
+body.cs-premium-page .status-warning,
+body.cs-premium-page .status-degraded,
+body.cs-premium-page .status-weak,
+body.cs-premium-page .status-moderate,
+body.cs-premium-page .status-needs-attention,
+body.cs-premium-page .status-review-required,
+body.cs-premium-page .status-unknown-provider,
+body.cs-premium-page .sev-medium {
+  background: #b66f00 !important;
+  color: #fff !important;
+}
+
+body.cs-premium-page .status-fail,
+body.cs-premium-page .status-critical,
+body.cs-premium-page .sev-critical {
+  background: #b92838 !important;
+  color: #fff !important;
+}
+
+body.cs-premium-page .sev-high,
+body.cs-premium-page .status-high-risk,
+body.cs-premium-page .status-software-key {
+  background: #d95f22 !important;
+  color: #fff !important;
+}
+
+body.cs-premium-page .sev-low,
+body.cs-premium-page .status-assessed,
+body.cs-premium-page .status-issued,
+body.cs-premium-page .status-detected,
+body.cs-premium-page .status-accepted-risk,
+body.cs-premium-page .status-accepted-by-policy {
+  background: #1d6fc8 !important;
+  color: #fff !important;
+}
+
+body.cs-premium-page .status-not-assessed,
+body.cs-premium-page .status-insufficient-data,
+body.cs-premium-page .status-unknown,
+body.cs-premium-page .status-not-configured,
+body.cs-premium-page .status-limited-visibility,
+body.cs-premium-page .status-evidence-missing,
+body.cs-premium-page .status-unknown---not-enough-data,
+body.cs-premium-page .status-present---not-tested,
+body.cs-premium-page .status-present-\/-not-tested,
+body.cs-premium-page .status-not-configured-\/-not-assessed {
+  background: #64748b !important;
+  color: #fff !important;
+}
+
+/* footer */
+body.cs-premium-page .app-footer {
+  color: #687d91 !important;
+  background: transparent !important;
+  border-top: 1px solid #d8e6f3 !important;
+}
+
+/* responsive */
+@media (max-width: 768px) {
+  body.cs-premium-page .topbar {
+    margin: .45rem !important;
+  }
+
+  body.cs-premium-page .app-main {
+    padding: 0 .45rem .9rem !important;
+  }
+
+  body.cs-premium-page .hero-panel,
+  body.cs-premium-page .page-title {
+    min-height: 82px !important;
+    border-radius: 14px !important;
+  }
+}
+/* CS_PREMIUM_ENTERPRISE_THEME_END */
+

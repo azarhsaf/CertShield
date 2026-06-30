@@ -2,35 +2,32 @@
 {% from 'macros/evidence.html' import status_badge %}
 {% block content %}
 
+
+
 <div class="visual-dashboard">
 
-  <section class="visual-dashboard-hero">
-    <div>
-      <div class="visual-dashboard-kicker">
-        CertShield PKI Posture Management
-      </div>
-
+  <section class="visual-dashboard-hero dashboard-hero-refined">
+    <div class="dashboard-hero-copy">
       <h1>PKI Dashboard</h1>
 
       {% if scan %}
-      <p>
-        Live assurance view for
+      <p class="dashboard-scanline">
+        <span>Latest collector scan</span>
         <strong>{{ scan.domain_name }}</strong>
-        · Scan #{{ scan.id }}
-        · {{ scan.completed_at }}
+        <em>Scan #{{ scan.id }}</em>
+        <em>{{ scan.completed_at }}</em>
       </p>
       {% else %}
-      <p>
-        Select a PKI environment and run the collector to generate
-        the first assurance dashboard.
+      <p class="dashboard-scanline">
+        <span>Select a PKI environment and run the collector to generate dashboard evidence.</span>
       </p>
       {% endif %}
     </div>
 
     {% if scan %}
-    <div class="visual-dashboard-actions">
+    <div class="visual-dashboard-actions dashboard-hero-actions">
       <a class="btn btn-light" href="/pki-posture">
-        Open Full Posture
+        Open Posture
       </a>
 
       <a class="btn visual-dashboard-outline" href="/reports">
@@ -117,11 +114,11 @@
       </div>
 
       <div class="visual-score-copy">
-        <span>Governance controls</span>
+        <span>Policy evidence</span>
         <strong>
           {{ best_practices.status or 'Not assessed' }}
         </strong>
-        <small>Best-practice and policy alignment</small>
+        <small>Best-practice controls and operator evidence</small>
       </div>
     </a>
 
@@ -293,7 +290,7 @@
 
       {% if registry.accepted_risks %}
       <div class="visual-accepted-row">
-        <span>Accepted Risks</span>
+        <span>Approved exceptions</span>
 
         <div>
           {% for risk in registry.accepted_risks[:6] %}
@@ -304,10 +301,55 @@
         </div>
       </div>
       {% endif %}
-    </article>
 
-    
-    <article class="visual-panel assurance-intelligence-panel">
+      <div class="visual-template-issue-chart">
+        <div class="visual-mini-heading">
+          <span>Certificate issuance</span>
+          <strong>Issued certificates by template</strong>
+        </div>
+
+        <div class="template-issue-layout">
+          <svg
+            class="template-issue-donut"
+            viewBox="0 0 120 120"
+            aria-label="Issued certificates by template"
+          >
+            <circle
+              class="visual-donut-track"
+              cx="60"
+              cy="60"
+              r="42"
+            ></circle>
+
+            <g
+              id="templateIssueDonutSegments"
+              transform="rotate(-90 60 60)"
+            ></g>
+
+            <text
+              id="templateIssueDonutTotal"
+              class="visual-donut-total"
+              x="60"
+              y="57"
+              text-anchor="middle"
+            >0</text>
+
+            <text
+              class="visual-donut-caption"
+              x="60"
+              y="72"
+              text-anchor="middle"
+            >issued</text>
+          </svg>
+
+          <div
+            id="templateIssueLegend"
+            class="template-issue-legend"
+          ></div>
+        </div>
+      </div>
+    </article>
+    <article class="visual-panel assurance-intelligence-panel dashboard-guidance-panel">
 
       {% set open_critical =
           assurance.open_critical
@@ -331,127 +373,102 @@
 
       <div class="visual-card-heading assurance-intelligence-heading">
         <div>
-          <span>Assurance intelligence</span>
-          <h2>What is driving the PKI score?</h2>
+          <span>Remediation guidance</span>
+          <h2>Recommended action</h2>
         </div>
 
         <a href="/pki-posture">Open detailed analysis</a>
       </div>
 
-      <div class="assurance-intelligence-summary">
+      <div class="dashboard-action-card">
+        <div class="dashboard-action-icon">→</div>
 
-        <div class="assurance-intelligence-score">
-          <div
-            class="assurance-intelligence-ring"
-            style="--score: {{ posture_score }}"
-          >
-            <strong>{{ posture_score }}</strong>
-            <span>/100</span>
-          </div>
+        <div class="dashboard-action-copy">
+          <span>Recommended next action</span>
 
-          <div>
-            <span>Current assurance</span>
-            <strong>
-              {{ assurance.assurance_level
-                 or posture.assurance_level
-                 or posture.status
-                 or 'Unknown' }}
-            </strong>
-            <small>
-              Based on risk exposure, operational health,
-              governance controls and evidence coverage.
-            </small>
-          </div>
+          {% if open_critical > 0 %}
+          <strong>
+            Address the {{ open_critical }} critical PKI
+            risk{{ '' if open_critical == 1 else 's' }} first.
+          </strong>
+          <small>
+            Critical findings have the highest impact on the assurance level.
+          </small>
+
+          {% elif evidence_score < 80 %}
+          <strong>
+            Improve collector evidence coverage before final risk decisions.
+          </strong>
+          <small>
+            Missing evidence reduces confidence and may hide operational gaps.
+          </small>
+
+          {% elif open_high > 0 %}
+          <strong>
+            Assign owners to the remaining high-risk findings.
+          </strong>
+          <small>
+            Track remediation through Findings and validate after correction.
+          </small>
+
+          {% else %}
+          <strong>
+            Maintain current controls and continue periodic PKI assessments.
+          </strong>
+          <small>
+            No immediate critical or high-risk action is visible.
+          </small>
+          {% endif %}
         </div>
 
-        <div class="assurance-intelligence-signals">
-
-          <a href="/findings" class="assurance-signal assurance-signal-danger">
-            <span>Critical drivers</span>
-            <strong>{{ open_critical }}</strong>
-            <small>Require immediate attention</small>
-          </a>
-
-          <a href="/findings" class="assurance-signal assurance-signal-warning">
-            <span>High-risk drivers</span>
-            <strong>{{ open_high }}</strong>
-            <small>Prioritise remediation</small>
-          </a>
-
-          <a href="/findings" class="assurance-signal assurance-signal-info">
-            <span>Accepted Risks</span>
-            <strong>{{ accepted_total }}</strong>
-            <small>Approved policy exceptions</small>
-          </a>
-
-          <a href="/evidence-gaps" class="assurance-signal assurance-signal-coverage">
-            <span>Evidence confidence</span>
-            <strong>{{ evidence_score }}%</strong>
-            <small>
-              {{ assurance.coverage_level or 'Unknown coverage' }}
-            </small>
-          </a>
-
-        </div>
+        <a
+          class="dashboard-action-cta"
+          href="{% if open_critical > 0 or open_high > 0 %}/findings{% elif evidence_score < 80 %}/evidence-gaps{% else %}/pki-posture{% endif %}"
+        >
+          Take action
+        </a>
       </div>
 
-      <div class="assurance-intelligence-comparison">
+      <div class="dashboard-driver-cards">
 
-        <div class="assurance-comparison-row">
-          <div>
-            <span>PKI posture</span>
-            <strong>{{ posture_score }}</strong>
-          </div>
-          <div class="assurance-comparison-track">
-            <span style="width: {{ posture_score }}%"></span>
-          </div>
-        </div>
+        <a href="/findings" class="dashboard-driver-card dashboard-driver-critical">
+          <span>Critical risks</span>
+          <strong>{{ open_critical }}</strong>
+          <small>Immediate remediation</small>
+        </a>
 
-        <div class="assurance-comparison-row assurance-comparison-health">
-          <div>
-            <span>Operational health</span>
-            <strong>{{ health_score }}</strong>
-          </div>
-          <div class="assurance-comparison-track">
-            <span style="width: {{ health_score }}%"></span>
-          </div>
-        </div>
+        <a href="/findings" class="dashboard-driver-card dashboard-driver-high">
+          <span>High risks</span>
+          <strong>{{ open_high }}</strong>
+          <small>Priority remediation</small>
+        </a>
 
-        <div class="assurance-comparison-row assurance-comparison-controls">
-          <div>
-            <span>Governance controls</span>
-            <strong>{{ controls_score }}</strong>
-          </div>
-          <div class="assurance-comparison-track">
-            <span style="width: {{ controls_score }}%"></span>
-          </div>
-        </div>
+        <a href="/findings" class="dashboard-driver-card dashboard-driver-approved">
+          <span>Approved exceptions</span>
+          <strong>{{ accepted_total }}</strong>
+          <small>Accepted by policy</small>
+        </a>
 
-        <div class="assurance-comparison-row assurance-comparison-coverage">
-          <div>
-            <span>Evidence coverage</span>
-            <strong>{{ evidence_score }}%</strong>
-          </div>
-          <div class="assurance-comparison-track">
-            <span style="width: {{ evidence_score }}%"></span>
-          </div>
-        </div>
+        <a href="/evidence-gaps" class="dashboard-driver-card dashboard-driver-evidence">
+          <span>Evidence confidence</span>
+          <strong>{{ evidence_score }}%</strong>
+          <small>{{ assurance.coverage_level or 'Unknown coverage' }}</small>
+        </a>
 
       </div>
 
-      <div class="assurance-intelligence-drivers">
+      <div class="dashboard-reason-panel">
         <div class="assurance-intelligence-subheading">
           <div>
             <span>Assessment drivers</span>
-            <strong>Why the score looks like this</strong>
+            <strong>Why action is recommended</strong>
           </div>
 
           <small>Generated from the latest collector evidence</small>
         </div>
 
-        <div class="assurance-driver-list">
-
-          {% for reason in assurance.why[:6] %}
+        <div class="assurance-driver-list dashboard-driver-list">
+          {% for reason in assurance.why[:5] %}
 
           {% set normalized_reason = reason|string|lower %}
 
@@ -481,7 +498,7 @@
               or 'exception' in normalized_reason
           %}
             {% set driver_type = 'accepted' %}
-            {% set driver_label = 'Accepted risk' %}
+            {% set driver_label = 'Approved exception' %}
             {% set driver_icon = 'A' %}
 
           {% elif
@@ -521,117 +538,257 @@
         </div>
       </div>
 
-      <div class="assurance-next-action">
-
-        <div class="assurance-next-action-icon">→</div>
-
-        <div>
-          <span>Recommended next action</span>
-
-          {% if open_critical > 0 %}
-          <strong>
-            Address the {{ open_critical }} critical PKI
-            risk{{ '' if open_critical == 1 else 's' }} first.
-          </strong>
-          <small>
-            Critical findings have the highest impact on the
-            overall assurance level.
-          </small>
-
-          {% elif evidence_score < 80 %}
-          <strong>
-            Improve collector evidence coverage before making
-            final risk decisions.
-          </strong>
-          <small>
-            Missing evidence reduces assessment confidence and
-            can hide operational or configuration risks.
-          </small>
-
-          {% elif open_high > 0 %}
-          <strong>
-            Review and assign owners to the remaining high-risk
-            findings.
-          </strong>
-          <small>
-            Track remediation through Findings and validate the
-            exposure after corrective action.
-          </small>
-
-          {% else %}
-          <strong>
-            Maintain the current controls and continue periodic
-            PKI assessments.
-          </strong>
-          <small>
-            No immediate critical or high-risk action is visible
-            from the latest collected evidence.
-          </small>
-          {% endif %}
-        </div>
-
-        <a
-          href="{% if open_critical > 0 or open_high > 0 %}/findings{% elif evidence_score < 80 %}/evidence-gaps{% else %}/pki-posture{% endif %}"
-        >
-          Take action
-        </a>
-      </div>
-
     </article>
 
 
   </section>
 
-  <section class="visual-panel visual-certificate-panel">
-    <div class="visual-card-heading">
+  
+  
+  
+  
+<style id="certdash-v5-inline-style">
+.certdash-v5 {
+  padding: .95rem !important;
+  background: #ffffff !important;
+  border: 1px solid #d6e2ee !important;
+  border-radius: 16px !important;
+  box-shadow: 0 10px 24px rgba(8,41,71,.06) !important;
+  overflow: hidden !important;
+}
+
+.certdash-v5-head {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 1rem !important;
+  margin-bottom: .75rem !important;
+}
+
+.certdash-v5-head > div > span {
+  display: block !important;
+  color: #155c9d !important;
+  font-size: .66rem !important;
+  font-weight: 850 !important;
+  letter-spacing: .09em !important;
+  text-transform: uppercase !important;
+}
+
+.certdash-v5-head h2 {
+  margin: .12rem 0 .12rem !important;
+  color: #0a1f35 !important;
+  font-size: 1.05rem !important;
+  font-weight: 760 !important;
+  letter-spacing: -.02em !important;
+}
+
+.certdash-v5-head small {
+  display: block !important;
+  color: #607589 !important;
+  font-size: .72rem !important;
+  font-weight: 600 !important;
+}
+
+.certdash-v5-head a {
+  color: #155c9d !important;
+  font-size: .75rem !important;
+  font-weight: 750 !important;
+  text-decoration: none !important;
+  white-space: nowrap !important;
+}
+
+.certdash-v5-list {
+  overflow-x: auto !important;
+  border: 1px solid #d6e2ee !important;
+  border-radius: 13px !important;
+  background: #ffffff !important;
+}
+
+.certdash-v5-header,
+.certdash-v5-row {
+  display: grid !important;
+  grid-template-columns:
+    minmax(310px, 1.55fr)
+    minmax(190px, .9fr)
+    minmax(220px, 1fr)
+    95px
+    160px
+    160px !important;
+  align-items: center !important;
+  min-width: 1135px !important;
+}
+
+.certdash-v5-header {
+  background: #e8f2fb !important;
+  border-bottom: 1px solid #c9dbea !important;
+}
+
+.certdash-v5-header div {
+  padding: .5rem .6rem !important;
+  color: #0b355c !important;
+  font-size: .64rem !important;
+  font-weight: 850 !important;
+  letter-spacing: .065em !important;
+  text-transform: uppercase !important;
+}
+
+.certdash-v5-row {
+  border-bottom: 1px solid #e2edf6 !important;
+}
+
+.certdash-v5-row:last-child {
+  border-bottom: 0 !important;
+}
+
+.certdash-v5-row:hover {
+  background: #f7fbff !important;
+}
+
+.certdash-v5-row > div {
+  padding: .5rem .6rem !important;
+  color: #17324f !important;
+  font-size: .76rem !important;
+  font-weight: 500 !important;
+  min-width: 0 !important;
+}
+
+.certdash-v5-subject-main {
+  display: block !important;
+  max-width: 380px !important;
+  color: #0a1f35 !important;
+  font-size: .78rem !important;
+  font-weight: 680 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.certdash-v5-request {
+  display: block !important;
+  margin-top: .12rem !important;
+  color: #607589 !important;
+  font-family: Consolas, "Courier New", monospace !important;
+  font-size: .66rem !important;
+  font-weight: 500 !important;
+}
+
+.certdash-v5-template {
+  display: inline-flex !important;
+  max-width: 250px !important;
+  padding: .15rem .42rem !important;
+  color: #0b355c !important;
+  background: #eaf4fc !important;
+  border: 1px solid #cfe1f1 !important;
+  border-radius: 999px !important;
+  font-size: .71rem !important;
+  font-weight: 650 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.certdash-v5-template-warn {
+  color: #7c4a03 !important;
+  background: #fff7df !important;
+  border-color: #f2d084 !important;
+}
+
+.certdash-v5-text,
+.certdash-v5-date {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.certdash-v5-empty {
+  padding: 1rem !important;
+  color: #607589 !important;
+  font-size: .8rem !important;
+}
+
+@media (max-width: 900px) {
+  .certdash-v5-head {
+    display: block !important;
+  }
+
+  .certdash-v5-head a {
+    display: inline-block !important;
+    margin-top: .35rem !important;
+  }
+}
+</style>
+
+<section class="visual-panel certificate-activity-panel certdash-v5">
+
+    <div class="certdash-v5-head">
       <div>
         <span>Certificate activity</span>
         <h2>Recent issued certificates</h2>
+        <small>Latest {{ recent_certs|length }} of {{ issued_cert_total }} certificates, sorted by issued date</small>
       </div>
 
-      <a href="/certificates">Open inventory</a>
+      <a href="/certificates">Open certificate search</a>
     </div>
 
-    <div class="table-responsive">
-      <table class="table visual-dashboard-table align-middle mb-0">
-        <thead>
-          <tr>
-            <th>Request</th>
-            <th>Requester</th>
-            <th>Template</th>
-            <th>Subject</th>
-            <th>Status</th>
-            <th>Issued</th>
-            <th>Expires</th>
-          </tr>
-        </thead>
+    <div class="certdash-v5-list">
 
-        <tbody>
-          {% for certificate in recent_certs %}
-          <tr>
-            <td>
-              <strong>#{{ certificate.request_id }}</strong>
-            </td>
-            <td>{{ certificate.requester or '—' }}</td>
-            <td>{{ certificate.template_name or '—' }}</td>
-            <td>{{ certificate.subject or '—' }}</td>
-            <td>{{ status_badge(certificate.status|title) }}</td>
-            <td>{{ certificate.issued_at or '—' }}</td>
-            <td>{{ certificate.expires_at or '—' }}</td>
-          </tr>
-          {% else %}
-          <tr>
-            <td colspan="7">
-              <div class="visual-empty">
-                No issued certificate rows were collected.
-              </div>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      <div class="certdash-v5-header">
+        <div>Certificate / Subject</div>
+        <div>Template</div>
+        <div>Requester</div>
+        <div>Status</div>
+        <div>Issued</div>
+        <div>Expires</div>
+      </div>
+
+      {% for certificate in recent_certs %}
+      <div
+        class="certdash-v5-row"
+        data-issued="{{ certificate.issued_at or '' }}"
+      >
+        <div class="certdash-v5-subject">
+          <span class="certdash-v5-subject-main">
+            {{ certificate.display_subject or certificate.subject or certificate.san or certificate.requester or 'Certificate identity not recorded' }}
+          </span>
+          <span class="certdash-v5-request">
+            Request {{ certificate.request_id }}
+          </span>
+        </div>
+
+        <div>
+          <span class="certdash-v5-template">
+            {{ certificate.display_template or certificate.template_name or 'Template not recorded' }}
+          </span>
+        </div>
+
+        <div class="certdash-v5-text">
+          {{ certificate.display_requester or certificate.requester or 'Requester not recorded' }}
+        </div>
+
+        <div>
+          {{ status_badge(certificate.status|title) }}
+        </div>
+
+        <div class="certdash-v5-date">
+          {{ certificate.issued_at or '—' }}
+        </div>
+
+        <div class="certdash-v5-date">
+          {{ certificate.expires_at or '—' }}
+        </div>
+      </div>
+      {% else %}
+      <div class="certdash-v5-empty">
+        No issued certificate rows were collected.
+      </div>
+      {% endfor %}
+
     </div>
+
   </section>
+
+
+
 
   <script
     id="dashboardSeverityData"
@@ -808,6 +965,99 @@
     renderBars("coverageBars", coverageData, {
       limit: 7,
     });
+
+    function renderTemplateIssueDonut() {
+      const group = document.getElementById("templateIssueDonutSegments");
+      const legendNode = document.getElementById("templateIssueLegend");
+      const totalNode = document.getElementById("templateIssueDonutTotal");
+
+      if (!group || !legendNode || !totalNode) {
+        return;
+      }
+
+      const counts = {};
+
+      document
+        .querySelectorAll(".visual-dashboard-table tbody tr")
+        .forEach((row) => {
+          const cells = row.querySelectorAll("td");
+
+          if (cells.length < 3) {
+            return;
+          }
+
+          const templateName = (cells[2].textContent || "").trim();
+
+          if (!templateName || templateName === "—") {
+            return;
+          }
+
+          counts[templateName] = (counts[templateName] || 0) + 1;
+        });
+
+      const entries = Object.entries(counts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 7);
+
+      const total = entries.reduce((sum, [, value]) => sum + value, 0);
+      totalNode.textContent = total;
+
+      if (!entries.length) {
+        legendNode.innerHTML =
+          '<div class="visual-empty">No issued certificate template data collected yet.</div>';
+        return;
+      }
+
+      const colors = [
+        "#155c9d",
+        "#2d8ee8",
+        "#12805c",
+        "#b66f00",
+        "#d95f22",
+        "#7c3aed",
+        "#64748b",
+      ];
+
+      const circumference = 2 * Math.PI * 42;
+      let offset = 0;
+
+      entries.forEach(([name, value], index) => {
+        const length = total ? (value / total) * circumference : 0;
+        const color = colors[index % colors.length];
+
+        const segment = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "circle"
+        );
+
+        segment.setAttribute("cx", "60");
+        segment.setAttribute("cy", "60");
+        segment.setAttribute("r", "42");
+        segment.setAttribute("fill", "none");
+        segment.setAttribute("stroke", color);
+        segment.setAttribute("stroke-width", "12");
+        segment.setAttribute("stroke-linecap", "round");
+        segment.setAttribute(
+          "stroke-dasharray",
+          `${length} ${circumference - length}`
+        );
+        segment.setAttribute("stroke-dashoffset", String(-offset));
+
+        group.appendChild(segment);
+        offset += length;
+
+        const item = document.createElement("div");
+        item.className = "template-issue-legend-item";
+        item.innerHTML = `
+          <span class="visual-legend-dot" style="background:${color}"></span>
+          <span title="${name}">${name}</span>
+          <strong>${value}</strong>
+        `;
+        legendNode.appendChild(item);
+      });
+    }
+
+    renderTemplateIssueDonut();
   });
   </script>
 
@@ -823,5 +1073,435 @@
   {% endif %}
 
 </div>
+
+
+
+<script type="application/json" id="issuedTemplateCountsJson">
+{{ issued_template_counts|tojson }}
+</script>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  function renderAllIssuedTemplateDonut() {
+    const dataNode = document.getElementById("issuedTemplateCountsJson");
+    const group = document.getElementById("templateIssueDonutSegments");
+    const legendNode = document.getElementById("templateIssueLegend");
+    const totalNode = document.getElementById("templateIssueDonutTotal");
+
+    if (!dataNode || !group || !legendNode || !totalNode) {
+      return;
+    }
+
+    let entries = [];
+
+    try {
+      entries = JSON.parse(dataNode.textContent || "[]");
+    } catch {
+      entries = [];
+    }
+
+    group.innerHTML = "";
+    legendNode.innerHTML = "";
+
+    const total = Number({{ issued_cert_total or 0 }});
+    totalNode.textContent = total;
+
+    if (!entries.length) {
+      legendNode.innerHTML =
+        '<div class="visual-empty">No issued certificate template data collected yet.</div>';
+      return;
+    }
+
+    const colors = [
+      "#155c9d",
+      "#2d8ee8",
+      "#12805c",
+      "#b66f00",
+      "#d95f22",
+      "#7c3aed",
+      "#64748b",
+      "#334155"
+    ];
+
+    const circumference = 2 * Math.PI * 42;
+    let offset = 0;
+
+    entries.forEach((entry, index) => {
+      const name = entry.name || "Unresolved template";
+      const value = Number(entry.value || 0);
+      const length = total ? (value / total) * circumference : 0;
+      const color = colors[index % colors.length];
+
+      const segment = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "circle"
+      );
+
+      segment.setAttribute("cx", "60");
+      segment.setAttribute("cy", "60");
+      segment.setAttribute("r", "42");
+      segment.setAttribute("fill", "none");
+      segment.setAttribute("stroke", color);
+      segment.setAttribute("stroke-width", "12");
+      segment.setAttribute("stroke-linecap", "round");
+      segment.setAttribute(
+        "stroke-dasharray",
+        `${length} ${circumference - length}`
+      );
+      segment.setAttribute("stroke-dashoffset", String(-offset));
+
+      group.appendChild(segment);
+      offset += length;
+
+      const item = document.createElement("div");
+      item.className = "template-issue-legend-item";
+      item.innerHTML = `
+        <span class="visual-legend-dot" style="background:${color}"></span>
+        <span title="${name}">${name}</span>
+        <strong>${value}</strong>
+      `;
+      legendNode.appendChild(item);
+    });
+  }
+
+  // Run after old dashboard JS, so this wins and uses all 94 records.
+  setTimeout(renderAllIssuedTemplateDonut, 250);
+});
+</script>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  function cleanText(value) {
+    let v = String(value || "").trim();
+
+    if (!v || v.toUpperCase() === "EMPTY") {
+      return "—";
+    }
+
+    return v.replace(/^"+|"+$/g, "").trim() || "—";
+  }
+
+  function cleanTemplate(value) {
+    let v = cleanText(value);
+
+    if (v === "—") {
+      return "Template not recorded";
+    }
+
+    const oidFriendly = v.match(/^"?[0-9.]+["]?\s+(.+)$/);
+    if (oidFriendly && oidFriendly[1]) {
+      v = cleanText(oidFriendly[1]);
+    }
+
+    if (/^(\d+\s*)?days?$/i.test(v)) {
+      return "Template not resolved";
+    }
+
+    return v;
+  }
+
+  document.querySelectorAll(".certdash-v5-row").forEach((row) => {
+    const subject = row.querySelector(".certdash-v5-subject-main");
+    const template = row.querySelector(".certdash-v5-template");
+
+    if (subject) {
+      subject.textContent = cleanText(subject.textContent);
+    }
+
+    if (template) {
+      const cleaned = cleanTemplate(template.textContent);
+      template.textContent = cleaned;
+
+      if (
+        cleaned === "Template not resolved" ||
+        cleaned === "Template not recorded"
+      ) {
+        template.classList.add("certdash-v5-template-warn");
+      }
+    }
+  });
+});
+</script>
+
+
+
+
+
+
+<style id="dashboard-balanced-typography-v4">
+/*
+  Dashboard balanced typography.
+  Keeps certificate list untouched.
+  Applies same readable style to dashboard tiles, cards, headings and action panels.
+*/
+
+/* Common dashboard font */
+.visual-dashboard-hero,
+.visual-dashboard-hero *,
+.dashboard-hero-refined,
+.dashboard-hero-refined *,
+.visual-score-card,
+.visual-score-card *,
+.visual-panel:not(.certdash-v5),
+.visual-panel:not(.certdash-v5) *,
+.visual-priority-panel,
+.visual-priority-panel *,
+.assurance-intelligence-panel,
+.assurance-intelligence-panel *,
+.dashboard-guidance-panel,
+.dashboard-guidance-panel *,
+.visual-template-issue-chart,
+.visual-template-issue-chart *,
+.dashboard-driver-card,
+.dashboard-driver-card *,
+.dashboard-reason-panel,
+.dashboard-reason-panel * {
+  font-family: "Segoe UI", Inter, Roboto, Arial, sans-serif !important;
+}
+
+/* Normal readable text, not too light */
+.visual-dashboard-hero p,
+.dashboard-hero-refined p,
+.dashboard-scanline,
+.visual-score-copy small,
+.visual-panel:not(.certdash-v5),
+.visual-panel:not(.certdash-v5) p,
+.visual-panel:not(.certdash-v5) div,
+.visual-priority-copy small,
+.assurance-driver-copy p,
+.dashboard-driver-card small,
+.template-issue-legend,
+.template-issue-legend-item,
+.visual-bar-list,
+.visual-legend-list {
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  line-height: 1.38 !important;
+  color: #18324d !important;
+}
+
+/* Small blue labels: Risk Distribution, Exposure Patterns, etc. */
+.eyebrow,
+.visual-card-heading span,
+.visual-mini-heading span,
+.visual-score-copy span,
+.assurance-intelligence-heading span,
+.assurance-intelligence-subheading span,
+.dashboard-action-copy span,
+.dashboard-driver-card span,
+.dashboard-scanline span {
+  font-size: 12px !important;
+  font-weight: 750 !important;
+  letter-spacing: .065em !important;
+  text-transform: uppercase !important;
+  color: #155c9d !important;
+}
+
+/* Main headings: Findings by severity, Risk categories, Recommended action */
+.visual-dashboard-hero h1,
+.dashboard-hero-refined h1,
+.dashboard-hero-copy h1,
+.visual-card-heading h2,
+.visual-panel:not(.certdash-v5) h2,
+.visual-panel:not(.certdash-v5) h3,
+.visual-mini-heading strong,
+.assurance-intelligence-heading h2,
+.section-title {
+  font-size: 17px !important;
+  font-weight: 650 !important;
+  line-height: 1.25 !important;
+  letter-spacing: -.015em !important;
+  color: #0a1f35 !important;
+}
+
+/* Dashboard banner title */
+.visual-dashboard-hero h1,
+.dashboard-hero-copy h1 {
+  font-size: 22px !important;
+  font-weight: 700 !important;
+}
+
+/* Score tiles */
+.visual-score-card {
+  background: #ffffff !important;
+  border: 1px solid #d6e2ee !important;
+  border-top: 3px solid #155c9d !important;
+  border-radius: 16px !important;
+  box-shadow: 0 8px 20px rgba(8,41,71,.045) !important;
+}
+
+.visual-score-copy span {
+  font-size: 12px !important;
+  font-weight: 750 !important;
+  color: #155c9d !important;
+}
+
+.visual-score-copy strong {
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  color: #0a1f35 !important;
+}
+
+.visual-score-copy small {
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  color: #607589 !important;
+}
+
+.visual-score-ring strong {
+  font-size: 17px !important;
+  font-weight: 700 !important;
+  color: #0a1f35 !important;
+}
+
+.visual-score-ring span {
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  color: #607589 !important;
+}
+
+/* Panels */
+.visual-panel:not(.certdash-v5),
+.dashboard-reason-panel,
+.visual-template-issue-chart {
+  background: #ffffff !important;
+  border: 1px solid #d6e2ee !important;
+  border-radius: 16px !important;
+  box-shadow: 0 8px 20px rgba(8,41,71,.045) !important;
+}
+
+.visual-card-heading h2,
+.visual-panel:not(.certdash-v5) h2,
+.visual-panel:not(.certdash-v5) h3 {
+  margin-top: .15rem !important;
+  margin-bottom: .35rem !important;
+}
+
+/* Risk distribution legend and numbers */
+.visual-legend-list span,
+.visual-legend-list div,
+.visual-bar-list span,
+.visual-bar-list div {
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: #18324d !important;
+}
+
+.visual-legend-list strong,
+.visual-bar-list strong,
+.template-issue-legend-item strong {
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  color: #0a1f35 !important;
+}
+
+/* Immediate attention */
+.visual-priority-item {
+  background: #fbfdff !important;
+  border: 1px solid #dce8f3 !important;
+  border-radius: 11px !important;
+  box-shadow: none !important;
+}
+
+.visual-priority-copy strong {
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  color: #0a1f35 !important;
+}
+
+.visual-priority-copy small {
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  color: #607589 !important;
+}
+
+/* Recommended action card: keep same font family and readable weight */
+.dashboard-action-card {
+  background: linear-gradient(135deg, #071d34, #0b355c) !important;
+  border-radius: 14px !important;
+}
+
+.dashboard-action-copy span {
+  color: #8ee0ff !important;
+  font-size: 12px !important;
+  font-weight: 750 !important;
+}
+
+.dashboard-action-copy strong {
+  color: #ffffff !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  line-height: 1.25 !important;
+}
+
+.dashboard-action-copy small {
+  color: #c8e5f4 !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+}
+
+.dashboard-action-cta {
+  font-size: 13px !important;
+  font-weight: 700 !important;
+}
+
+/* Remediation driver cards */
+.dashboard-driver-card span {
+  font-size: 11px !important;
+  font-weight: 750 !important;
+  color: #607589 !important;
+}
+
+.dashboard-driver-card strong {
+  font-size: 19px !important;
+  font-weight: 700 !important;
+  color: #0a1f35 !important;
+}
+
+.dashboard-driver-card small {
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  color: #607589 !important;
+}
+
+/* Assurance reason cards */
+.assurance-driver-copy span {
+  font-size: 11px !important;
+  font-weight: 750 !important;
+  letter-spacing: .055em !important;
+  text-transform: uppercase !important;
+  color: #607589 !important;
+}
+
+.assurance-driver-copy p {
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: #334960 !important;
+}
+
+/* Buttons / links */
+.visual-card-heading a,
+.dashboard-hero-actions a,
+.visual-panel:not(.certdash-v5) a,
+.btn,
+button {
+  font-size: 13px !important;
+  font-weight: 700 !important;
+}
+
+/* Badges */
+.badge,
+.status-badge {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+}
+
+/*
+  Important: keep certificate list exactly as its own inline style.
+  Do not override .certdash-v5 here.
+*/
+</style>
 
 {% endblock %}

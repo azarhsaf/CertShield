@@ -1,0 +1,1176 @@
+/* CertShield Enterprise Redesign
+   Loaded after style.css.
+   Excluded from /pki-monitoring in base.html.
+   UI only. No logic.
+*/
+
+body.enterprise-body:not(.cs-monitoring-page) {
+  --az-bg: #eef3f8;
+  --az-card: #ffffff;
+  --az-card-soft: #f8fbfe;
+  --az-border: #d6e2ee;
+  --az-border-strong: #b8ccdf;
+  --az-text: #0a1f35;
+  --az-muted: #607589;
+  --az-blue: #155c9d;
+  --az-blue-dark: #082947;
+  --az-cyan: #4cb7e8;
+  --az-green: #12765a;
+  --az-amber: #a86600;
+  --az-orange: #d15d22;
+  --az-red: #b72836;
+
+  background: #eef3f8 !important;
+  color: var(--az-text) !important;
+  font-family: "Segoe UI", Inter, Roboto, Arial, sans-serif !important;
+  font-size: 13px !important;
+  line-height: 1.38 !important;
+}
+
+/* sidebar */
+body.enterprise-body:not(.cs-monitoring-page) .app-sidebar {
+  background: linear-gradient(180deg, #061a2e 0%, #082541 55%, #06182c 100%) !important;
+  border-right: 1px solid rgba(76,183,232,.18) !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .brand-mark {
+  background: linear-gradient(135deg, #45b9ea, #155c9d) !important;
+  color: #fff !important;
+  box-shadow: 0 10px 20px rgba(21,92,157,.24) !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .brand-copy strong {
+  color: #fff !important;
+  font-weight: 750 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .brand-copy small,
+body.enterprise-body:not(.cs-monitoring-page) .sidebar-section-label {
+  color: #9bd8f5 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .sidebar-link {
+  color: #d8e8f5 !important;
+  font-weight: 650 !important;
+  border-radius: 10px !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .sidebar-link:hover {
+  background: rgba(76,183,232,.12) !important;
+  color: #fff !important;
+}
+
+/* topbar */
+body.enterprise-body:not(.cs-monitoring-page) .topbar {
+  margin: .55rem .75rem .65rem !important;
+  padding: .6rem .75rem !important;
+  min-height: 54px !important;
+  background: #ffffff !important;
+  border: 1px solid var(--az-border-strong) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 8px 20px rgba(8,41,71,.06) !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .topbar-kicker {
+  color: var(--az-blue) !important;
+  font-size: .64rem !important;
+  font-weight: 800 !important;
+  letter-spacing: .11em !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .topbar-title {
+  color: var(--az-text) !important;
+  font-size: 1rem !important;
+  font-weight: 800 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .topbar-meta {
+  color: var(--az-muted) !important;
+  font-size: .75rem !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .environment-selector,
+body.enterprise-body:not(.cs-monitoring-page) .user-area {
+  background: #f8fbfe !important;
+  border: 1px solid var(--az-border) !important;
+  border-radius: 999px !important;
+}
+
+/* THIS is the main visual change: no more cheap bright blue banner */
+body.enterprise-body:not(.cs-monitoring-page) .hero-panel,
+body.enterprise-body:not(.cs-monitoring-page) .page-title {
+  position: relative !important;
+  display: block !important;
+  min-height: auto !important;
+  margin-bottom: .75rem !important;
+  padding: 1rem 1.1rem 1rem 1.25rem !important;
+  color: var(--az-text) !important;
+  background:
+    linear-gradient(90deg, #ffffff 0%, #ffffff 68%, #f0f7fd 100%) !important;
+  border: 1px solid var(--az-border) !important;
+  border-left: 6px solid var(--az-blue-dark) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 10px 24px rgba(8,41,71,.07) !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .hero-panel::before,
+body.enterprise-body:not(.cs-monitoring-page) .page-title::before {
+  content: "" !important;
+  position: absolute !important;
+  top: 0 !important;
+  right: 0 !important;
+  width: 260px !important;
+  height: 100% !important;
+  background:
+    radial-gradient(circle at 80% 40%, rgba(76,183,232,.20), transparent 110px) !important;
+  pointer-events: none !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .hero-panel::after,
+body.enterprise-body:not(.cs-monitoring-page) .page-title::after {
+  display: none !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .hero-panel > *,
+body.enterprise-body:not(.cs-monitoring-page) .page-title > * {
+  position: relative !important;
+  z-index: 1 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .eyebrow {
+  color: var(--az-blue) !important;
+  font-size: .66rem !important;
+  font-weight: 850 !important;
+  letter-spacing: .12em !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .hero-panel h1,
+body.enterprise-body:not(.cs-monitoring-page) .page-title h1 {
+  color: var(--az-text) !important;
+  font-size: 1.35rem !important;
+  font-weight: 800 !important;
+  letter-spacing: -.03em !important;
+  margin: .15rem 0 .25rem !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .hero-panel p,
+body.enterprise-body:not(.cs-monitoring-page) .page-title p {
+  color: #3b536b !important;
+  font-size: .84rem !important;
+  margin: 0 !important;
+}
+
+/* workspace */
+body.enterprise-body:not(.cs-monitoring-page) .app-main {
+  padding: 0 .75rem 1rem !important;
+}
+
+/* cards */
+body.enterprise-body:not(.cs-monitoring-page) .card-panel,
+body.enterprise-body:not(.cs-monitoring-page) .metric-card,
+body.enterprise-body:not(.cs-monitoring-page) .score-card,
+body.enterprise-body:not(.cs-monitoring-page) .posture-summary-card,
+body.enterprise-body:not(.cs-monitoring-page) .health-metric,
+body.enterprise-body:not(.cs-monitoring-page) .governance-stat,
+body.enterprise-body:not(.cs-monitoring-page) .coverage-item,
+body.enterprise-body:not(.cs-monitoring-page) .evidence-box,
+body.enterprise-body:not(.cs-monitoring-page) .empty-state,
+body.enterprise-body:not(.cs-monitoring-page) .posture-primary-score {
+  background: #ffffff !important;
+  border: 1px solid var(--az-border) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 8px 20px rgba(8,41,71,.055) !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .metric-card,
+body.enterprise-body:not(.cs-monitoring-page) .health-metric,
+body.enterprise-body:not(.cs-monitoring-page) .posture-summary-card {
+  min-height: 76px !important;
+  padding: .72rem .8rem !important;
+  border-top: 3px solid var(--az-blue) !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .metric-title,
+body.enterprise-body:not(.cs-monitoring-page) .posture-summary-card span,
+body.enterprise-body:not(.cs-monitoring-page) .health-metric span,
+body.enterprise-body:not(.cs-monitoring-page) .mini-heading {
+  color: var(--az-muted) !important;
+  font-size: .66rem !important;
+  font-weight: 850 !important;
+  letter-spacing: .08em !important;
+  text-transform: uppercase !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .metric-value,
+body.enterprise-body:not(.cs-monitoring-page) .posture-summary-card strong,
+body.enterprise-body:not(.cs-monitoring-page) .health-metric strong,
+body.enterprise-body:not(.cs-monitoring-page) .posture-primary-score strong {
+  color: var(--az-text) !important;
+  font-weight: 800 !important;
+}
+
+/* tables */
+body.enterprise-body:not(.cs-monitoring-page) .table-responsive {
+  background: #ffffff !important;
+  border: 1px solid var(--az-border) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 8px 20px rgba(8,41,71,.055) !important;
+  overflow: hidden !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) table,
+body.enterprise-body:not(.cs-monitoring-page) .table,
+body.enterprise-body:not(.cs-monitoring-page) .modern-table {
+  color: var(--az-text) !important;
+  background: #fff !important;
+  font-size: .78rem !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .table th,
+body.enterprise-body:not(.cs-monitoring-page) .modern-table th {
+  color: #0b355c !important;
+  background: #e8f2fb !important;
+  border-color: var(--az-border) !important;
+  font-size: .66rem !important;
+  font-weight: 850 !important;
+  letter-spacing: .075em !important;
+  text-transform: uppercase !important;
+  padding: .42rem .5rem !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .table td,
+body.enterprise-body:not(.cs-monitoring-page) .modern-table td {
+  color: #17324f !important;
+  border-color: #e2edf6 !important;
+  font-size: .77rem !important;
+  padding: .48rem .5rem !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .table tbody tr:hover,
+body.enterprise-body:not(.cs-monitoring-page) .modern-table tbody tr:hover {
+  background: #f6fbff !important;
+}
+
+/* badges */
+body.enterprise-body:not(.cs-monitoring-page) .badge {
+  border-radius: 999px !important;
+  padding: .22rem .42rem !important;
+  font-size: .65rem !important;
+  font-weight: 800 !important;
+}
+
+/* diagrams / hierarchy */
+body.enterprise-body:not(.cs-monitoring-page) .ca-node-main {
+  background: #ffffff !important;
+  border: 1px solid var(--az-border) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 8px 18px rgba(8,41,71,.055) !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .ca-node {
+  border-left-color: #b7cfe5 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .ca-details summary {
+  color: var(--az-blue) !important;
+}
+
+/* links/buttons */
+body.enterprise-body:not(.cs-monitoring-page) a {
+  color: #135fac !important;
+  font-weight: 700 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) a:hover {
+  color: #082947 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .btn {
+  border-radius: 999px !important;
+  font-size: .76rem !important;
+  font-weight: 800 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .btn-primary,
+body.enterprise-body:not(.cs-monitoring-page) .btn-info {
+  background: linear-gradient(135deg, #155c9d, #2d8ee8) !important;
+  border-color: transparent !important;
+}
+
+/* consistent status palette */
+body.enterprise-body:not(.cs-monitoring-page) .status-pass,
+body.enterprise-body:not(.cs-monitoring-page) .status-healthy,
+body.enterprise-body:not(.cs-monitoring-page) .status-collected,
+body.enterprise-body:not(.cs-monitoring-page) .status-online,
+body.enterprise-body:not(.cs-monitoring-page) .status-strong,
+body.enterprise-body:not(.cs-monitoring-page) .status-excellent,
+body.enterprise-body:not(.cs-monitoring-page) .status-good,
+body.enterprise-body:not(.cs-monitoring-page) .status-safe,
+body.enterprise-body:not(.cs-monitoring-page) .status-hsm-protected {
+  background: var(--az-green) !important;
+  color: #fff !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .status-warning,
+body.enterprise-body:not(.cs-monitoring-page) .status-degraded,
+body.enterprise-body:not(.cs-monitoring-page) .status-weak,
+body.enterprise-body:not(.cs-monitoring-page) .status-moderate,
+body.enterprise-body:not(.cs-monitoring-page) .status-needs-attention,
+body.enterprise-body:not(.cs-monitoring-page) .status-review-required,
+body.enterprise-body:not(.cs-monitoring-page) .status-unknown-provider,
+body.enterprise-body:not(.cs-monitoring-page) .sev-medium {
+  background: var(--az-amber) !important;
+  color: #fff !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .sev-high,
+body.enterprise-body:not(.cs-monitoring-page) .status-high-risk,
+body.enterprise-body:not(.cs-monitoring-page) .status-software-key {
+  background: var(--az-orange) !important;
+  color: #fff !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .status-fail,
+body.enterprise-body:not(.cs-monitoring-page) .status-critical,
+body.enterprise-body:not(.cs-monitoring-page) .sev-critical {
+  background: var(--az-red) !important;
+  color: #fff !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .sev-low,
+body.enterprise-body:not(.cs-monitoring-page) .status-assessed,
+body.enterprise-body:not(.cs-monitoring-page) .status-issued,
+body.enterprise-body:not(.cs-monitoring-page) .status-detected,
+body.enterprise-body:not(.cs-monitoring-page) .status-accepted-risk,
+body.enterprise-body:not(.cs-monitoring-page) .status-accepted-by-policy {
+  background: var(--az-blue) !important;
+  color: #fff !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .status-not-assessed,
+body.enterprise-body:not(.cs-monitoring-page) .status-insufficient-data,
+body.enterprise-body:not(.cs-monitoring-page) .status-unknown,
+body.enterprise-body:not(.cs-monitoring-page) .status-not-configured,
+body.enterprise-body:not(.cs-monitoring-page) .status-limited-visibility,
+body.enterprise-body:not(.cs-monitoring-page) .status-evidence-missing,
+body.enterprise-body:not(.cs-monitoring-page) .status-unknown---not-enough-data {
+  background: #64748b !important;
+  color: #fff !important;
+}
+
+/* CS_DASHBOARD_REFINEMENT_V1_START */
+/* Dashboard-only cleanup after customer review */
+
+body.enterprise-body:not(.cs-monitoring-page) .visual-dashboard-hero.dashboard-hero-refined {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 1rem !important;
+  min-height: 92px !important;
+  margin-bottom: .85rem !important;
+  padding: 1rem 1.15rem !important;
+  color: #0a1f35 !important;
+  background:
+    radial-gradient(circle at 96% 0%, rgba(76,183,232,.20), transparent 220px),
+    linear-gradient(90deg, #ffffff 0%, #ffffff 58%, #edf7ff 100%) !important;
+  border: 1px solid #d6e2ee !important;
+  border-left: 6px solid #082947 !important;
+  border-radius: 16px !important;
+  box-shadow: 0 10px 24px rgba(8,41,71,.075) !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .visual-dashboard-hero.dashboard-hero-refined::before,
+body.enterprise-body:not(.cs-monitoring-page) .visual-dashboard-hero.dashboard-hero-refined::after {
+  display: none !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-hero-copy h1 {
+  margin: 0 0 .35rem !important;
+  color: #0a1f35 !important;
+  font-size: 1.55rem !important;
+  font-weight: 850 !important;
+  letter-spacing: -.04em !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-scanline {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: .35rem .55rem !important;
+  margin: 0 !important;
+  color: #3d5871 !important;
+  font-size: .82rem !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-scanline span {
+  color: #155c9d !important;
+  font-weight: 850 !important;
+  text-transform: uppercase !important;
+  letter-spacing: .08em !important;
+  font-size: .66rem !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-scanline strong {
+  color: #0a1f35 !important;
+  font-weight: 850 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-scanline em {
+  font-style: normal !important;
+  color: #607589 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-hero-actions {
+  display: flex !important;
+  gap: .45rem !important;
+  align-items: center !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .visual-dashboard-actions .btn,
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-hero-actions .btn {
+  min-width: 122px !important;
+  padding: .46rem .8rem !important;
+  border-radius: 999px !important;
+  font-size: .76rem !important;
+  font-weight: 850 !important;
+  text-align: center !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .visual-dashboard-outline {
+  color: #0a1f35 !important;
+  background: #ffffff !important;
+  border: 1px solid #b8ccdf !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .visual-dashboard-outline:hover {
+  color: #ffffff !important;
+  background: #155c9d !important;
+  border-color: #155c9d !important;
+}
+
+/* Score tiles naming/readability */
+body.enterprise-body:not(.cs-monitoring-page) .visual-score-copy span {
+  color: #155c9d !important;
+  font-size: .68rem !important;
+  font-weight: 900 !important;
+  letter-spacing: .08em !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .visual-score-copy strong {
+  color: #0a1f35 !important;
+  font-size: .94rem !important;
+  font-weight: 850 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .visual-score-copy small {
+  color: #607589 !important;
+}
+
+/* Reduce Immediate Attention empty space */
+body.enterprise-body:not(.cs-monitoring-page) .visual-dashboard-detail-grid {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1.04fr) minmax(360px, .96fr) !important;
+  gap: .85rem !important;
+  align-items: start !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .visual-priority-panel {
+  min-height: auto !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .visual-priority-list {
+  display: grid !important;
+  gap: .42rem !important;
+  max-height: 310px !important;
+  overflow: auto !important;
+  padding-right: .2rem !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .visual-priority-item {
+  display: grid !important;
+  grid-template-columns: auto 1fr auto !important;
+  align-items: center !important;
+  gap: .6rem !important;
+  min-height: 42px !important;
+  padding: .48rem .55rem !important;
+  color: #0a1f35 !important;
+  background: #fbfdff !important;
+  border: 1px solid #dce8f3 !important;
+  border-radius: 10px !important;
+  text-decoration: none !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .visual-priority-copy strong {
+  color: #0a1f35 !important;
+  font-size: .82rem !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .visual-priority-copy small {
+  color: #607589 !important;
+}
+
+/* Approved exceptions wording */
+body.enterprise-body:not(.cs-monitoring-page) .visual-accepted-row {
+  margin-top: .65rem !important;
+  padding: .55rem .65rem !important;
+  background: #f8fbfe !important;
+  border: 1px solid #dce8f3 !important;
+  border-radius: 10px !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .visual-accepted-row > span {
+  color: #607589 !important;
+  font-size: .68rem !important;
+  font-weight: 900 !important;
+  letter-spacing: .08em !important;
+  text-transform: uppercase !important;
+}
+
+/* Issued-cert by template graph below Immediate Attention */
+body.enterprise-body:not(.cs-monitoring-page) .visual-template-issue-chart {
+  margin-top: .75rem !important;
+  padding: .75rem !important;
+  background: #ffffff !important;
+  border: 1px solid #dce8f3 !important;
+  border-radius: 12px !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .visual-mini-heading {
+  display: flex !important;
+  align-items: baseline !important;
+  justify-content: space-between !important;
+  gap: .75rem !important;
+  margin-bottom: .55rem !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .visual-mini-heading span {
+  color: #155c9d !important;
+  font-size: .66rem !important;
+  font-weight: 900 !important;
+  letter-spacing: .08em !important;
+  text-transform: uppercase !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .visual-mini-heading strong {
+  color: #0a1f35 !important;
+  font-size: .9rem !important;
+  font-weight: 850 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .template-issue-layout {
+  display: grid !important;
+  grid-template-columns: 132px 1fr !important;
+  gap: .75rem !important;
+  align-items: center !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .template-issue-donut {
+  width: 132px !important;
+  height: 132px !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .template-issue-legend {
+  display: grid !important;
+  gap: .32rem !important;
+  min-width: 0 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .template-issue-legend-item {
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: .42rem !important;
+  color: #17324f !important;
+  font-size: .76rem !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .template-issue-legend-item span:nth-child(2) {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .template-issue-legend-item strong {
+  color: #0a1f35 !important;
+}
+
+/* Replace duplicated Assurance Intelligence with clear action guidance */
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-guidance-panel {
+  min-height: auto !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-action-card {
+  display: grid !important;
+  grid-template-columns: auto 1fr auto !important;
+  gap: .75rem !important;
+  align-items: center !important;
+  margin-bottom: .75rem !important;
+  padding: .8rem !important;
+  color: #ffffff !important;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(96,201,247,.20), transparent 180px),
+    linear-gradient(135deg, #071d34, #0b355c) !important;
+  border-radius: 14px !important;
+  border: 1px solid rgba(96,201,247,.18) !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-action-icon {
+  display: grid !important;
+  place-items: center !important;
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 999px !important;
+  color: #071d34 !important;
+  background: #8ee0ff !important;
+  font-weight: 900 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-action-copy span {
+  display: block !important;
+  color: #8ee0ff !important;
+  font-size: .66rem !important;
+  font-weight: 900 !important;
+  letter-spacing: .08em !important;
+  text-transform: uppercase !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-action-copy strong {
+  display: block !important;
+  color: #ffffff !important;
+  font-size: .94rem !important;
+  font-weight: 850 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-action-copy small {
+  display: block !important;
+  color: #c8e5f4 !important;
+  font-size: .76rem !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-action-cta {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-width: 104px !important;
+  padding: .48rem .8rem !important;
+  color: #071d34 !important;
+  background: #ffffff !important;
+  border-radius: 999px !important;
+  font-size: .76rem !important;
+  font-weight: 900 !important;
+  text-decoration: none !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-action-cta:hover {
+  color: #ffffff !important;
+  background: #155c9d !important;
+}
+
+/* Driver cards */
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-driver-cards {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: .55rem !important;
+  margin-bottom: .75rem !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-driver-card {
+  padding: .65rem .7rem !important;
+  color: #0a1f35 !important;
+  background: #fbfdff !important;
+  border: 1px solid #dce8f3 !important;
+  border-radius: 12px !important;
+  text-decoration: none !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-driver-card span {
+  display: block !important;
+  color: #607589 !important;
+  font-size: .64rem !important;
+  font-weight: 900 !important;
+  letter-spacing: .07em !important;
+  text-transform: uppercase !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-driver-card strong {
+  display: block !important;
+  color: #0a1f35 !important;
+  font-size: 1.28rem !important;
+  font-weight: 850 !important;
+  line-height: 1.1 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-driver-card small {
+  color: #607589 !important;
+  font-size: .7rem !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-driver-critical {
+  border-left: 4px solid #b72836 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-driver-high {
+  border-left: 4px solid #d15d22 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-driver-approved {
+  border-left: 4px solid #155c9d !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-driver-evidence {
+  border-left: 4px solid #12805c !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-reason-panel {
+  padding: .7rem !important;
+  background: #f8fbfe !important;
+  border: 1px solid #dce8f3 !important;
+  border-radius: 12px !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-driver-list {
+  display: grid !important;
+  gap: .45rem !important;
+  margin-top: .55rem !important;
+  max-height: 310px !important;
+  overflow: auto !important;
+}
+
+/* Hide old duplicated comparison area if any browser cache still carries it */
+body.enterprise-body:not(.cs-monitoring-page) .assurance-intelligence-score,
+body.enterprise-body:not(.cs-monitoring-page) .assurance-intelligence-comparison {
+  display: none !important;
+}
+
+@media (max-width: 1200px) {
+  body.enterprise-body:not(.cs-monitoring-page) .visual-dashboard-detail-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  body.enterprise-body:not(.cs-monitoring-page) .dashboard-driver-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 768px) {
+  body.enterprise-body:not(.cs-monitoring-page) .visual-dashboard-hero.dashboard-hero-refined,
+  body.enterprise-body:not(.cs-monitoring-page) .dashboard-action-card {
+    grid-template-columns: 1fr !important;
+  }
+
+  body.enterprise-body:not(.cs-monitoring-page) .template-issue-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  body.enterprise-body:not(.cs-monitoring-page) .dashboard-driver-cards {
+    grid-template-columns: 1fr !important;
+  }
+}
+/* CS_DASHBOARD_REFINEMENT_V1_END */
+
+/* CS_DASHBOARD_CERT_TABLE_V2_START */
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-cert-activity-v2 .table-responsive {
+  border-radius: 14px !important;
+  border: 1px solid #d6e2ee !important;
+  overflow: auto !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-cert-table {
+  min-width: 1120px !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-cert-table th {
+  white-space: nowrap !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-cert-table td {
+  vertical-align: middle !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dash-cert-subject {
+  display: block !important;
+  max-width: 340px !important;
+  color: #0a1f35 !important;
+  font-size: .78rem !important;
+  font-weight: 850 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dash-cert-request {
+  display: block !important;
+  margin-top: .1rem !important;
+  color: #607589 !important;
+  font-size: .67rem !important;
+  font-family: Consolas, "Courier New", monospace !important;
+  font-weight: 700 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dash-cert-template {
+  display: inline-flex !important;
+  max-width: 260px !important;
+  padding: .16rem .45rem !important;
+  color: #0b355c !important;
+  background: #e8f2fb !important;
+  border: 1px solid #cfe1f1 !important;
+  border-radius: 999px !important;
+  font-size: .72rem !important;
+  font-weight: 850 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dash-cert-template-unresolved {
+  color: #7c4a03 !important;
+  background: #fff7df !important;
+  border-color: #f2d084 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dash-cert-requester {
+  max-width: 220px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+/* CS_DASHBOARD_CERT_TABLE_V2_END */
+
+/* CS_DASHBOARD_CERT_TABLE_V4_START */
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-cert-activity-v4 .visual-card-heading {
+  align-items: flex-start !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-cert-activity-v4 .visual-card-heading small {
+  display: block !important;
+  margin-top: .18rem !important;
+  color: #607589 !important;
+  font-size: .72rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-cert-activity-v4 .table-responsive {
+  margin-top: .65rem !important;
+  border-radius: 14px !important;
+  border: 1px solid #d6e2ee !important;
+  overflow: auto !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-cert-table {
+  min-width: 1120px !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-cert-table thead {
+  display: table-header-group !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-cert-table tbody {
+  display: table-row-group !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-cert-table th {
+  white-space: nowrap !important;
+  color: #0b355c !important;
+  background: #e8f2fb !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-cert-table td {
+  vertical-align: middle !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dash-cert-subject {
+  display: block !important;
+  max-width: 360px !important;
+  color: #0a1f35 !important;
+  font-size: .78rem !important;
+  font-weight: 850 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dash-cert-request {
+  display: block !important;
+  margin-top: .1rem !important;
+  color: #607589 !important;
+  font-size: .67rem !important;
+  font-family: Consolas, "Courier New", monospace !important;
+  font-weight: 700 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dash-cert-template {
+  display: inline-flex !important;
+  max-width: 260px !important;
+  padding: .16rem .45rem !important;
+  color: #0b355c !important;
+  background: #e8f2fb !important;
+  border: 1px solid #cfe1f1 !important;
+  border-radius: 999px !important;
+  font-size: .72rem !important;
+  font-weight: 850 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dash-cert-template-unresolved {
+  color: #7c4a03 !important;
+  background: #fff7df !important;
+  border-color: #f2d084 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dash-cert-requester {
+  max-width: 220px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+/* CS_DASHBOARD_CERT_TABLE_V4_END */
+
+/* CS_DASHBOARD_CERT_TABLE_FINAL_START */
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-cert-activity-final {
+  overflow: hidden !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-cert-heading-final {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 1rem !important;
+  margin-bottom: .65rem !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-cert-heading-final small {
+  display: block !important;
+  margin-top: .18rem !important;
+  color: #607589 !important;
+  font-size: .72rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-cert-table-box {
+  width: 100% !important;
+  overflow: auto !important;
+  border: 1px solid #d6e2ee !important;
+  border-radius: 14px !important;
+  background: #ffffff !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) table.dashboard-cert-table-final {
+  width: 100% !important;
+  min-width: 1120px !important;
+  margin: 0 !important;
+  border-collapse: collapse !important;
+  border-spacing: 0 !important;
+  table-layout: auto !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) table.dashboard-cert-table-final thead {
+  display: table-header-group !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) table.dashboard-cert-table-final tbody {
+  display: table-row-group !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) table.dashboard-cert-table-final tr {
+  display: table-row !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) table.dashboard-cert-table-final th,
+body.enterprise-body:not(.cs-monitoring-page) table.dashboard-cert-table-final td {
+  display: table-cell !important;
+  padding: .48rem .6rem !important;
+  border-bottom: 1px solid #e2edf6 !important;
+  vertical-align: middle !important;
+  text-align: left !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) table.dashboard-cert-table-final th {
+  color: #0b355c !important;
+  background: #e8f2fb !important;
+  font-size: .64rem !important;
+  font-weight: 900 !important;
+  letter-spacing: .075em !important;
+  text-transform: uppercase !important;
+  white-space: nowrap !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) table.dashboard-cert-table-final td {
+  color: #0a1f35 !important;
+  font-size: .76rem !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) table.dashboard-cert-table-final td strong {
+  display: block !important;
+  max-width: 360px !important;
+  color: #0a1f35 !important;
+  font-size: .78rem !important;
+  font-weight: 850 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) table.dashboard-cert-table-final td small {
+  display: block !important;
+  margin-top: .1rem !important;
+  color: #607589 !important;
+  font-family: Consolas, "Courier New", monospace !important;
+  font-size: .67rem !important;
+  font-weight: 700 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) table.dashboard-cert-table-final tbody tr:hover {
+  background: #f6fbff !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dash-cert-template {
+  display: inline-flex !important;
+  max-width: 260px !important;
+  padding: .16rem .45rem !important;
+  color: #0b355c !important;
+  background: #e8f2fb !important;
+  border: 1px solid #cfe1f1 !important;
+  border-radius: 999px !important;
+  font-size: .72rem !important;
+  font-weight: 850 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dash-cert-template-unresolved {
+  color: #7c4a03 !important;
+  background: #fff7df !important;
+  border-color: #f2d084 !important;
+}
+/* CS_DASHBOARD_CERT_TABLE_FINAL_END */
+
+/* CS_DASHBOARD_CERT_TABLE_FINAL_START */
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-cert-activity-final {
+  overflow: hidden !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-cert-heading-final {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 1rem !important;
+  margin-bottom: .65rem !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-cert-heading-final small {
+  display: block !important;
+  margin-top: .18rem !important;
+  color: #607589 !important;
+  font-size: .72rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dashboard-cert-table-box {
+  width: 100% !important;
+  overflow: auto !important;
+  border: 1px solid #d6e2ee !important;
+  border-radius: 14px !important;
+  background: #ffffff !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) table.dashboard-cert-table-final {
+  width: 100% !important;
+  min-width: 1120px !important;
+  margin: 0 !important;
+  border-collapse: collapse !important;
+  border-spacing: 0 !important;
+  table-layout: auto !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) table.dashboard-cert-table-final thead {
+  display: table-header-group !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) table.dashboard-cert-table-final tbody {
+  display: table-row-group !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) table.dashboard-cert-table-final tr {
+  display: table-row !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) table.dashboard-cert-table-final th,
+body.enterprise-body:not(.cs-monitoring-page) table.dashboard-cert-table-final td {
+  display: table-cell !important;
+  padding: .48rem .6rem !important;
+  border-bottom: 1px solid #e2edf6 !important;
+  vertical-align: middle !important;
+  text-align: left !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) table.dashboard-cert-table-final th {
+  color: #0b355c !important;
+  background: #e8f2fb !important;
+  font-size: .64rem !important;
+  font-weight: 900 !important;
+  letter-spacing: .075em !important;
+  text-transform: uppercase !important;
+  white-space: nowrap !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) table.dashboard-cert-table-final td {
+  color: #0a1f35 !important;
+  font-size: .76rem !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) table.dashboard-cert-table-final td strong {
+  display: block !important;
+  max-width: 360px !important;
+  color: #0a1f35 !important;
+  font-size: .78rem !important;
+  font-weight: 850 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) table.dashboard-cert-table-final td small {
+  display: block !important;
+  margin-top: .1rem !important;
+  color: #607589 !important;
+  font-family: Consolas, "Courier New", monospace !important;
+  font-size: .67rem !important;
+  font-weight: 700 !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) table.dashboard-cert-table-final tbody tr:hover {
+  background: #f6fbff !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dash-cert-template {
+  display: inline-flex !important;
+  max-width: 260px !important;
+  padding: .16rem .45rem !important;
+  color: #0b355c !important;
+  background: #e8f2fb !important;
+  border: 1px solid #cfe1f1 !important;
+  border-radius: 999px !important;
+  font-size: .72rem !important;
+  font-weight: 850 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+body.enterprise-body:not(.cs-monitoring-page) .dash-cert-template-unresolved {
+  color: #7c4a03 !important;
+  background: #fff7df !important;
+  border-color: #f2d084 !important;
+}
+/* CS_DASHBOARD_CERT_TABLE_FINAL_END */

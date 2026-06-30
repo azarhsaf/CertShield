@@ -1,6 +1,7 @@
 import io
 import json
 import zipfile
+import re
 from collections import Counter
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -517,14 +518,156 @@ def logout(request: Request, db: Session = Depends(get_db)):
     return RedirectResponse("/login", status_code=303)
 
 
+
+def _clean_cert_display_value(value) -> str:
+    value = str(value or "").strip()
+
+    if not value or value.upper() == "EMPTY":
+        return ""
+
+    return value.strip('"').strip()
+
+
+def _certificate_template_aliases(
+    db: Session,
+    scan_id: int | None,
+) -> set[str]:
+    if not scan_id:
+        return set()
+
+    aliases: set[str] = set()
+
+    for template in db.query(CertificateTemplate).filter_by(scan_id=scan_id).all():
+        for candidate in (template.name, template.display_name):
+            cleaned = _clean_cert_display_value(candidate).casefold()
+
+            if cleaned:
+                aliases.add(cleaned)
+
+    return aliases
+
+
+def _display_certificate_template(
+    value,
+    known_templates: set[str] | None = None,
+) -> str:
+    original = str(value or "").strip().replace('\\"', '"')
+
+    if not original:
+        return "Template not recorded"
+
+    cleaned = original.strip()
+
+    oid_match = re.match(r'^"?[0-9.]+"?\s+(.+)$', cleaned)
+    if oid_match:
+        cleaned = oid_match.group(1).strip()
+
+    quoted_match = re.match(r'^"([^"]+)"$', cleaned)
+    if quoted_match:
+        cleaned = quoted_match.group(1).strip()
+
+    cleaned = _clean_cert_display_value(cleaned)
+
+    if not cleaned:
+        return "Template not recorded"
+
+    aliases = known_templates or set()
+
+    # ADCS sometimes returns a validity text in the template column.
+    # Only hide it if it is not an actual template name in AD.
+    if re.match(r'^\d+\s+days?$', cleaned, re.I) and cleaned.casefold() not in aliases:
+        return "Template not resolved"
+
+    return cleaned
+
+
+def _display_certificate_subject(cert: IssuedCertificate) -> str:
+    subject = _clean_cert_display_value(cert.subject)
+
+    if subject:
+        return subject
+
+    san = _clean_cert_display_value(cert.san)
+
+    if san:
+        return san
+
+    requester = _clean_cert_display_value(cert.requester)
+
+    if requester:
+        account = requester.split("\\")[-1].strip('"')
+
+        if account.endswith("$"):
+            host = account.rstrip("$")
+
+            if host:
+                return f"{host} (requester identity)"
+
+        return f"{requester} (requester identity)"
+
+    return "Certificate identity not recorded"
+
+
+def _decorate_issued_certificate(
+    cert: IssuedCertificate,
+    known_templates: set[str] | None = None,
+) -> IssuedCertificate:
+    cert.display_subject = _display_certificate_subject(cert)
+    cert.display_template = _display_certificate_template(
+        cert.template_name,
+        known_templates,
+    )
+    cert.display_requester = _clean_cert_display_value(cert.requester) or "Requester not recorded"
+    cert.display_san = _clean_cert_display_value(cert.san)
+    return cert
+
+
+def _issued_template_counts(
+    certificates: list[IssuedCertificate],
+    known_templates: set[str] | None = None,
+) -> list[dict]:
+    counts: dict[str, int] = {}
+
+    for cert in certificates:
+        name = _display_certificate_template(
+            cert.template_name,
+            known_templates,
+        )
+
+        if name in {
+            "Template not recorded",
+            "Template not resolved",
+        }:
+            name = "Unresolved template"
+
+        counts[name] = counts.get(name, 0) + 1
+
+    return [
+        {
+            "name": name,
+            "value": value,
+        }
+        for name, value in sorted(
+            counts.items(),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+    ]
+
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, db: Session = Depends(get_db)):
     ensure_authenticated(request)
+
     latest_scan = _selected_scan(request, db)
+
     severity = {sev: 0 for sev in SEVERITY_ORDER}
     by_category = {}
     coverage_counts = {}
     recent_certs: list[IssuedCertificate] = []
+    all_certs: list[IssuedCertificate] = []
+    issued_template_counts: list[dict] = []
+    issued_cert_total = 0
+
     risk_acceptance_counts = {
         "accepted_total": 0,
         "accepted_critical": 0,
@@ -532,22 +675,68 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         "open_critical": 0,
         "open_high": 0,
     }
+
     if latest_scan:
         severity = _severity_counts(db, latest_scan.id)
         by_category = _category_counts(db, latest_scan.id)
         coverage_counts = _coverage_counts(db, latest_scan.id)
-        scan_findings = db.query(Finding).filter_by(scan_id=latest_scan.id).all()
-        risk_acceptance_counts = accepted_counts(scan_findings, active_acceptance_map(db))
-        recent_certs = db.query(IssuedCertificate).filter_by(scan_id=latest_scan.id).order_by(IssuedCertificate.id.desc()).limit(10).all()
+
+        scan_findings = (
+            db.query(Finding)
+            .filter_by(scan_id=latest_scan.id)
+            .all()
+        )
+
+        risk_acceptance_counts = accepted_counts(
+            scan_findings,
+            active_acceptance_map(db),
+        )
+
+        template_aliases = _certificate_template_aliases(
+            db,
+            latest_scan.id,
+        )
+
+        all_certs = (
+            db.query(IssuedCertificate)
+            .filter_by(scan_id=latest_scan.id)
+            .order_by(IssuedCertificate.id.desc())
+            .all()
+        )
+
+        issued_cert_total = len(all_certs)
+
+        recent_certs = all_certs[:10]
+
+        for certificate in all_certs:
+            _decorate_issued_certificate(
+                certificate,
+                template_aliases,
+            )
+
+        issued_template_counts = _issued_template_counts(
+            all_certs,
+            template_aliases,
+        )
+
     ctx = _nav_context(request, db)
+
     posture = _assessment(latest_scan, "posture", {})
     registry = _assessment(latest_scan, "registry", {})
     assurance = registry.get("assurance", posture.get("assurance", {})) if isinstance(registry, dict) else {}
+
     if isinstance(assurance, dict):
         assurance.setdefault("why", [])
+
     health_assessment = _assessment(latest_scan, "health", {})
     best_practices = _assessment(latest_scan, "best_practices", {})
-    expiring = health_assessment.get("items", [{}])[-2].get("evidence", {}) if health_assessment.get("items") else {}
+
+    expiring = (
+        health_assessment.get("items", [{}])[-2].get("evidence", {})
+        if health_assessment.get("items")
+        else {}
+    )
+
     ctx.update(
         {
             "scan": latest_scan,
@@ -556,6 +745,8 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             "by_category": by_category,
             "coverage_counts": coverage_counts,
             "recent_certs": recent_certs,
+            "issued_cert_total": issued_cert_total,
+            "issued_template_counts": issued_template_counts,
             "posture": posture,
             "registry": registry,
             "assurance": assurance,
@@ -565,8 +756,8 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             "risk_acceptance_counts": risk_acceptance_counts,
         }
     )
-    return templates.TemplateResponse("dashboard.html", ctx)
 
+    return templates.TemplateResponse("dashboard.html", ctx)
 
 def _monitoring_snapshot(
     db: Session,
@@ -3803,10 +3994,38 @@ def save_walkthrough_input(
 @app.get("/certificates", response_class=HTMLResponse)
 def certs_page(request: Request, db: Session = Depends(get_db)):
     ensure_authenticated(request)
+
     latest_scan = _selected_scan(request, db)
-    records = db.query(IssuedCertificate).filter_by(scan_id=latest_scan.id).all() if latest_scan else []
+    records: list[IssuedCertificate] = []
+
+    if latest_scan:
+        template_aliases = _certificate_template_aliases(
+            db,
+            latest_scan.id,
+        )
+
+        records = (
+            db.query(IssuedCertificate)
+            .filter_by(scan_id=latest_scan.id)
+            .order_by(IssuedCertificate.id.desc())
+            .all()
+        )
+
+        for certificate in records:
+            _decorate_issued_certificate(
+                certificate,
+                template_aliases,
+            )
+
     ctx = _nav_context(request, db)
-    ctx.update({"certificates": records, "scan": latest_scan})
+
+    ctx.update(
+        {
+            "certificates": records,
+            "scan": latest_scan,
+        }
+    )
+
     return templates.TemplateResponse("certificates.html", ctx)
 
 
